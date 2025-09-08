@@ -1,0 +1,45 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <title>QQ 绑定</title>
+</head>
+<body style="background:#101214;color:#ddd;font-family:system-ui,Segoe UI,Roboto,Helvetica,Arial,sans-serif;line-height:1.6;padding:24px;">
+  <h2>QQ 绑定</h2>
+
+  {% if ok %}
+    <p>绑定成功！</p>
+    <p>主角色：{{ binding.main_character_name }}{% if binding.main_character_id %} ({{ binding.main_character_id }}){% endif %}</p>
+    <p>QQ号：{{ binding.qq }}　昵称：{{ binding.nickname }}</p>
+    {% if binding.corp_ticket %}<p>军团 Ticket：{{ binding.corp_ticket }}</p>{% endif %}
+    <hr>
+    <p>请加入 IGCCN-QQ聊天群：<strong>{{ group_chat }}</strong></p>
+    <p>请加入 IGCCN-Ping群：<strong>{{ ping_group }}</strong></p>
+  {% else %}
+    {% if main_char_name %}
+      <p>检测到你的主角色：<strong>{{ main_char_name }}</strong>{% if main_char_id %} ({{ main_char_id }}){% endif %}</p>
+    {% endif %}
+
+    <form method="post">
+      {% csrf_token %}
+      <div style="margin:12px 0;">
+        <label>QQ号</label><br>
+        {{ form.qq }}
+      </div>
+      <div style="margin:12px 0;">
+        <label>昵称</label><br>
+        {{ form.nickname }}
+      </div>
+      <div style="margin:12px 0;">
+        <label>军团 Ticket（可选）</label><br>
+        {{ form.corp_ticket }}
+      </div>
+      <button type="submit">提交绑定</button>
+    </form>
+
+    {% if binding %}
+      <p style="margin-top:12px;opacity:.8;">你已绑定：QQ {{ binding.qq }} / 昵称 {{ binding.nickname }} （再次提交会覆盖更新）</p>
+    {% endif %}
+  {% endif %}
+</body>
+</html>
