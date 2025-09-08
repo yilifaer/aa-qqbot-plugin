@@ -105,3 +105,19 @@ In Django Admin, set user as staff (Users -> user -> Staff status).
 
 MIT License (see LICENSE file).
 MIT 协议（见 LICENSE 文件）。
+
+
+## Quick install / 快速安装
+
+```bash
+git clone https://github.com/yilifaer/aa-qqbot-plugin.git
+cd aa-qqbot-plugin
+cp settings.local.example.py myauth/myauth/settings/local.py  # (Windows 下可能用 copy 而不是 cp)
+
+# 编辑 local.py 填入 QQ 群号
+# 在 INSTALLED_APPS 加入 "qqbot"
+# 在 urls.py 添加 path("qqbot/", include("qqbot.urls"))
+
+cd myauth
+python manage.py migrate
+python manage.py runserver
