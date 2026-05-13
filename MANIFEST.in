@@ -1,0 +1,5 @@
+include README.md
+include LICENSE
+recursive-include qqbot/templates *.html
+recursive-include qqbot/static *
+recursive-include qqbot/migrations *.py
