@@ -1,123 +1,93 @@
-# QQBot Binding for Alliance Auth
-# Alliance Auth 的 QQ 绑定插件
+# aa-qqbot
 
-Simple AA plugin to let members submit QQ number & nickname and store with main character & corp ticket.
-让成员提交 QQ 号与昵称，并与主角色与军团 ticket 一起保存。
+Alliance Auth 的 QQ 绑定插件 / AllianceAuth plugin for QQ binding
 
--------------------------------------------------
+让成员提交 QQ 号、昵称，并与主角色和军团 ticket 一起保存。绑定页会显示 IGCCN 群号。
 
-## 1) Install
-## 1）安装
+---
 
-Copy the `qqbot` folder into your AA project (beside `myauth/`).
-把 `qqbot` 文件夹复制到 AA 工程目录（与 `myauth/` 同级或在 `myauth/` 内部都可，只要能在 `INSTALLED_APPS` 引用到）。
+## 功能 / Features
 
-Make sure your virtualenv is activated, then install dependencies if any (none extra needed now).
-确保已激活虚拟环境，目前无需额外依赖。
+- ✅ 用户绑定页（侧边栏菜单入口）
+- ✅ 自动从 AA 主角色读取 character_id / character_name / corp ticker
+- ✅ 管理员列表页（基于 Django 权限）
+- ✅ Django Admin 集成
+- ✅ JSON API 接口（外部 bot 调用）
+- ✅ 兼容 Alliance Auth v4 / v5
 
--------------------------------------------------
+---
 
-## 2) Add to settings
-## 2）写入设置
-
-Edit your `myauth/myauth/settings/local.py`.
-编辑 `myauth/myauth/settings/local.py`。
-
-INSTALLED_APPS += ["qqbot"]
-
-# show group numbers after successful binding
-QQBOT_GROUP_CHAT = "12345678"
-QQBOT_PING_GROUP = "87654321"
-
-Tip: ship `myauth/myauth/settings/local.example.py` for others to copy and fill.
-建议附带 `myauth/myauth/settings/local.example.py` 让他人复制改名为 local.py 并填群号。
-
--------------------------------------------------
-
-## 3) Wire up URLs
-## 3）路由注册
-
-Edit `myauth/myauth/urls.py`.
-编辑 `myauth/myauth/urls.py`。
-
-from django.urls import path, include
-
-urlpatterns = [
-    path("qqbot/", include("qqbot.urls")),
-]
-
-Visit:
-访问地址：
-
-- /qqbot/bind/  – member submit page
-- /qqbot/bind/  – 成员提交页
-- /qqbot/admin/ – staff-only listing
-- /qqbot/admin/ – 仅 staff 可见的列表页
-
--------------------------------------------------
-
-## 4) Migrate & Run
-## 4）迁移并运行
-
-cd <your aa project root>
-python .\myauth\manage.py makemigrations qqbot
-python .\myauth\manage.py migrate
-python .\myauth\manage.py runserver
-
-Open http://127.0.0.1:8000/qqbot/bind/ to test.
-打开 http://127.0.0.1:8000/qqbot/bind/ 进行测试。
-
--------------------------------------------------
-
-## 5) Permissions
-## 5）权限
-
-/qqbot/admin/ requires is_staff. Superusers are allowed by default.
-/qqbot/admin/ 需 is_staff，超级用户默认可访问。
-
-In Django Admin, set user as staff (Users -> user -> Staff status).
-在 Django 管理后台把需要的用户勾为 Staff status。
-
--------------------------------------------------
-
-## 6) Uninstall
-## 6）卸载
-
-- Remove from INSTALLED_APPS and URL include.
-  从 INSTALLED_APPS 与路由中移除。
-- Optionally drop table qqbot_qqbinding.
-  如需彻底清理可删除表 qqbot_qqbinding。
-
--------------------------------------------------
-
-## 7) Troubleshooting
-## 7）排错
-
-- Redis warnings in dev can be ignored (cache backend is set to ignore connection errors).
-  开发环境的 Redis 报错可忽略（缓存已设置忽略连接错误）。
-- If /admin/ 404, ensure default admin route still included by AA or add path("admin/", admin.site.urls) yourself.
-  若 /admin/ 404，请确认 AA 的后台路由未被覆盖，或自行添加 path("admin/", admin.site.urls)。
-
--------------------------------------------------
-
-## 8) License
-## 8）许可协议
-
-MIT License (see LICENSE file).
-MIT 协议（见 LICENSE 文件）。
-
-
-## Quick install / 快速安装
+## 安装 / Install
 
 ```bash
-git clone https://github.com/yilifaer/aa-qqbot-plugin.git
-cd aa-qqbot-plugin
-cp settings.local.example.py myauth/myauth/settings/local.py  # (Windows 下可能用 copy 而不是 cp)
+pip install git+https://github.com/yilifaer/aa-qqbot-plugin.git
+```
 
-# 编辑 local.py 填入 QQ 群号
-# 在 INSTALLED_APPS 加入 "qqbot"
-# 在 urls.py 添加 path("qqbot/", include("qqbot.urls"))
+或在 `requirements.txt` 中加入：
 
-cd myauth
-python manage.py migrate
-python manage.py runserver
+```
+git+https://github.com/yilifaer/aa-qqbot-plugin.git
+```
+
+---
+
+## 配置 / Configuration
+
+编辑 `myauth/myauth/settings/local.py`：
+
+```python
+INSTALLED_APPS += [
+    "qqbot",
+]
+
+# 可选：绑定成功后显示的 QQ 群号
+QQBOT_GROUP_CHAT = "12345678"   # IGCCN-QQ 聊天群
+QQBOT_PING_GROUP = "87654321"   # IGCCN-Ping 群
+```
+
+> 💡 不需要手动改 `urls.py`——插件通过 AA 的 `UrlHook` 自动注册。
+
+---
+
+## 迁移数据库 / Migrate
+
+```bash
+python manage.py migrate qqbot
+python manage.py collectstatic --noinput
+```
+
+重启 gunicorn 和 celery worker。
+
+---
+
+## 访问页面 / Access
+
+- **`/qqbot/`** — 用户绑定页（所有已登录用户可见，侧边栏菜单"QQ 绑定"）
+- **`/qqbot/manage/`** — 管理员列表页（需 `qqbot.view_qqbinding` 权限）
+- **`/qqbot/api/bind/`** — JSON API 接口（POST/GET 提交 qq、nickname、ticket）
+- **`/qqbot/ping/`** — 健康检查（返回 `pong`）
+
+---
+
+## 权限 / Permissions
+
+`/qqbot/manage/` 需要 `qqbot.view_qqbinding` 权限。在 Django Admin → 用户管理中授予对应用户/组。
+
+---
+
+## 卸载 / Uninstall
+
+```python
+# 从 INSTALLED_APPS 移除 "qqbot"
+```
+
+```bash
+pip uninstall aa-qqbot
+python manage.py migrate qqbot zero  # 可选：删除数据库表
+```
+
+---
+
+## License
+
+MIT — see [LICENSE](LICENSE)
