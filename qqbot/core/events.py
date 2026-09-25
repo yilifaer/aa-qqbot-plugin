@@ -1,4 +1,7 @@
-"""Event outbox for the bot, and fingerprint-based change detection."""
+"""Event outbox for the bot, and fingerprint-based change detection.
+
+给机器人的事件发件箱（outbox），以及基于指纹的变更检测。
+"""
 
 import hashlib
 import json
@@ -22,6 +25,10 @@ CODE_RETENTION_DAYS = 7
 # id could become visible after the bot's cursor (``after``) already moved
 # past it, and that event would be lost for good. Every transaction that
 # emits events is short (well under a second), so 10 s is ample.
+# 事件要存在够久之后才会交给机器人。id 来自自增计数器，在 INSERT 时就已分配，
+# 但写事件的事务要稍后才提交；如果没有这个延迟，一个较小的 id 可能在机器人的
+# 游标（``after``）已经越过它之后才变得可见，这个事件就永远丢了。所有写事件的
+# 事务都很短（远不到一秒），所以 10 秒足够了。
 EVENT_VISIBILITY_DELAY = timedelta(seconds=10)
 
 
@@ -44,6 +51,13 @@ def poll(after: int, limit: int = 200, now=None) -> EventPage:
     past an id whose transaction may still be in flight. ``last_id`` is the
     last returned id (``after`` when nothing is returned); ``has_more`` says
     that more events are ready right now.
+
+    返回 ``id > after`` 的事件，供机器人的 ``events`` 接口使用。
+
+    只返回存在时间超过 ``EVENT_VISIBILITY_DELAY`` 的事件，并且遇到第一个
+    太新的事件就停下，所以 ``last_id`` 永远不会越过一个事务可能还没提交的 id。
+    ``last_id`` 是本次返回的最后一个 id（什么都没返回时等于 ``after``）；
+    ``has_more`` 表示现在还有更多事件可以取。
     """
     now = now or timezone.now()
     after = max(0, int(after))
@@ -82,6 +96,10 @@ def compute_fingerprint(binding: Binding, groups=None, config=None) -> str:
     """``sha256(decisions)[:32] + sha256(card)[:32]``.
 
     Both halves include the QQ, so a changed QQ counts as a change.
+
+    ``sha256(判断结果)[:32] + sha256(群名片)[:32]``。
+
+    两半都包含 QQ，所以换了 QQ 也算作变化。
     """
     decisions = evaluate_binding(binding, groups, config=config)
     return _fingerprint(binding, decisions, render_card(binding, config))
@@ -89,7 +107,10 @@ def compute_fingerprint(binding: Binding, groups=None, config=None) -> str:
 
 def refresh_kinds(binding: Binding, groups=None, config=None) -> list[str]:
     """Recompute the fingerprint, emit events for what changed, save it.
-    Returns the kinds of the events written."""
+    Returns the kinds of the events written.
+
+    重新计算指纹，为变化的部分发出事件，再保存指纹。返回写入的事件类型列表。
+    """
     return _store_fingerprint(binding, compute_fingerprint(binding, groups, config))
 
 
@@ -110,12 +131,19 @@ def _store_fingerprint(binding: Binding, new: str) -> list[str]:
 
 def refresh_binding(binding: Binding) -> bool:
     """Emit ``recheck`` / ``card`` events when the binding's decisions / card
-    changed since the last call. Returns True when any event was written."""
+    changed since the last call. Returns True when any event was written.
+
+    当绑定的判断结果 / 群名片自上次调用以来有变化时，发出 ``recheck`` /
+    ``card`` 事件。写入了任何事件就返回 True。
+    """
     return bool(refresh_kinds(binding))
 
 
 def refresh_qq(qq: str, exclude_pk=None) -> int:
-    """Refresh every binding that claims ``qq``; returns the events written."""
+    """Refresh every binding that claims ``qq``; returns the events written.
+
+    刷新所有认领了 ``qq`` 的绑定；返回写入的事件数。
+    """
     n = 0
     qs = Binding.objects.filter(qq=qq).select_related("user__profile__main_character")
     if exclude_pk is not None:
@@ -126,7 +154,10 @@ def refresh_qq(qq: str, exclude_pk=None) -> int:
 
 
 def refresh_user(user_or_id) -> bool:
-    """Refresh the user's binding, if any."""
+    """Refresh the user's binding, if any.
+
+    刷新该用户的绑定（如果有的话）。
+    """
     user_id = getattr(user_or_id, "pk", user_or_id)
     if user_id is None:
         return False
@@ -146,6 +177,11 @@ def refresh_all() -> int:
     Bindings are judged in batches of 500 with one evaluation per batch, so
     the reads take a constant number of queries per batch; only changed
     fingerprints cost an UPDATE (plus their events).
+
+    刷新所有绑定（每日对账）；返回写入的事件数。
+
+    绑定按每批 500 条判断，每批只做一次评估，所以每批的读取查询次数是固定的；
+    只有指纹变了的绑定才需要一次 UPDATE（外加它们的事件）。
     """
     groups = active_groups()
     config = Config.get_solo()
@@ -173,7 +209,10 @@ def _refresh_batch(batch: list[Binding], groups, config) -> int:
 
 def prune(now=None) -> dict:
     """Delete events older than 30 days and codes that expired or were used /
-    invalidated more than 7 days ago."""
+    invalidated more than 7 days ago.
+
+    删除 30 天前的事件，以及过期、已使用或已作废超过 7 天的验证码。
+    """
     now = now or timezone.now()
     events, _ = Event.objects.filter(
         created_at__lt=now - timedelta(days=EVENT_RETENTION_DAYS)

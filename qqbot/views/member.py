@@ -8,6 +8,16 @@ and go back to the card (``/services/#qqbot``). The card shows the outcome
 *inside itself* (not as a Django message: AA prints those above the whole row
 of service cards, which is off-screen once the page jumps to a card in a
 later row, e.g. on phones), with the member's input kept on failure.
+
+成员端：AA 服务页上的「QQ 绑定」卡片（DECISIONS.md #18、docs/SPEC.md 第 5 节、
+DESIGN.md 4.1 / 5）。
+
+成员的所有操作都在这张卡片里完成，没有单独的成员页面。
+:func:`card_context` 收集卡片要显示的内容；下面的 POST 视图负责修改数据
+（一律通过 ``qqbot.core``），把结果存进 session，再跳回卡片
+（``/services/#qqbot``）。结果显示在卡片*内部*（不用 Django message：AA 会把
+message 显示在整排服务卡片的上方，页面跳到后面几排的卡片时就看不到了，
+手机上尤其如此）；操作失败时会保留成员填写的内容。
 """
 
 import hmac
@@ -33,11 +43,12 @@ logger = get_extension_logger(__name__)
 BASIC_ACCESS = "qqbot.basic_access"
 MANAGE = "qqbot.manage"
 SESSION_KEY = "qqbot_code"
-RESULT_KEY = "qqbot_result"  # outcome of the last card action, shown once
-RESULT_MAX_AGE = 300  # seconds; an outcome nobody saw in time is dropped
-CARD_ANCHOR = "qqbot"  # id of the card on the services page
+RESULT_KEY = "qqbot_result"  # outcome of the last card action, shown once / 上次卡片操作的结果，只显示一次
+RESULT_MAX_AGE = 300  # seconds; an outcome nobody saw in time is dropped / 秒；没被及时看到的结果会被丢弃
+CARD_ANCHOR = "qqbot"  # id of the card on the services page / 服务页上卡片的 id
 
 # Binding states shown to the member.
+# 展示给成员看的绑定状态。
 STATE_VERIFIED = bindings.STATE_VERIFIED
 STATE_TRUSTED = bindings.STATE_TRUSTED
 STATE_CONFLICT = bindings.STATE_CONFLICT
@@ -52,14 +63,16 @@ STATE_LABELS = {
 PROBLEM_STATES = {STATE_CONFLICT, STATE_TAKEN}
 
 # What the card shows (``card_context()["view"]``).
+# 卡片显示哪种视图（``card_context()["view"]``）。
 VIEW_NO_MAIN = "no_main"
 VIEW_UNBOUND = "unbound"
 VIEW_PENDING = "pending"
 VIEW_BOUND = "bound"
 
 # Outcome levels and how the card shows them.
+# 结果的级别，以及卡片怎样显示它们。
 SUCCESS, INFO, WARNING, ERROR = "success", "info", "warning", "error"
-LEVEL_STYLES = {  # level -> (alert class, Font Awesome icon)
+LEVEL_STYLES = {  # level -> (alert class, Font Awesome icon) / 级别 -> (提示框样式类, Font Awesome 图标)
     SUCCESS: ("alert-success", "fa-circle-check"),
     INFO: ("alert-info", "fa-circle-info"),
     WARNING: ("alert-warning", "fa-triangle-exclamation"),
@@ -67,6 +80,7 @@ LEVEL_STYLES = {  # level -> (alert class, Font Awesome icon)
 }
 
 # Level per core outcome (submit / nickname / unbind / cancel).
+# 每种 core 结果对应的级别（提交 / 改昵称 / 解绑 / 取消）。
 OUTCOME_LEVELS = {
     "trusted": SUCCESS,
     "conflict": WARNING,
@@ -82,19 +96,24 @@ OUTCOME_LEVELS = {
 }
 
 # Which form the member used, so a failed action re-opens it pre-filled.
-PANEL_BIND = "bind"  # the bind form of an unbound member
+# 记下成员用的是哪个表单，操作失败时重新打开它并填好内容。
+PANEL_BIND = "bind"  # the bind form of an unbound member / 未绑定成员的绑定表单
 PANEL_REBIND = "rebind"
 PANEL_NICKNAME = "nickname"
 PANEL_UNBIND = "unbind"
 BOUND_PANELS = {PANEL_REBIND, PANEL_NICKNAME, PANEL_UNBIND}
 
 # Placeholder nickname used to split the card preview around the input box.
+# 占位用的昵称，用来在输入框两侧切开群名片预览。
 _NICK_MARK = ""
 
 
 @dataclass
 class MemberStatus:
-    """What the services card shows about a user's binding."""
+    """What the services card shows about a user's binding.
+
+    服务卡片上显示的某个用户的绑定情况。
+    """
 
     binding: Binding | None = None
     state: str = ""
@@ -128,11 +147,15 @@ def member_status(user, now=None) -> MemberStatus:
 
 # --------------------------------------------------------------------------
 # helpers
+# 辅助函数
 # --------------------------------------------------------------------------
 
 
 def services_url() -> str:
-    """The services page, scrolled to our card."""
+    """The services page, scrolled to our card.
+
+    服务页的地址，并定位到我们的卡片。
+    """
     return reverse("services:services") + "#" + CARD_ANCHOR
 
 
@@ -145,6 +168,11 @@ def _flash(request, level: str, text: str, *, ok: bool, panel: str = "", qq: str
 
     ``panel``, ``qq`` and ``nickname`` say which form was used and what was
     typed, so a failed action comes back with that form open and filled in.
+
+    为卡片记下一个操作结果（由 :func:`_pop_result` 取出，只显示一次）。
+
+    ``panel``、``qq`` 和 ``nickname`` 记录用的是哪个表单、填了什么，这样
+    操作失败回到卡片时，这个表单是打开的，并且已经填好内容。
     """
     request.session[RESULT_KEY] = {
         "level": level,
@@ -153,6 +181,8 @@ def _flash(request, level: str, text: str, *, ok: bool, panel: str = "", qq: str
         "panel": panel,
         # Only ever shown (escaped) in the member's own card; cut to the
         # form's max_length so a crafted POST cannot bloat the session.
+        # 只会（转义后）显示在成员自己的卡片里；按表单的 max_length 截断，
+        # 防止伪造的 POST 把 session 撑大。
         "qq": (qq or "")[:32],
         "nickname": (nickname or "")[:64],
         "at": timezone.now().timestamp(),
@@ -167,7 +197,11 @@ def _flash_result(request, result, *, panel: str = "", qq: str = "", nickname: s
 
 def _pop_result(request, now) -> dict | None:
     """The outcome of the member's last card action, once; ``None`` when there
-    is none (or it is malformed or too old to still be meant for this page)."""
+    is none (or it is malformed or too old to still be meant for this page).
+
+    成员上一次卡片操作的结果，只返回一次；没有结果时返回 ``None``（结果格式
+    不对，或者太旧、已经不是给这次页面看的，也返回 ``None``）。
+    """
     session = getattr(request, "session", None)
     if session is None:
         return None
@@ -209,6 +243,11 @@ def _card_parts(user, config) -> tuple[str, str, bool]:
     ``found`` is False when the card format does not contain the nickname;
     ``before`` is then the whole card. The parts are *not* shortened; see
     :func:`_nickname_room` for how much room the nickname really has.
+
+    以昵称为界，把群名片预览切成两段：``(before, after, found)``。
+
+    如果群名片格式里没有昵称，``found`` 为 False，这时 ``before`` 就是整张
+    群名片。这两段*不会*被截短；昵称实际还剩多少空间，见 :func:`_nickname_room`。
     """
     card = cards.full_card(user, _NICK_MARK, config)
     if card.count(_NICK_MARK) == 1:
@@ -219,11 +258,16 @@ def _card_parts(user, config) -> tuple[str, str, bool]:
 
 def _nickname_room(before: str, after: str, found: bool) -> int | None:
     """Bytes left for the nickname before the character name gets shortened;
-    ``None`` when every allowed nickname fits (no hint needed)."""
+    ``None`` when every allowed nickname fits (no hint needed).
+
+    在角色名被截短之前，还能留给昵称的字节数；如果任何合法的昵称都放得下
+    （不需要提示），返回 ``None``。
+    """
     if not found:
         return None
     room = cards.CARD_MAX_BYTES - cards.byte_length(before) - cards.byte_length(after)
     # The longest allowed nickname: NICKNAME_MAX_LENGTH CJK characters.
+    # 最长的合法昵称：NICKNAME_MAX_LENGTH 个中文字符。
     if room >= 3 * NICKNAME_MAX_LENGTH:
         return None
     return max(room, 0)
@@ -247,6 +291,12 @@ def _badge(view: str, status: MemberStatus) -> tuple[str, str]:
     re-bind code is pending (the current QQ keeps working until the new one
     is verified; DESIGN.md 4.2 ③). A problem badge always comes with the
     red explanation in the card (``#qqbot-problem``, bound and pending view).
+
+    卡片标题栏里状态徽章的 ``(文字, bootstrap 样式类)``。
+
+    有绑定时，徽章显示的是*当前绑定*的状态，换绑验证码还在等待验证时也一样
+    （新 QQ 验证通过之前，当前 QQ 仍然有效；DESIGN.md 4.2 ③）。出问题的徽章
+    总会配上卡片里的红色说明（``#qqbot-problem``，在已绑定和待验证视图里）。
     """
     if status.state == STATE_CONFLICT:
         return "冲突", "text-bg-danger"
@@ -256,7 +306,7 @@ def _badge(view: str, status: MemberStatus) -> tuple[str, str]:
         return "已启用", "text-bg-success"
     if view == VIEW_PENDING:
         return "待验证", "text-bg-primary"
-    return "未启用", "text-bg-warning"  # like AA's own "Disabled" badge
+    return "未启用", "text-bg-warning"  # like AA's own "Disabled" badge / 和 AA 自带的「Disabled」徽章一样
 
 
 def card_context(request, now=None) -> dict:
@@ -268,6 +318,13 @@ def card_context(request, now=None) -> dict:
     filled in with what was typed. It may drop a stale verification code
     from the session (and then says so once, pre-filling the form: the bind
     form, or the opened 换绑 panel for a re-bind).
+
+    为 ``request.user`` 准备 ``qqbot/service_ctrl.html`` 需要的全部数据。
+
+    每次打开服务页都会运行，所以只做当前状态需要的查询。它会显示（然后忘掉）
+    成员上一次卡片操作的结果；操作失败时，会重新打开当时用的表单，并填上
+    成员输入的内容。它可能会把 session 里过期的验证码删掉（这时会提示一次，
+    并预填表单：绑定表单，或者换绑时打开的「换绑」面板）。
     """
     user = request.user
     now = now or timezone.now()
@@ -294,6 +351,8 @@ def card_context(request, now=None) -> dict:
     # The session code no longer matches a live code: forget it. When it
     # simply ran out (not used for the current binding), say so once and
     # pre-fill the form with what the member typed.
+    # session 里的验证码已经对不上有效的验证码：忘掉它。如果只是过期了
+    # （没有用在当前绑定上），提示一次，并用成员之前填的内容预填表单。
     stale_code = False
     if session and not _session_code_matches(session, live):
         request.session.pop(SESSION_KEY, None)
@@ -325,6 +384,7 @@ def card_context(request, now=None) -> dict:
     context["badge_label"], context["badge_class"] = _badge(view, status)
 
     # Groups: only where they are shown (a QQ with a problem shows none).
+    # 群列表：只在要显示时才查（有问题的 QQ 不显示任何群）。
     groups = []
     if view == VIEW_PENDING or (view == VIEW_BOUND and not status.has_problem):
         groups = eligibility.groups_for_user(user, now)
@@ -332,8 +392,10 @@ def card_context(request, now=None) -> dict:
     context["has_groups"] = bool(groups)
 
     # The nickname input with the card prefix: bind form and "改昵称".
+    # 带群名片前缀的昵称输入框：用于绑定表单和「改昵称」。
     if view in (VIEW_UNBOUND, VIEW_BOUND):
         # binding.user comes with its main character (select_related).
+        # binding.user 已经连同主角色一起查出来了（select_related）。
         owner = binding.user if binding is not None else user
         before, after, nick_in_card = _card_parts(owner, config)
         room = _nickname_room(before, after, nick_in_card)
@@ -343,6 +405,7 @@ def card_context(request, now=None) -> dict:
                 "card_after": after,
                 "nick_in_card": nick_in_card,
                 # Hint under the nickname input (DESIGN.md 6).
+                # 昵称输入框下方的提示（DESIGN.md 6）。
                 "nick_room_cjk": None if room is None else room // 3,
                 "nick_room_ascii": room,
             }
@@ -363,12 +426,17 @@ def card_context(request, now=None) -> dict:
         # Unbinding does not reset the rebind cooldown (DESIGN.md 5.5).
         # Shown as time left, not a clock time: AA renders times in
         # settings.TIME_ZONE (usually UTC), members read Beijing time.
+        # 解绑不会重置换绑冷却（DESIGN.md 5.5）。
+        # 显示剩余时长而不是具体时刻：AA 按 settings.TIME_ZONE（通常是 UTC）
+        # 显示时间，而成员看的是北京时间。
         ends = bindings.cooldown_ends(binding.qq_changed_at, now, config)
         context["cooldown_ends"] = ends
         context["cooldown_left"] = bindings.format_remaining(ends - now) if ends else ""
 
     # Pre-fill the forms and pick the open panel (bound view): a failed
     # action's input wins over a stale code's, which wins over the binding.
+    # 预填表单，并选出要打开的面板（已绑定视图）：优先用失败操作的输入，
+    # 其次是过期验证码里的内容，最后才是当前绑定。
     initial_qq = ""
     initial_nickname = binding.nickname if binding else ""
     open_panel = ""
@@ -396,18 +464,23 @@ def card_context(request, now=None) -> dict:
 
 def _no_main_redirect(request):
     # The card itself explains this (view "no_main").
+    # 卡片自己会说明这种情况（视图 "no_main"）。
     return _back()
 
 
 # --------------------------------------------------------------------------
 # views
+# 视图
 # --------------------------------------------------------------------------
 
 
 @login_required
 @permission_required(BASIC_ACCESS, raise_exception=True)
 def my_qq(request):
-    """The old "我的 QQ" page: everything is in the services card now."""
+    """The old "我的 QQ" page: everything is in the services card now.
+
+    原来的「我的 QQ」页面：现在所有功能都在服务卡片里。
+    """
     return _back()
 
 
@@ -422,6 +495,8 @@ def submit(request):
     typed_nickname = request.POST.get("nickname", "")
     # Which form this came from: the bind form, or 换绑 of a bound member
     # ("重新生成" in the pending view needs no panel).
+    # 判断请求来自哪个表单：绑定表单，或者已绑定成员的「换绑」
+    # （待验证视图里的「重新生成」不需要面板）。
     panel = PANEL_REBIND if Binding.objects.filter(user_id=user.pk).exists() else PANEL_BIND
     form = SubmitForm(request.POST)
     if not form.is_valid():
@@ -490,7 +565,11 @@ def nickname(request):
 @require_http_methods(["GET", "HEAD", "POST"])
 def unbind(request):
     """POST with the ticked confirm box unbinds; GET (old links) goes back
-    to the card, where the unbind form is."""
+    to the card, where the unbind form is.
+
+    勾选了确认框的 POST 请求会解绑；GET 请求（旧链接）会跳回卡片，
+    解绑表单就在卡片里。
+    """
     if request.method != "POST":
         return _back()
     form = UnbindForm(request.POST)

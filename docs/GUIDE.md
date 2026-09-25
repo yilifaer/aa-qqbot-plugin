@@ -9,7 +9,7 @@
 - QQ 机器人（Koishi，另一个仓库）来问 AA：「这个 QQ 能不能进这个群？群名片该叫什么？」；
 - 成员离开联盟、账号被停用、换了主角色，AA 都会记下来，机器人下次来取时就知道了。
 
-当前版本：**1.0.0b1**（第一个公开测试版），更新内容见 [`CHANGELOG.md`](../CHANGELOG.md)。
+当前版本：**1.0.0b2**（测试版），更新内容见 [`CHANGELOG.md`](../CHANGELOG.md)。
 需要 Alliance Auth 5.x（5.2 及以上）、Python 3.10 及以上。
 
 ---
@@ -143,7 +143,7 @@ pip show allianceauth django-sri aa-qqbot | grep -E '^(Name|Version)'
 pip install git+https://github.com/yilifaer/aa-qqbot-plugin.git
 ```
 
-- 最后一行出现 `Successfully installed aa-qqbot-1.0.0b1` 就装好了（可能还会列出其他包，是 AA 缺的依赖）。
+- 最后一行出现 `Successfully installed aa-qqbot-1.0.0b2` 就装好了（可能还会列出其他包，是 AA 缺的依赖）。
 - 提示 `Cannot find command 'git'`：先安装 git（见「准备」），或者改用不需要 git 的写法：
   `pip install https://github.com/yilifaer/aa-qqbot-plugin/archive/refs/heads/main.zip`
 - 注意：包名是 `aa-qqbot`，只能用上面的 GitHub 地址安装。**不要**运行 `pip install qqbot`：

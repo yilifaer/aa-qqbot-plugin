@@ -8,6 +8,14 @@ Signature (lower-case hex)::
 This module holds the pure crypto helpers plus the header / skew / nonce /
 rate-limit checks. The order of the checks is fixed by docs/SPEC.md section 4
 and documented in API.md; :func:`authenticate` implements it.
+
+机器人接口的请求签名。
+
+签名（小写十六进制）的计算方法见上面的公式。
+
+本模块包含纯粹的加密辅助函数，以及请求头 / 时间误差 / nonce / 限速检查。
+检查的顺序由 docs/SPEC.md 第 4 节规定，并写在 API.md 里；
+``authenticate`` 按这个顺序实现。
 """
 
 import hashlib
@@ -24,10 +32,12 @@ HEADER_TIMESTAMP = "X-QQBot-Timestamp"
 HEADER_NONCE = "X-QQBot-Nonce"
 HEADER_SIGNATURE = "X-QQBot-Signature"
 
-KEY_ID_RE = re.compile(r"^[\x21-\x7e]{1,64}$")  # printable ASCII, no spaces
+KEY_ID_RE = re.compile(r"^[\x21-\x7e]{1,64}$")  # printable ASCII, no spaces / 可打印 ASCII 字符，不含空格
 # Up to 16 digits so that a millisecond timestamp (13 digits, a common bug)
 # passes the format check and is reported as ``stale_timestamp``, whose
 # message says the unit must be seconds.
+# 最多允许 16 位数字：这样毫秒时间戳（13 位，常见错误）也能通过格式检查，
+# 然后被报告为 ``stale_timestamp``，它的提示信息会说明单位必须是秒。
 TIMESTAMP_RE = re.compile(r"^[0-9]{1,16}$")
 NONCE_RE = re.compile(r"^[A-Za-z0-9_-]{16,64}$")
 SIGNATURE_RE = re.compile(r"^[0-9a-f]{64}$")
@@ -37,7 +47,10 @@ RATE_CACHE_PREFIX = "qqbot:rate:"
 
 
 class ApiError(Exception):
-    """An error answered as ``{"ok": false, "error": code, "message": ...}``."""
+    """An error answered as ``{"ok": false, "error": code, "message": ...}``.
+
+    以 ``{"ok": false, "error": code, "message": ...}`` 形式返回的错误。
+    """
 
     def __init__(self, status: int, code: str, message: str, headers=None):
         super().__init__(code)
@@ -49,6 +62,7 @@ class ApiError(Exception):
 
 # Chinese messages that tell the operator what to do. Kept in one place so
 # API.md and the code agree.
+# 告诉运维人员该怎么处理的中文提示。集中放在这里，保证 API.md 和代码一致。
 MESSAGES = {
     "method_not_allowed": "这个接口只接受 POST 请求。请检查机器人插件的请求方法。",
     "misconfigured": (
@@ -92,6 +106,7 @@ def error(status: int, code: str, message: str | None = None, headers=None) -> A
 
 # --------------------------------------------------------------------------
 # pure helpers
+# 纯函数辅助工具
 # --------------------------------------------------------------------------
 
 
@@ -104,7 +119,10 @@ def string_to_sign(method: str, path: str, timestamp: str, nonce: str, body: byt
 
 
 def sign(secret: str, method: str, path: str, timestamp: str, nonce: str, body: bytes) -> str:
-    """Lower-case hex HMAC-SHA256 signature of a request."""
+    """Lower-case hex HMAC-SHA256 signature of a request.
+
+    计算请求的 HMAC-SHA256 签名（小写十六进制）。
+    """
     return hmac.new(
         secret.encode("utf-8"),
         string_to_sign(method, path, timestamp, nonce, body).encode("utf-8"),
@@ -114,7 +132,10 @@ def sign(secret: str, method: str, path: str, timestamp: str, nonce: str, body: 
 
 def signed_headers(key_id: str, secret: str, path: str, body: bytes, *, timestamp=None,
                    nonce: str) -> dict:
-    """The four request headers for ``body`` (used by tests and tooling)."""
+    """The four request headers for ``body`` (used by tests and tooling).
+
+    为 ``body`` 生成四个签名请求头（给测试和工具用）。
+    """
     ts = str(int(time.time()) if timestamp is None else timestamp)
     return {
         HEADER_KEY: key_id,
@@ -126,7 +147,11 @@ def signed_headers(key_id: str, secret: str, path: str, body: bytes, *, timestam
 
 def configured_keys() -> dict | None:
     """``{key_id: secret}`` with usable string secrets, or None when the
-    setting is missing, empty or not a dict."""
+    setting is missing, empty or not a dict.
+
+    返回只含可用字符串密钥的 ``{key_id: secret}``；设置缺失、为空或不是
+    字典时返回 None。
+    """
     keys = app_settings.api_keys()
     if not isinstance(keys, dict) or not keys:
         return None
@@ -136,6 +161,7 @@ def configured_keys() -> dict | None:
 
 # --------------------------------------------------------------------------
 # request authentication
+# 请求认证
 # --------------------------------------------------------------------------
 
 
@@ -149,6 +175,11 @@ def authenticate(request, body: bytes, now: float | None = None) -> str:
     Raises :class:`ApiError` in the order given by docs/SPEC.md section 4.
     The nonce is only recorded once the signature is known to be good, so
     unauthenticated requests cannot burn nonces or rate-limit budget.
+
+    检查请求的签名和各项限制；通过后返回密钥编号。
+
+    按 docs/SPEC.md 第 4 节规定的顺序抛出 ``ApiError``。只有确认签名正确后
+    才记录 nonce，所以没通过认证的请求既占用不了 nonce，也不会消耗限速额度。
     """
     keys = configured_keys()
     if keys is None:
@@ -190,7 +221,10 @@ def authenticate(request, body: bytes, now: float | None = None) -> str:
 
 
 def check_rate_limit(key_id: str, now: float | None = None) -> None:
-    """Fixed one-minute window per key id; raises 429 ``rate_limited``."""
+    """Fixed one-minute window per key id; raises 429 ``rate_limited``.
+
+    每个密钥编号按固定的一分钟窗口计数；超过限制时抛出 429 ``rate_limited``。
+    """
     limit = app_settings.api_rate_limit()
     if limit <= 0:
         return
@@ -200,7 +234,7 @@ def check_rate_limit(key_id: str, now: float | None = None) -> None:
     cache.add(cache_key, 0, 120)
     try:
         count = cache.incr(cache_key)
-    except ValueError:  # expired between add() and incr()
+    except ValueError:  # expired between add() and incr() / 在 add() 和 incr() 之间过期了
         cache.set(cache_key, 1, 120)
         count = 1
     if count > limit:

@@ -3,6 +3,12 @@
 The forms only parse the POST data. All real validation (QQ format,
 nickname rules) happens in ``qqbot.core`` so that the rules live in one
 place; the core result message is shown to the member.
+
+服务卡片里成员操作用的表单。
+
+这些表单只负责解析 POST 数据。真正的校验（QQ 格式、昵称规则）都在
+``qqbot.core`` 里做，这样规则只放在一个地方；成员看到的是 core 返回的
+结果信息。
 """
 
 from django import forms
@@ -15,7 +21,11 @@ _REQUIRED_NICKNAME = {"required": "请填写昵称。"}
 
 class SubmitForm(forms.Form):
     """Bind, re-bind or regenerate a code (``regenerate`` re-uses the live
-    code's QQ and nickname, so the fields are optional then)."""
+    code's QQ and nickname, so the fields are optional then).
+
+    绑定、换绑或重新生成验证码（``regenerate`` 会沿用当前有效验证码的 QQ 和
+    昵称，所以这时这两个字段可以不填）。
+    """
 
     qq = forms.CharField(
         label="QQ 号",
@@ -50,7 +60,10 @@ class NicknameForm(forms.Form):
 
 
 class UnbindForm(forms.Form):
-    """Unbinding needs the ticked "我确认要解除绑定" box (no separate page)."""
+    """Unbinding needs the ticked "我确认要解除绑定" box (no separate page).
+
+    解绑前必须勾选「我确认要解除绑定」（没有单独的确认页面）。
+    """
 
     confirm = forms.BooleanField(
         required=True,
@@ -59,7 +72,10 @@ class UnbindForm(forms.Form):
 
 
 def first_error(form) -> str:
-    """The first error message of a bound, invalid form."""
+    """The first error message of a bound, invalid form.
+
+    返回一个已提交数据、但没通过校验的表单里的第一条错误信息。
+    """
     for errors in form.errors.values():
         for error in errors:
             return str(error)

@@ -5,6 +5,13 @@ fallback for superusers. Bindings and the audit log are view-only here
 because every binding change must go through ``qqbot.core`` (locks, events
 for the bot, audit records). Group and settings saves emit the same events
 and audit records as the manage pages.
+
+Django 后台（见 docs/SPEC.md 第 7 节）。
+
+日常管理在前台管理页面上进行；后台只是给超级用户的备用入口。绑定和审计日志
+在这里只能查看，因为每次修改绑定都必须经过 ``qqbot.core``（加锁、给机器人
+发事件、写审计记录）。在这里保存群和设置时，会和管理页面一样发出事件、
+写审计记录。
 """
 
 from django.contrib import admin
@@ -49,6 +56,7 @@ class QQGroupAdmin(admin.ModelAdmin):
     def save_related(self, request, form, formsets, change):
         # Runs after the m2m (required_groups) is saved, inside the admin's
         # transaction.
+        # 在多对多字段（required_groups）保存之后运行，处于后台的事务之内。
         super().save_related(request, form, formsets, change)
         group = form.instance
         events.emit_groups_changed()
@@ -145,6 +153,7 @@ class ConfigAdmin(admin.ModelAdmin):
         audit.log(AuditLog.Action.CONFIG, actor=request.user, changed=changed, via="admin")
         if "card_format" in changed:
             # Every card may change: recompute all bindings in the background.
+            # 每个群名片都可能变化：在后台重新计算所有绑定。
             from .tasks import queue_reconcile
 
             transaction.on_commit(queue_reconcile)

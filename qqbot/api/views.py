@@ -7,6 +7,15 @@ keeps them via ``functools.wraps`` so ``URLPattern.lookup_str`` stays
 ``qqbot.api.views.<name>``.
 
 All data changes go through :mod:`qqbot.core`.
+
+机器人接口（见 docs/SPEC.md 第 4 节；接口约定见 API.md）。
+
+每个接口都只接受 POST、必须带 HMAC 签名，并且总是返回 JSON——认证失败和
+意外异常（500 ``internal_error``）时也一样。函数名必须与
+``auth_hooks.PUBLIC_VIEWS`` 一致；``api_endpoint`` 用 ``functools.wraps``
+保留原函数名，所以 ``URLPattern.lookup_str`` 仍是 ``qqbot.api.views.<name>``。
+
+所有数据修改都经过 ``qqbot.core``。
 """
 
 import json
@@ -35,11 +44,13 @@ EVENTS_MAX_LIMIT = 500
 MAX_CLAIM_TEXT = 2000
 
 # Extra reason used only by the API for numbers that are not valid QQs.
+# 只在接口里使用的额外原因代码，表示这个号码不是合法的 QQ 号。
 BAD_QQ = "BAD_QQ"
 
 
 # --------------------------------------------------------------------------
 # plumbing
+# 通用的底层辅助代码
 # --------------------------------------------------------------------------
 
 
@@ -73,6 +84,8 @@ def _parse_json(body: bytes) -> dict:
     except (UnicodeDecodeError, ValueError, RecursionError):
         # RecursionError: absurdly deep nesting ("[[[[...]]]]") -- still just
         # a bad request, not an internal error the bot would retry.
+        # RecursionError：嵌套层数深得离谱（"[[[[...]]]]"）——这也只算请求不正确，
+        # 而不是会让机器人重试的内部错误。
         raise bad_request("请求体不是合法的 JSON（需要 UTF-8 编码）。") from None
     if not isinstance(data, dict):
         raise bad_request("请求体必须是一个 JSON 对象（{...}）。")
@@ -84,6 +97,11 @@ def api_endpoint(view):
 
     The wrapped view is called as ``view(request, data)`` with the parsed
     JSON object. Whatever goes wrong, the answer is JSON.
+
+    负责检查请求方法、签名认证、解析 JSON 和错误处理。
+
+    被包装的视图以 ``view(request, data)`` 的形式调用，``data`` 是解析好的
+    JSON 对象。无论出什么错，返回的都是 JSON。
     """
 
     @wraps(view)
@@ -96,8 +114,11 @@ def api_endpoint(view):
             except RequestDataTooBig:
                 # Django's own DATA_UPLOAD_MAX_MEMORY_SIZE cap (2.5 MB by
                 # default) is hit before the body can even be read.
+                # 还没读到请求体，就已经超过了 Django 自己的
+                # DATA_UPLOAD_MAX_MEMORY_SIZE 上限（默认 2.5 MB）。
                 raise error(413, "too_large") from None
             # The authenticated key id, for views that want to log it.
+            # 通过认证的密钥编号，给需要记日志的视图使用。
             request.qqbot_api_key = signing.authenticate(request, body)
             data = _parse_json(body)
             return view(request, data, *args, **kwargs)
@@ -122,6 +143,7 @@ def api_endpoint(view):
 
 # --------------------------------------------------------------------------
 # field validation
+# 字段校验
 # --------------------------------------------------------------------------
 
 
@@ -144,6 +166,7 @@ def _active_group(value) -> QQGroup:
 
 
 # Longest invalid item echoed back as-is in a ``BAD_QQ`` result.
+# ``BAD_QQ`` 结果里能原样返回的无效项的最大长度。
 MAX_ECHO_LENGTH = 64
 
 
@@ -154,6 +177,12 @@ def _echo(value):
     (lone surrogates such as ``"\\ud800"`` that cannot be encoded as UTF-8,
     control characters, very long strings) comes back as ``None``, so one bad
     item can never break the response for the whole batch.
+
+    把 ``qqs`` 里的一个无效项转换成能放进 ``BAD_QQ`` 结果里返回的值。
+
+    整数和较短的可打印字符串原样返回。其他情况（例如无法编码成 UTF-8 的
+    单独代理字符 ``"\\ud800"``、控制字符、很长的字符串）都返回 ``None``，
+    这样一个坏项永远不会让整批请求的响应出错。
     """
     if _is_int(value):
         return value
@@ -172,6 +201,7 @@ def _decision(d: eligibility.Decision) -> dict:
 
 # --------------------------------------------------------------------------
 # endpoints (names must match auth_hooks.PUBLIC_VIEWS)
+# 接口（函数名必须与 auth_hooks.PUBLIC_VIEWS 一致）
 # --------------------------------------------------------------------------
 
 
@@ -215,6 +245,7 @@ def check(request, data):
     valid = [n for n in normalized if n]
     if full_roster and not valid:
         # An empty "complete" list would wipe the roster; almost surely a bug.
+        # 空的“完整”名单会把群成员名单清空，几乎肯定是 bug。
         raise bad_request("full_roster=true 时 qqs 必须是该群完整的成员名单，不能为空。")
 
     roster_result = None
