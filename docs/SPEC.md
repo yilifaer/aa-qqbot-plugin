@@ -7,7 +7,7 @@
 
 - 目标：AllianceAuth 5.2–5.x、Django 5.2、Python ≥ 3.10。
 - 测试：`python manage.py test qqbot`，设置在 `testauth/settings.py`。需要本机 Redis（`redis-server`），使用 DB 15。
-- 用户可见文字一律中文；代码、注释、标识符用英文。
+- 用户可见文字跟随用户的 AA 语言：代码和模板里写英文原文，简体中文在翻译文件里（见第 9 节）；代码、注释、标识符用英文。
 - 日志：`logger = get_extension_logger(__name__)`（来自 `allianceauth.services.hooks`）。INFO 及以上级别不记录完整 QQ 号，一律用 `mask_qq()`。
 - 时间一律用 `django.utils.timezone.now()`，需要可测试的函数接收可选参数 `now=None`。
 - QQ 号、群号一律经 `models.normalize_qq()` 规范化：纯 ASCII 数字，5–11 位，不以 0 开头。
@@ -213,3 +213,13 @@ def evaluate_many(groups, qqs, now=None, config=None) -> dict[str, dict[int, Dec
 4. 修改操作只接受 POST 并校验 CSRF（API 除外）。
 5. 不向成员（服务页卡片）泄露别人的 QQ 或角色信息。
 6. API 响应中不包含 AA 用户 id、角色 id 等内部标识。
+
+## 9. 界面语言（i18n）
+
+- 成员卡片、侧边栏菜单、管理页面、表单、提示信息和模型的显示名称都用标准的 Django i18n：模板 `{% load i18n %}` + `{% translate %}` / `{% blocktranslate %}`，Python 里 `gettext` / `gettext_lazy` / `ngettext` / `pgettext`。原文是英文，变量用命名占位符 `%(name)s`，不在 `gettext` 里用 f-string。
+- 中文翻译：`qqbot/locale/zh_Hans/LC_MESSAGES/django.po`，译文就是原来的中文界面文字；编译好的 `django.mo` 一起提交并随包发布（`pyproject.toml` 的 package-data 和 `MANIFEST.in`）。
+- 请求的语言由 AA 决定（Django 的 `LocaleMiddleware`：AA 语言菜单写的 cookie → 浏览器语言 → `LANGUAGE_CODE`）。qqbot 在这个基础上只分两种（`qqbot/i18n.py` 的 `ui_language`）：请求语言是任何中文（`zh-hans`、`zh-hant`、`zh-cn` 等）时显示简体中文，其他任何语言（英语、德语、俄语、韩语……）都显示英文。这样不会因为 Django 退回到站点 `LANGUAGE_CODE` 的翻译、或者借用 AA / Django 其他语言翻译里的通用词（"Save"、"Status"），出现中英文夹着别的语言的页面。
+- 实现：服务卡片（`QQBotService.render_services_ctrl`）和侧边栏入口（`QQBotMenuItem.render`）在 `qqbot.i18n.override()` 里渲染；管理和成员视图都加了 `@ui_language_view`，视图里生成的提示信息、表单错误和存给卡片的结果文字都用 qqbot 的界面语言；管理页面返回 `TemplateResponse`，按请求语言渲染，`qqbot/base.html` 用 `{% language %}` 切换自己的块，所以 AA 自己的菜单仍是用户的语言。后台（Django admin）不在此列，跟随用户语言。
+- 不翻译：机器人接口的 `message`（`qqbot/api/`、`core.bindings.claim`，没有用户语言，运维看中文）；成员和管理员填写的内容；`Config.DEFAULT_RULES`；权限名称（已经是英中双语）；系统检查信息和 `qqbot_reconcile` 命令（固定英中双语，英文在前）。
+- 改了界面文字后：在 `qqbot/` 目录运行 `python -m django makemessages -l zh_Hans --no-location`（`DJANGO_SETTINGS_MODULE=testauth.settings`，`PYTHONPATH` 指向仓库根目录），补全译文，再运行 `python -m django compilemessages`。
+- 测试设置用 `LANGUAGE_CODE = "zh-hans"`（大部分测试断言中文）。`qqbot/tests/test_i18n.py` 检查：翻译文件完整、`.mo` 与 `.po` 一致、翻译文件与代码同步（需要 GNU gettext）、英文页面没有来自模板或代码的中文、中文页面和以前一样、中文以外的语言显示纯英文（不夹杂其他语言）、菜单跟随语言、系统检查信息是双语，以及扫描源码：模板和 Python 字符串里不能直接写中文界面文字（注释、文档字符串和上面列出的例外除外）。

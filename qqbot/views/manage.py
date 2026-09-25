@@ -18,7 +18,10 @@ from django.contrib.auth.decorators import login_required, permission_required
 from django.core.paginator import Paginator
 from django.db import IntegrityError, transaction
 from django.db.models import Count, Q
-from django.shortcuts import get_object_or_404, redirect, render
+from django.shortcuts import get_object_or_404, redirect
+from django.template.response import TemplateResponse
+from django.utils.translation import gettext, pgettext, pgettext_lazy
+from django.utils.translation import gettext_lazy as _
 from django.views.decorators.http import require_http_methods, require_POST
 
 from allianceauth.services.hooks import get_extension_logger
@@ -26,6 +29,7 @@ from allianceauth.services.hooks import get_extension_logger
 from .. import tasks
 from ..core import audit, bindings, cards, eligibility, events
 from ..core.roster import fresh_roster_cutoff, unbound_roster
+from ..i18n import ui_language_view
 from ..models import AuditLog, Binding, Config, QQGroup, RosterEntry
 from .manage_forms import (
     AuditFilterForm,
@@ -41,20 +45,20 @@ MANAGE = "qqbot.manage"
 PAGE_SIZE = 50
 
 REASON_LABELS = {
-    eligibility.OK: "合格",
-    eligibility.NOT_BOUND: "未绑定",
-    eligibility.PENDING_VERIFY: "待验证",
-    eligibility.CONFLICT: "冲突",
-    eligibility.USER_INACTIVE: "账号已停用",
-    eligibility.NO_MAIN: "没有主角色",
-    eligibility.NO_ACCESS: "没有成员权限",
-    eligibility.GROUP_ROLE_MISSING: "不在要求的组",
-    eligibility.GROUP_MISCONFIGURED: "群配置有误",
+    eligibility.OK: _("Eligible"),
+    eligibility.NOT_BOUND: _("Not bound"),
+    eligibility.PENDING_VERIFY: pgettext_lazy("qqbot", "Pending"),
+    eligibility.CONFLICT: _("Conflict"),
+    eligibility.USER_INACTIVE: _("Account disabled"),
+    eligibility.NO_MAIN: _("No main character"),
+    eligibility.NO_ACCESS: _("No member access"),
+    eligibility.GROUP_ROLE_MISSING: _("Not in a required group"),
+    eligibility.GROUP_MISCONFIGURED: _("Group misconfigured"),
 }
 DECISION_LABELS = {
-    eligibility.ALLOW: "允许",
-    eligibility.DENY: "不允许",
-    eligibility.REVIEW: "需人工处理",
+    eligibility.ALLOW: _("Allow"),
+    eligibility.DENY: _("Deny"),
+    eligibility.REVIEW: _("Needs manual review"),
 }
 DECISION_BADGES = {
     eligibility.ALLOW: "text-bg-success",
@@ -114,8 +118,22 @@ def _message(request, result) -> None:
     if result.ok and result.outcome == "unchanged":
         level = messages.INFO
     messages.add_message(
-        request, level, result.message or ("操作完成。" if result.ok else "操作失败。")
+        request, level, result.message or (gettext("Done.") if result.ok else gettext("Failed."))
     )
+
+
+def _render(
+    request, template_name: str, context: dict, status: int | None = None
+) -> TemplateResponse:
+    """A page response, rendered after the view returns, in the request's
+    language (so AA's menus stay in it); ``qqbot/base.html`` renders qqbot's
+    blocks in qqbot's UI language. See ``qqbot.i18n``.
+
+    页面响应，在视图返回之后按请求的语言渲染（这样 AA 的菜单保持用户的
+    语言）；``qqbot/base.html`` 用 qqbot 的界面语言渲染 qqbot 自己的块。
+    见 ``qqbot.i18n``。
+    """
+    return TemplateResponse(request, template_name, context, status=status)
 
 
 def _back(request, default: str, **kwargs):
@@ -168,12 +186,14 @@ def _group_audit_detail(group: QQGroup) -> dict:
 
 @login_required
 @permission_required(MANAGE, raise_exception=True)
+@ui_language_view
 def index(request):
     return redirect("qqbot:manage_bindings")
 
 
 @login_required
 @permission_required(MANAGE, raise_exception=True)
+@ui_language_view
 def groups(request):
     qs = (
         QQGroup.objects.annotate(roster_count=Count("roster"))
@@ -189,7 +209,7 @@ def groups(request):
         }
         for g in qs
     ]
-    return render(request, "qqbot/manage/groups.html", _ctx("groups", rows=rows))
+    return _render(request, "qqbot/manage/groups.html", _ctx("groups", rows=rows))
 
 
 def _save_group(request, form, op: str):
@@ -210,7 +230,9 @@ def _save_group(request, form, op: str):
                 **_group_audit_detail(group),
             )
     except IntegrityError:
-        form.add_error("group_id", "这个群号已经添加过了，请不要重复添加。")
+        form.add_error(
+            "group_id", gettext("This group number has already been added; don't add it twice.")
+        )
         return None
     return group
 
@@ -218,14 +240,15 @@ def _save_group(request, form, op: str):
 @login_required
 @permission_required(MANAGE, raise_exception=True)
 @require_http_methods(["GET", "POST"])
+@ui_language_view
 def group_create(request):
     form = QQGroupForm(request.POST or None)
     if request.method == "POST" and form.is_valid():
         group = _save_group(request, form, "create")
         if group is not None:
-            messages.success(request, f"已添加群「{group.name}」。")
+            messages.success(request, gettext('Added group "%(name)s".') % {"name": group.name})
             return redirect("qqbot:manage_groups")
-    return render(
+    return _render(
         request, "qqbot/manage/group_form.html", _ctx("groups", form=form, group=None)
     )
 
@@ -233,18 +256,19 @@ def group_create(request):
 @login_required
 @permission_required(MANAGE, raise_exception=True)
 @require_http_methods(["GET", "POST"])
+@ui_language_view
 def group_edit(request, pk):
     group = get_object_or_404(QQGroup, pk=pk)
     form = QQGroupForm(request.POST or None, instance=group)
     if request.method == "POST" and form.is_valid():
         if not form.has_changed():
-            messages.info(request, "没有需要修改的内容。")
+            messages.info(request, gettext("Nothing to change."))
             return redirect("qqbot:manage_groups")
         group = _save_group(request, form, "update")
         if group is not None:
-            messages.success(request, f"已保存群「{group.name}」。")
+            messages.success(request, gettext('Saved group "%(name)s".') % {"name": group.name})
             return redirect("qqbot:manage_groups")
-    return render(
+    return _render(
         request, "qqbot/manage/group_form.html", _ctx("groups", form=form, group=group)
     )
 
@@ -252,6 +276,7 @@ def group_edit(request, pk):
 @login_required
 @permission_required(MANAGE, raise_exception=True)
 @require_http_methods(["GET", "POST"])
+@ui_language_view
 def group_delete(request, pk):
     group = get_object_or_404(QQGroup, pk=pk)
     if request.method == "POST":
@@ -261,9 +286,9 @@ def group_delete(request, pk):
             group.delete()
             events.emit_groups_changed()
             audit.log(AuditLog.Action.GROUP, actor=request.user, op="delete", **detail)
-        messages.success(request, f"已删除群「{name}」。")
+        messages.success(request, gettext('Deleted group "%(name)s".') % {"name": name})
         return redirect("qqbot:manage_groups")
-    return render(
+    return _render(
         request,
         "qqbot/manage/group_delete.html",
         _ctx("groups", group=group, roster_count=RosterEntry.objects.filter(group=group).count()),
@@ -278,6 +303,7 @@ def group_delete(request, pk):
 
 @login_required
 @permission_required(MANAGE, raise_exception=True)
+@ui_language_view
 def binding_list(request):
     form = BindingFilterForm(request.GET or None)
     qs = Binding.objects.select_related(*BINDING_RELATED).order_by("user__username", "pk")
@@ -325,7 +351,7 @@ def binding_list(request):
                 "group_total": len(groups_),
             }
         )
-    return render(
+    return _render(
         request,
         "qqbot/manage/bindings.html",
         _ctx("bindings", form=form, page=page, items=items, querystring=_querystring(request)),
@@ -377,14 +403,16 @@ def _binding_context(binding: Binding, card_form=None) -> dict:
 
 @login_required
 @permission_required(MANAGE, raise_exception=True)
+@ui_language_view
 def binding_detail(request, pk):
     binding = _get_binding(pk)
-    return render(request, "qqbot/manage/binding_detail.html", _binding_context(binding))
+    return _render(request, "qqbot/manage/binding_detail.html", _binding_context(binding))
 
 
 @login_required
 @permission_required(MANAGE, raise_exception=True)
 @require_POST
+@ui_language_view
 def binding_card(request, pk):
     binding = _get_binding(pk)
     if request.POST.get("action") == "clear":
@@ -397,7 +425,7 @@ def binding_card(request, pk):
             _message(request, result)
             return redirect("qqbot:manage_binding", pk=binding.pk)
         form.add_error("card", result.message)
-    return render(
+    return _render(
         request,
         "qqbot/manage/binding_detail.html",
         _binding_context(binding, card_form=form),
@@ -408,6 +436,7 @@ def binding_card(request, pk):
 @login_required
 @permission_required(MANAGE, raise_exception=True)
 @require_POST
+@ui_language_view
 def binding_confirm(request, pk):
     binding = _get_binding(pk)
     # The QQ shown on the page: a member may have rebound (same pk) since.
@@ -420,6 +449,7 @@ def binding_confirm(request, pk):
 @login_required
 @permission_required(MANAGE, raise_exception=True)
 @require_http_methods(["GET", "POST"])
+@ui_language_view
 def binding_unbind(request, pk):
     binding = _get_binding(pk)
     if request.method == "POST":
@@ -432,7 +462,7 @@ def binding_unbind(request, pk):
             return redirect("qqbot:manage_binding", pk=binding.pk)
         return _back(request, "qqbot:manage_bindings")
     back = request.GET.get("back", "")
-    return render(
+    return _render(
         request,
         "qqbot/manage/binding_unbind.html",
         _ctx(
@@ -452,6 +482,7 @@ def binding_unbind(request, pk):
 
 @login_required
 @permission_required(MANAGE, raise_exception=True)
+@ui_language_view
 def pending(request):
     config = Config.get_solo()
     conflict_rows = [
@@ -479,7 +510,7 @@ def pending(request):
         .filter(Q(last_roster_at__isnull=True) | Q(last_roster_at__lt=cutoff))
         .order_by("kind", "sort_order", "name")
     )
-    return render(
+    return _render(
         request,
         "qqbot/manage/pending.html",
         _ctx(
@@ -505,6 +536,7 @@ _CONFIG_SHORT_FIELDS = ("card_format", "code_ttl_minutes", "roster_max_age_days"
 @login_required
 @permission_required(MANAGE, raise_exception=True)
 @require_http_methods(["GET", "POST"])
+@ui_language_view
 def settings_view(request):
     config = Config.get_solo()
     before = {f: getattr(config, f) for f in _CONFIG_SHORT_FIELDS}
@@ -512,7 +544,7 @@ def settings_view(request):
     if request.method == "POST" and form.is_valid():
         changed = list(form.changed_data)
         if not changed:
-            messages.info(request, "没有需要修改的内容。")
+            messages.info(request, gettext("Nothing to change."))
             return redirect("qqbot:manage_settings")
         with transaction.atomic():
             config = form.save()
@@ -528,18 +560,24 @@ def settings_view(request):
                 # （连不上 broker 时直接在当前请求里执行）。
                 transaction.on_commit(tasks.queue_reconcile)
         if "card_format" in changed:
-            messages.success(request, "设置已保存。群名片格式已修改，所有人的群名片会在后台重新计算。")
+            messages.success(
+                request,
+                gettext(
+                    "Settings saved. The group nickname format changed; everyone's group "
+                    "nickname will be recalculated in the background."
+                ),
+            )
         else:
-            messages.success(request, "设置已保存。")
+            messages.success(request, gettext("Settings saved."))
         return redirect("qqbot:manage_settings")
-    return render(
+    return _render(
         request,
         "qqbot/manage/settings.html",
         _ctx(
             "settings",
             form=form,
             placeholders=cards.PLACEHOLDERS,
-            example_card=cards.preview_card(request.user, "昵称", config),
+            example_card=cards.preview_card(request.user, gettext("Nickname"), config),
         ),
     )
 
@@ -550,66 +588,69 @@ def settings_view(request):
 # --------------------------------------------------------------------------
 
 
-# Chinese labels for the keys and well-known values in AuditLog.detail.
-# AuditLog.detail 里的键名和常见取值对应的中文显示文字。
+# Display labels for the keys and well-known values in AuditLog.detail
+# (translated lazily, per request language).
+# AuditLog.detail 里的键名和常见取值对应的显示文字（按请求语言延迟翻译）。
 DETAIL_KEY_LABELS = {
-    "op": "操作",
-    "changed": "修改了",
-    "group_id": "群号",
-    "name": "群名称",
-    "kind": "类型",
-    "required_groups": "需要的 AA 组",
-    "description": "说明",
-    "sort_order": "排序",
-    "is_active": "启用",
-    "status": "状态",
-    "previous_status": "原来的状态",
-    "old": "原来",
-    "new": "改为",
-    "old_qq": "原来的 QQ",
-    "others": "其他认领的账号",
-    "reason": "原因",
-    "winner": "胜出的账号",
-    "via": "方式",
-    "expires_at": "有效期到",
-    "applicant_qq": "申请人 QQ",
-    "rules_text": "入群须知",
-    "card_format": "群名片格式",
-    "code_ttl_minutes": "验证码有效期（分钟）",
-    "roster_max_age_days": "群成员名单有效期（天）",
-    "rebind_cooldown_hours": "换绑冷却（小时）",
+    "op": _("Action"),
+    "changed": _("Changed"),
+    "group_id": _("Group number"),
+    "name": _("Group name"),
+    "kind": _("Type"),
+    "required_groups": _("Required AA groups"),
+    "description": pgettext_lazy("qqbot", "Description"),
+    "sort_order": _("Sort order"),
+    "is_active": _("Enabled"),
+    "status": _("Status"),
+    "previous_status": _("Previous status"),
+    "old": _("Old"),
+    "new": _("New"),
+    "old_qq": _("Previous QQ"),
+    "others": _("Other claiming accounts"),
+    "reason": _("Reason"),
+    "winner": _("Winning account"),
+    "via": _("Method"),
+    "expires_at": _("Expires at"),
+    "applicant_qq": _("Applicant QQ"),
+    "rules_text": _("Group rules"),
+    "card_format": _("Group nickname format"),
+    "code_ttl_minutes": _("Verification code lifetime (minutes)"),
+    "roster_max_age_days": _("Member list max age (days)"),
+    "rebind_cooldown_hours": _("Change QQ cooldown (hours)"),
 }
 DETAIL_VALUE_LABELS = {
-    "create": "新增",
-    "update": "修改",
-    "delete": "删除",
-    "fixed": "固定群",
-    "role": "身份组小群",
-    "verified": "已验证",
-    "trusted": "老成员免验证",
-    "code": "验证码",
-    "manager": "管理员确认",
-    "conflict": "冲突",
-    "takeover": "被验证码接管",
-    "qq_mismatch": "申请人 QQ 不一致",
+    "create": _("Created"),
+    "update": _("Updated"),
+    "delete": _("Deleted"),
+    "fixed": _("Fixed group"),
+    "role": _("Role group"),
+    "verified": _("Verified"),
+    "trusted": _("Trusted (already in group)"),
+    "code": _("Verification code"),
+    "manager": _("Confirmed by manager"),
+    "conflict": _("Conflict"),
+    "takeover": _("Taken over by verification code"),
+    "qq_mismatch": _("Applicant QQ mismatch"),
 }
 
 
 def _detail_text(value) -> str:
     if isinstance(value, dict):
-        return "，".join(
-            f"{DETAIL_KEY_LABELS.get(k, k)} {_detail_text(v)}" for k, v in value.items()
+        return pgettext("separator between clauses", ", ").join(
+            pgettext("audit detail: label and value", "%(label)s: %(value)s")
+            % {"label": DETAIL_KEY_LABELS.get(k, k), "value": _detail_text(v)}
+            for k, v in value.items()
         )
     if isinstance(value, (list, tuple)):
-        return "、".join(_detail_text(v) for v in value) or "—"
+        return pgettext("list separator", ", ").join(_detail_text(v) for v in value) or "—"
     if value is None or value == "":
         return "—"
     if value is True:
-        return "是"
+        return pgettext("qqbot", "Yes")
     if value is False:
-        return "否"
+        return pgettext("qqbot", "No")
     if isinstance(value, str):
-        return DETAIL_VALUE_LABELS.get(value, DETAIL_KEY_LABELS.get(value, value))
+        return str(DETAIL_VALUE_LABELS.get(value, DETAIL_KEY_LABELS.get(value, value)))
     return str(value)
 
 
@@ -617,13 +658,14 @@ def _audit_row(entry: AuditLog) -> dict:
     detail = entry.detail if isinstance(entry.detail, dict) else {"detail": entry.detail}
     return {
         "entry": entry,
-        "actor": entry.actor_name or "机器人 / 系统",
+        "actor": entry.actor_name or gettext("Bot / system"),
         "details": [(DETAIL_KEY_LABELS.get(k, k), _detail_text(v)) for k, v in detail.items()],
     }
 
 
 @login_required
 @permission_required(MANAGE, raise_exception=True)
+@ui_language_view
 def audit_list(request):
     form = AuditFilterForm(request.GET or None)
     qs = AuditLog.objects.order_by("-id")
@@ -635,7 +677,7 @@ def audit_list(request):
     elif form.is_bound:
         qs = qs.none()
     page = _page(request, qs)
-    return render(
+    return _render(
         request,
         "qqbot/manage/audit.html",
         _ctx(

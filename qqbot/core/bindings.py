@@ -20,6 +20,7 @@ from django.db import IntegrityError, transaction
 from django.db.models import Count, Q
 from django.utils import timezone
 from django.utils.dateparse import parse_datetime
+from django.utils.translation import gettext, gettext_lazy, ngettext
 
 from allianceauth.services.hooks import get_extension_logger
 
@@ -38,8 +39,15 @@ CODE_RATE_WINDOW = 3600  # ... per this many seconds / ……在这么多秒之�
 # 每个用户在每个时间窗口内，免验证码（老成员免验证）绑定或换 QQ 的次数上限
 TRUSTED_RATE_LIMIT = 5  # code-free (trusted) binds / QQ changes per user per window
 
-MSG_TAKEN = "该 QQ 已被绑定，如有疑问请联系 QQ 管理员。"
-MSG_QQ_CHANGED = "这个成员的 QQ 刚刚变了，页面上的信息已经过时。请重新打开页面核对后再操作。"
+# Lazy: translated into the language of the request that shows them.
+# 惰性翻译：显示时才按当前请求的语言翻译。
+MSG_TAKEN = gettext_lazy(
+    "This QQ is already bound. If you have questions, contact a QQ admin."
+)
+MSG_QQ_CHANGED = gettext_lazy(
+    "This member's QQ has just changed, so this page is out of date. "
+    "Reopen the page and check again before you continue."
+)
 
 
 def _qq_changed(binding, expected_qq) -> bool:
@@ -102,11 +110,13 @@ def format_remaining(delta: timedelta) -> str:
     """
     minutes = max(1, int((delta.total_seconds() + 59) // 60))
     hours, minutes = divmod(minutes, 60)
+    hours_text = ngettext("%(count)d hour", "%(count)d hours", hours) % {"count": hours}
+    minutes_text = ngettext("%(count)d minute", "%(count)d minutes", minutes) % {"count": minutes}
     if hours and minutes:
-        return f"{hours} 小时 {minutes} 分钟"
+        return f"{hours_text} {minutes_text}"
     if hours:
-        return f"{hours} 小时"
-    return f"{minutes} 分钟"
+        return hours_text
+    return minutes_text
 
 
 def _count(key: str, limit: int) -> bool:
@@ -242,7 +252,10 @@ def submit(user, qq, nickname, now=None) -> SubmitResult:
     now = now or timezone.now()
     qq_n = normalize_qq(qq)
     if not qq_n:
-        return SubmitResult(False, "invalid", "请输入正确的 QQ 号（5–11 位数字，不能以 0 开头）。")
+        return SubmitResult(
+            False, "invalid",
+            gettext("Enter a valid QQ number (5–11 digits, not starting with 0)."),
+        )
     try:
         nickname = validate_nickname(nickname)
     except ValidationError as exc:
@@ -257,19 +270,21 @@ def submit(user, qq, nickname, now=None) -> SubmitResult:
         # 和当前绑定的 QQ 相同：只有昵称可能变化。
         if existing is not None and existing.qq == qq_n:
             if existing.nickname == nickname:
-                return SubmitResult(True, "unchanged", "没有需要修改的内容。", binding=existing)
+                return SubmitResult(True, "unchanged", gettext("Nothing to change."), binding=existing)
             old_nickname = existing.nickname
             existing.nickname = nickname
             existing.save(update_fields=["nickname", "updated_at"])
             audit.log(Action.NICKNAME, actor=user, qq=qq_n, target_user=user,
                       old=old_nickname, new=nickname)
             _card_event(existing, events.refresh_kinds(existing))
-            return SubmitResult(True, "nickname_updated", "昵称已更新。", binding=existing)
+            return SubmitResult(
+                True, "nickname_updated", gettext("Nickname updated."), binding=existing
+            )
 
         if Binding.objects.filter(qq=qq_n, status=Binding.Status.VERIFIED).exclude(
             user_id=user.pk
         ).exists():
-            return SubmitResult(False, "taken", MSG_TAKEN)
+            return SubmitResult(False, "taken", str(MSG_TAKEN))
 
         cooldown = timedelta(hours=config.rebind_cooldown_hours)
         changed_at = _last_qq_change(user, existing, qq_n, cooldown, now) if cooldown else None
@@ -280,7 +295,8 @@ def submit(user, qq, nickname, now=None) -> SubmitResult:
                 return SubmitResult(
                     False,
                     "cooldown",
-                    f"换绑太频繁，请在 {format_remaining(remaining)}后再试。",
+                    gettext("You changed your QQ too recently. Try again in %(time)s.")
+                    % {"time": format_remaining(remaining)},
                     retry_after=remaining,
                 )
 
@@ -288,7 +304,10 @@ def submit(user, qq, nickname, now=None) -> SubmitResult:
             if _trusted_rate_limited(user):
                 return SubmitResult(
                     False, "rate_limited",
-                    f"绑定或换绑太频繁（每小时最多 {TRUSTED_RATE_LIMIT} 次），请稍后再试。",
+                    gettext(
+                        "Too many binds or QQ changes (at most %(limit)d per hour). "
+                        "Please try again later."
+                    ) % {"limit": TRUSTED_RATE_LIMIT},
                 )
             return _submit_trusted(user, existing, qq_n, nickname, now)
 
@@ -296,7 +315,11 @@ def submit(user, qq, nickname, now=None) -> SubmitResult:
         # 待验证：在验证码被使用之前，当前绑定保持不变。
         if _rate_limited(user):
             return SubmitResult(
-                False, "rate_limited", f"生成验证码太频繁（每小时最多 {CODE_RATE_LIMIT} 次），请稍后再试。"
+                False, "rate_limited",
+                gettext(
+                    "Too many verification codes requested (at most %(limit)d per hour). "
+                    "Please try again later."
+                ) % {"limit": CODE_RATE_LIMIT},
             )
         _invalidate_codes(user, now)
         expires_at = now + timedelta(minutes=config.code_ttl_minutes)
@@ -321,7 +344,10 @@ def submit(user, qq, nickname, now=None) -> SubmitResult:
         return SubmitResult(
             True,
             "pending",
-            "请在有效期内申请加入 QQ 群，并在「验证信息」里填写验证码。",
+            gettext(
+                "Before the code expires, request to join a QQ group and enter the "
+                "verification code as the verification message."
+            ),
             binding=existing,
             code=code,
             expires_at=expires_at,
@@ -373,10 +399,12 @@ def _submit_trusted(user, existing, qq_n, nickname, now) -> SubmitResult:
         return SubmitResult(
             True,
             "conflict",
-            "这个 QQ 同时被其他账号认领，请联系 QQ 管理员处理。",
+            gettext("Another account has also claimed this QQ. Please contact a QQ admin."),
             binding=binding,
         )
-    return SubmitResult(True, "trusted", "绑定成功（老成员免验证）。", binding=binding)
+    return SubmitResult(
+        True, "trusted", gettext("Bound (trusted: already in group)."), binding=binding
+    )
 
 
 def live_code(user, now=None) -> BindCode | None:
@@ -399,6 +427,9 @@ def cancel_code(user, now=None) -> int:
 # claim (bot API)
 # claim：机器人上报验证码（机器人 API）
 # --------------------------------------------------------------------------
+# The messages here go to the bot API (read by ops in Chinese), so they are
+# not translated.
+# 这里的提示文字返回给机器人接口（运维看中文），所以不做翻译。
 
 
 def claim(qq, text, now=None) -> ClaimResult:
@@ -524,19 +555,22 @@ def confirm(binding, actor, expected_qq=None) -> Result:
     with transaction.atomic():
         user_id = Binding.objects.filter(pk=binding.pk).values_list("user_id", flat=True).first()
         if user_id is None:
-            return Result(False, "not_found", "绑定不存在。")
+            return Result(False, "not_found", gettext("Binding not found."))
         _lock_user_and_qqs(user_id)
         binding = Binding.objects.select_for_update().filter(pk=binding.pk).first()
         if binding is None:
-            return Result(False, "not_found", "绑定不存在。")
+            return Result(False, "not_found", gettext("Binding not found."))
         if _qq_changed(binding, expected_qq):
-            return Result(False, "qq_changed", MSG_QQ_CHANGED)
+            return Result(False, "qq_changed", str(MSG_QQ_CHANGED))
         if binding.status == Binding.Status.VERIFIED:
-            return Result(True, "unchanged", "该绑定已经是已验证状态。")
+            return Result(True, "unchanged", gettext("This binding is already verified."))
         if Binding.objects.filter(qq=binding.qq, status=Binding.Status.VERIFIED).exclude(
             pk=binding.pk
         ).exists():
-            return Result(False, "taken", "该 QQ 已被其他账号验证，不能确认。")
+            return Result(
+                False, "taken",
+                gettext("This QQ is already verified by another account and cannot be confirmed."),
+            )
         for other in (
             Binding.objects.select_for_update()
             .filter(qq=binding.qq, status=Binding.Status.TRUSTED)
@@ -559,7 +593,7 @@ def confirm(binding, actor, expected_qq=None) -> Result:
         binding.save(update_fields=["status", "verified_via", "verified_at", "updated_at"])
         audit.log(Action.CONFIRM, actor=actor, qq=binding.qq, target_user=binding.user)
         events.refresh_binding(binding)
-        return Result(True, "confirmed", "已确认绑定。")
+        return Result(True, "confirmed", gettext("Binding confirmed."))
 
 
 def unbind(user, actor=None, forced=False, expected_qq=None) -> Result:
@@ -578,10 +612,10 @@ def unbind(user, actor=None, forced=False, expected_qq=None) -> Result:
         _lock_user_and_qqs(user.pk)
         binding = _user_binding_for_update(user)
         if binding is not None and _qq_changed(binding, expected_qq):
-            return Result(False, "qq_changed", MSG_QQ_CHANGED)
+            return Result(False, "qq_changed", str(MSG_QQ_CHANGED))
         _invalidate_codes(user, now)
         if binding is None:
-            return Result(False, "not_bound", "没有绑定 QQ。")
+            return Result(False, "not_bound", gettext("No QQ is bound."))
         qq = binding.qq
         status = binding.status
         changed_at = binding.qq_changed_at
@@ -600,7 +634,7 @@ def unbind(user, actor=None, forced=False, expected_qq=None) -> Result:
         )
         events.refresh_qq(qq)
         logger.info("qqbot: %s unbound %s", user, mask_qq(qq))
-        return Result(True, "unbound", "已解除绑定。")
+        return Result(True, "unbound", gettext("Unbound."))
 
 
 def set_nickname(user, nickname) -> Result:
@@ -612,16 +646,16 @@ def set_nickname(user, nickname) -> Result:
         locks.lock_user(user.pk)
         binding = _user_binding_for_update(user)
         if binding is None:
-            return Result(False, "not_bound", "没有绑定 QQ。")
+            return Result(False, "not_bound", gettext("No QQ is bound."))
         if binding.nickname == nickname:
-            return Result(True, "unchanged", "没有需要修改的内容。")
+            return Result(True, "unchanged", gettext("Nothing to change."))
         old = binding.nickname
         binding.nickname = nickname
         binding.save(update_fields=["nickname", "updated_at"])
         audit.log(Action.NICKNAME, actor=user, qq=binding.qq, target_user=user,
                   old=old, new=nickname)
         events.refresh_binding(binding)
-        return Result(True, "nickname_updated", "昵称已更新。")
+        return Result(True, "nickname_updated", gettext("Nickname updated."))
 
 
 def set_card_override(binding, card, actor) -> Result:
@@ -632,26 +666,31 @@ def set_card_override(binding, card, actor) -> Result:
     card = clean_card(card or "")
     if byte_length(card) > CARD_MAX_BYTES:
         return Result(
-            False, "invalid", f"群名片太长：最多 {CARD_MAX_BYTES} 字节（一个汉字占 3 字节）。"
+            False, "invalid",
+            gettext(
+                "Group nickname is too long: at most %(max)d bytes "
+                "(a Chinese character takes 3 bytes)."
+            ) % {"max": CARD_MAX_BYTES},
         )
     with transaction.atomic():
         user_id = Binding.objects.filter(pk=binding.pk).values_list("user_id", flat=True).first()
         if user_id is None:
-            return Result(False, "not_found", "绑定不存在。")
+            return Result(False, "not_found", gettext("Binding not found."))
         locks.lock_user(user_id)
         binding = Binding.objects.select_for_update().filter(pk=binding.pk).first()
         if binding is None:
-            return Result(False, "not_found", "绑定不存在。")
+            return Result(False, "not_found", gettext("Binding not found."))
         if binding.card_override == card:
-            return Result(True, "unchanged", "没有需要修改的内容。")
+            return Result(True, "unchanged", gettext("Nothing to change."))
         old = binding.card_override
         binding.card_override = card
         binding.save(update_fields=["card_override", "updated_at"])
         audit.log(Action.CARD, actor=actor, qq=binding.qq, target_user=binding.user,
                   old=old, new=card)
         events.refresh_binding(binding)
-        return Result(True, "card_cleared" if not card else "card_set",
-                      "已恢复自动群名片。" if not card else "群名片已设置。")
+        if not card:
+            return Result(True, "card_cleared", gettext("Automatic group nickname restored."))
+        return Result(True, "card_set", gettext("Group nickname set."))
 
 
 def conflicts() -> list[tuple[str, list[Binding]]]:

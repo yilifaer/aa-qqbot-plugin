@@ -16,6 +16,7 @@ Django 后台（见 docs/SPEC.md 第 7 节）。
 
 from django.contrib import admin
 from django.db import transaction
+from django.utils.translation import pgettext_lazy
 
 from .core import audit, events
 from .models import AuditLog, Binding, Config, QQGroup
@@ -120,7 +121,7 @@ class BindingAdmin(_ReadOnlyAdmin):
     ordering = ("-updated_at",)
     exclude = ("fingerprint",)
 
-    @admin.display(description="主角色")
+    @admin.display(description=pgettext_lazy("qqbot", "Main character"))
     def main_character(self, obj):
         profile = getattr(obj.user, "profile", None)
         char = getattr(profile, "main_character", None)

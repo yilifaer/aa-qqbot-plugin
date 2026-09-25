@@ -1,7 +1,9 @@
+from django.utils.translation import gettext_lazy
+
 from allianceauth import hooks
 from allianceauth.services.hooks import MenuItemHook, UrlHook
 
-from . import urls
+from . import i18n, urls
 from .service_hook import QQBotService
 
 # Views reachable without an AA login. They authenticate with an HMAC
@@ -31,7 +33,7 @@ class QQBotMenuItem(MenuItemHook):
 
     def __init__(self):
         super().__init__(
-            "QQ 管理",
+            gettext_lazy("QQ Admin"),
             "fa-brands fa-qq",
             "qqbot:manage_index",
             navactive=["qqbot:"],
@@ -39,7 +41,9 @@ class QQBotMenuItem(MenuItemHook):
 
     def render(self, request):
         if request.user.has_perm("qqbot.manage"):
-            return MenuItemHook.render(self, request)
+            # qqbot's UI language (``qqbot.i18n``) / qqbot 的界面语言
+            with i18n.override():
+                return MenuItemHook.render(self, request)
         return ""
 
 

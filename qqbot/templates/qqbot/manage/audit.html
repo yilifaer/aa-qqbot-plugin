@@ -1,17 +1,18 @@
 {% extends "qqbot/manage/_base.html" %}
+{% load i18n %}
 
-{% block qqbot_title %}操作记录 - QQ 管理{% endblock qqbot_title %}
+{% block qqbot_title %}{% translate "Audit log" %} - {% translate "QQ Admin" %}{% endblock qqbot_title %}
 
 {% block manage_body %}
     <form method="get" class="row g-2 align-items-end mb-3">
         <div class="col-12 col-md-4">
-            <label class="form-label" for="id_qq">QQ 号</label>
+            <label class="form-label" for="id_qq">{% translate "QQ number" %}</label>
             <input type="text" name="qq" id="id_qq" inputmode="numeric" class="form-control {% if form.qq.errors %}is-invalid{% endif %}"
-                   value="{{ form.qq.value|default_if_none:'' }}" placeholder="只看这个 QQ 的记录">
+                   value="{{ form.qq.value|default_if_none:'' }}" placeholder="{% translate "Only records for this QQ" %}">
             {% for error in form.qq.errors %}<div class="invalid-feedback">{{ error }}</div>{% endfor %}
         </div>
         <div class="col-12 col-md-4">
-            <label class="form-label" for="id_action">操作</label>
+            <label class="form-label" for="id_action">{% translate "Action" %}</label>
             <select name="action" id="id_action" class="form-select">
                 {% for value, label in form.fields.action.choices %}
                     <option value="{{ value }}" {% if form.action.value == value %}selected{% endif %}>{{ label }}</option>
@@ -19,16 +20,16 @@
             </select>
         </div>
         <div class="col-12 col-md-4 d-flex gap-2">
-            <button type="submit" class="btn btn-primary flex-fill"><i class="fa-solid fa-magnifying-glass fa-fw"></i> 筛选</button>
-            <a class="btn btn-info" href="{% url 'qqbot:manage_audit' %}">清除</a>
+            <button type="submit" class="btn btn-primary flex-fill"><i class="fa-solid fa-magnifying-glass fa-fw"></i> {% translate "Filter" context "qqbot" %}</button>
+            <a class="btn btn-info" href="{% url 'qqbot:manage_audit' %}">{% translate "Clear" %}</a>
         </div>
     </form>
 
     {% if rows %}
-        <p class="text-body-secondary small">共 {{ page.paginator.count }} 条记录。</p>
+        <p class="text-body-secondary small">{% blocktranslate count counter=page.paginator.count %}{{ counter }} record in total.{% plural %}{{ counter }} records in total.{% endblocktranslate %}</p>
         {% include "qqbot/manage/_history.html" with show_qq=True %}
         {% include "qqbot/manage/_pagination.html" %}
     {% elif not form.errors %}
-        <div class="alert alert-info">没有找到操作记录。</div>
+        <div class="alert alert-info">{% translate "No audit records found." %}</div>
     {% endif %}
 {% endblock manage_body %}

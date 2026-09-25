@@ -3,10 +3,11 @@ Binding status badge. Context: b (Binding), conflict (bool), shadowed (bool).
 
 绑定状态徽章。上下文：b（Binding）、conflict（bool）、shadowed（bool）。
 {% endcomment %}
+{% load i18n %}
 {% if b.status == 'verified' %}
-    <span class="badge text-bg-success">已验证</span>
+    <span class="badge text-bg-success">{% translate "Verified" %}</span>
 {% else %}
-    <span class="badge text-bg-info">老成员免验证</span>
+    <span class="badge text-bg-info">{% translate "Trusted (already in group)" %}</span>
 {% endif %}
-{% if conflict %}<span class="badge text-bg-danger">冲突</span>{% endif %}
-{% if shadowed %}<span class="badge text-bg-warning">此 QQ 已被别人验证</span>{% endif %}
+{% if conflict %}<span class="badge text-bg-danger">{% translate "Conflict" %}</span>{% endif %}
+{% if shadowed %}<span class="badge text-bg-warning">{% translate "This QQ is verified by someone else" %}</span>{% endif %}

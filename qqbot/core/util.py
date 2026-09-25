@@ -6,6 +6,7 @@ core 各模块共用的小工具函数。
 import re
 
 from django.core.exceptions import ValidationError
+from django.utils.translation import gettext
 
 NICKNAME_MAX_LENGTH = 12
 
@@ -42,14 +43,21 @@ def validate_nickname(s) -> str:
     if s is None:
         s = ""
     if not isinstance(s, str):
-        raise ValidationError("昵称格式不正确。")
+        raise ValidationError(gettext("Invalid nickname."))
     s = s.strip()
     if not s:
-        raise ValidationError("请填写昵称。")
+        raise ValidationError(gettext("Please enter a nickname."))
     if len(s) > NICKNAME_MAX_LENGTH:
-        raise ValidationError(f"昵称最长 {NICKNAME_MAX_LENGTH} 个字。")
+        raise ValidationError(
+            gettext("Nickname can be at most %(max)d characters.") % {"max": NICKNAME_MAX_LENGTH}
+        )
     if "  " in s:
-        raise ValidationError("昵称中不能有连续的空格。")
+        raise ValidationError(gettext("Nickname cannot contain two spaces in a row."))
     if not _NICKNAME_RE.match(s):
-        raise ValidationError("昵称只能包含中文、英文字母、数字、空格和 _ - . · ( )。")
+        raise ValidationError(
+            gettext(
+                "Nickname can only contain Chinese characters, letters, digits, spaces "
+                "and _ - . · ( )."
+            )
+        )
     return s

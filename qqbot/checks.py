@@ -99,49 +99,87 @@ def problems() -> list[str]:
 
 
 def _messages() -> dict:
+    """Check messages and hints, English first, then the Chinese text.
+
+    Plain strings, not gettext: ``manage.py check`` runs in English, and the
+    Chinese part is kept for the Chinese docs and operators.
+
+    检查信息和提示：先英文，后中文。
+
+    这里不用 gettext：``manage.py check`` 按英文运行，中文部分留给中文文档
+    和中文运维看。
+    """
     min_len = app_settings.QQBOT_MIN_SECRET_LENGTH
     return {
         E001: Error(
+            '"qqbot" is not in APPS_WITH_PUBLIC_VIEWS, so the bot API is redirected to the '
+            "login page and the bot cannot work.\n"
             "APPS_WITH_PUBLIC_VIEWS 里没有 \"qqbot\"，机器人接口会被重定向到登录页，机器人无法工作。",
             hint=(
+                'Add APPS_WITH_PUBLIC_VIEWS += ["qqbot"] to local.py. '
+                "Use += to append, not = to replace, or other apps' public pages stop working.\n"
                 '在 local.py 里写 APPS_WITH_PUBLIC_VIEWS += ["qqbot"]。'
                 "请用 += 追加，不要用 = 覆盖，否则别的插件的公开页面会失效。"
             ),
             id=E001,
         ),
         E002: Error(
+            "QQBOT_API_KEYS is not set (or is not a dict), so the bot API always answers 503.\n"
             "QQBOT_API_KEYS 没有配置（或者不是字典），机器人接口会一直返回 503。",
             hint=(
+                'Add QQBOT_API_KEYS = {"koishi-1": "<secret>"} to local.py. '
+                'Generate a secret with: python -c "import secrets; print(secrets.token_urlsafe(48))"\n'
                 '在 local.py 里写 QQBOT_API_KEYS = {"koishi-1": "<密钥>"}。'
                 '密钥这样生成：python -c "import secrets; print(secrets.token_urlsafe(48))"'
             ),
             id=E002,
         ),
         E003: Error(
+            f"A secret in QQBOT_API_KEYS is too short (fewer than {min_len} characters).\n"
             f"QQBOT_API_KEYS 里有密钥太短（少于 {min_len} 个字符）。",
             hint=(
+                "Generate a new secret: python -c \"import secrets; print(secrets.token_urlsafe(48))\", "
+                "then change it on the bot side too.\n"
                 "请重新生成密钥：python -c \"import secrets; print(secrets.token_urlsafe(48))\"，"
                 "然后在机器人那边同步修改。"
             ),
             id=E003,
         ),
         E004: Error(
+            "A key id (dict key) in QQBOT_API_KEYS has an invalid format, so the bot's requests "
+            "with it are always rejected (missing_headers).\n"
             "QQBOT_API_KEYS 里有密钥编号（字典的键）格式不对，机器人用它发的请求会一直被拒绝（missing_headers）。",
             hint=(
+                "Key ids may only use ASCII letters, digits and symbols such as - _ . (no spaces, "
+                'no Chinese), at most 64 characters, e.g. "koishi-1". '
+                "After fixing it, change it on the bot side too.\n"
                 "密钥编号只能用英文字母、数字和 - _ . 等符号，不能有空格或中文，最长 64 个字符，"
                 '例如 "koishi-1"。改好后在机器人那边同步修改。'
             ),
             id=E004,
         ),
         W001: CheckWarning(
+            "The default cache is not shared between processes (like Redis is), so the bot API's "
+            "replay protection and rate limits do not work across processes.\n"
             "默认缓存不是 Redis 这类多进程共享的缓存，机器人接口的防重放和限速在多个进程之间不起作用。",
-            hint="Alliance Auth 默认使用 Redis 缓存，请检查 local.py 里是否覆盖了 CACHES。",
+            hint=(
+                "Alliance Auth uses a Redis cache by default; check whether local.py overrides "
+                "CACHES.\n"
+                "Alliance Auth 默认使用 Redis 缓存，请检查 local.py 里是否覆盖了 CACHES。"
+            ),
             id=W001,
         ),
         W002: CheckWarning(
+            "The daily reconcile task qqbot.tasks.reconcile is not in CELERYBEAT_SCHEDULE, so the "
+            "regular recheck of eligibility and group nicknames and the cleanup of old data "
+            "never run automatically.\n"
             "CELERYBEAT_SCHEDULE 里没有每日对账任务 qqbot.tasks.reconcile，"
             "资格和群名片的定期复查、旧数据清理都不会自动运行。",
             hint=(
+                'Add CELERYBEAT_SCHEDULE["qqbot_reconcile"] = '
+                '{"task": "qqbot.tasks.reconcile", "schedule": crontab(minute="17", hour="4")} '
+                "to local.py (see README). "
+                'If you added it by hand under "Periodic tasks" in the admin, ignore this warning.\n'
                 'local.py 里加上 CELERYBEAT_SCHEDULE["qqbot_reconcile"] = '
                 '{"task": "qqbot.tasks.reconcile", "schedule": crontab(minute="17", hour="4")}（见 README）。'
                 "如果是在后台「Periodic tasks」里手动添加的，可以忽略这条提示。"

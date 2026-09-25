@@ -1,3 +1,4 @@
+{% load i18n %}
 {% comment %}
 The group rules (Config.rules_text) as small muted text at the bottom of the
 services card. External text: escaped, newlines become <br>.
@@ -8,7 +9,7 @@ services card. External text: escaped, newlines become <br>.
 {% if rules_text %}
     <hr>
     <div class="small text-body-secondary" id="qqbot-rules">
-        <div class="fw-bold mb-1">入群须知</div>
+        <div class="fw-bold mb-1">{% translate "Group rules" %}</div>
         {{ rules_text|linebreaksbr }}
     </div>
 {% endif %}

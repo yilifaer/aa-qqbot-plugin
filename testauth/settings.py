@@ -17,6 +17,11 @@ CSRF_TRUSTED_ORIGINS = [SITE_URL]
 INSTALLED_APPS += ["qqbot"]  # noqa: F405
 APPS_WITH_PUBLIC_VIEWS = ["qqbot"]
 
+# The UI follows the user's AA language (English msgids, zh_Hans catalog).
+# Most existing tests assert the Chinese texts, so the suite runs with
+# Simplified Chinese as the default language; test_i18n.py covers English.
+LANGUAGE_CODE = "zh-hans"
+
 QQBOT_API_KEYS = {"test": "test-secret-0123456789abcdefghijklmnopqrstuvwxyz"}
 
 # Same entry as README's local.py block (checked by qqbot.W002).

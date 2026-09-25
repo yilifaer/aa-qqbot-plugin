@@ -1,0 +1,1282 @@
+# Simplified Chinese translation of aa-qqbot.
+# The msgstr texts are the original Chinese UI texts.
+msgid ""
+msgstr ""
+"Project-Id-Version: aa-qqbot\n"
+"Report-Msgid-Bugs-To: \n"
+"POT-Creation-Date: 2026-09-25 16:10+0000\n"
+"PO-Revision-Date: 2026-09-25 00:00+0000\n"
+"Last-Translator: aa-qqbot maintainers\n"
+"Language-Team: Simplified Chinese\n"
+"Language: zh_Hans\n"
+"MIME-Version: 1.0\n"
+"Content-Type: text/plain; charset=UTF-8\n"
+"Content-Transfer-Encoding: 8bit\n"
+"Plural-Forms: nplurals=1; plural=0;\n"
+
+msgctxt "qqbot"
+msgid "Main character"
+msgstr "主角色"
+
+msgid "QQ Admin"
+msgstr "QQ 管理"
+
+msgid "This QQ is already bound. If you have questions, contact a QQ admin."
+msgstr "该 QQ 已被绑定，如有疑问请联系 QQ 管理员。"
+
+msgid ""
+"This member's QQ has just changed, so this page is out of date. Reopen the "
+"page and check again before you continue."
+msgstr "这个成员的 QQ 刚刚变了，页面上的信息已经过时。请重新打开页面核对后再操作。"
+
+#, python-format
+msgid "%(count)d hour"
+msgid_plural "%(count)d hours"
+msgstr[0] "%(count)d 小时"
+
+#, python-format
+msgid "%(count)d minute"
+msgid_plural "%(count)d minutes"
+msgstr[0] "%(count)d 分钟"
+
+msgid "Enter a valid QQ number (5–11 digits, not starting with 0)."
+msgstr "请输入正确的 QQ 号（5–11 位数字，不能以 0 开头）。"
+
+msgid "Nothing to change."
+msgstr "没有需要修改的内容。"
+
+msgid "Nickname updated."
+msgstr "昵称已更新。"
+
+#, python-format
+msgid "You changed your QQ too recently. Try again in %(time)s."
+msgstr "换绑太频繁，请在 %(time)s后再试。"
+
+#, python-format
+msgid ""
+"Too many binds or QQ changes (at most %(limit)d per hour). Please try again "
+"later."
+msgstr "绑定或换绑太频繁（每小时最多 %(limit)d 次），请稍后再试。"
+
+#, python-format
+msgid ""
+"Too many verification codes requested (at most %(limit)d per hour). Please "
+"try again later."
+msgstr "生成验证码太频繁（每小时最多 %(limit)d 次），请稍后再试。"
+
+msgid ""
+"Before the code expires, request to join a QQ group and enter the "
+"verification code as the verification message."
+msgstr "请在有效期内申请加入 QQ 群，并在「验证信息」里填写验证码。"
+
+msgid "Another account has also claimed this QQ. Please contact a QQ admin."
+msgstr "这个 QQ 同时被其他账号认领，请联系 QQ 管理员处理。"
+
+msgid "Bound (trusted: already in group)."
+msgstr "绑定成功（老成员免验证）。"
+
+msgid "Binding not found."
+msgstr "绑定不存在。"
+
+msgid "This binding is already verified."
+msgstr "该绑定已经是已验证状态。"
+
+msgid "This QQ is already verified by another account and cannot be confirmed."
+msgstr "该 QQ 已被其他账号验证，不能确认。"
+
+msgid "Binding confirmed."
+msgstr "已确认绑定。"
+
+msgid "No QQ is bound."
+msgstr "没有绑定 QQ。"
+
+msgid "Unbound."
+msgstr "已解除绑定。"
+
+#, python-format
+msgid ""
+"Group nickname is too long: at most %(max)d bytes (a Chinese character takes "
+"3 bytes)."
+msgstr "群名片太长：最多 %(max)d 字节（一个汉字占 3 字节）。"
+
+msgid "Automatic group nickname restored."
+msgstr "已恢复自动群名片。"
+
+msgid "Group nickname set."
+msgstr "群名片已设置。"
+
+msgid "Invalid nickname."
+msgstr "昵称格式不正确。"
+
+msgid "Please enter a nickname."
+msgstr "请填写昵称。"
+
+#, python-format
+msgid "Nickname can be at most %(max)d characters."
+msgstr "昵称最长 %(max)d 个字。"
+
+msgid "Nickname cannot contain two spaces in a row."
+msgstr "昵称中不能有连续的空格。"
+
+msgid ""
+"Nickname can only contain Chinese characters, letters, digits, spaces and _ -"
+" . · ( )."
+msgstr "昵称只能包含中文、英文字母、数字、空格和 _ - . · ( )。"
+
+msgid "Enter 5–11 digits (not starting with 0)."
+msgstr "请输入 5–11 位数字（不能以 0 开头）。"
+
+msgid "Group rules"
+msgstr "入群须知"
+
+msgid "Group nickname format"
+msgstr "群名片格式"
+
+#, python-brace-format
+msgid ""
+"Placeholders: {corp_ticker} corporation ticker, {alliance_ticker} alliance "
+"ticker, {character_name} main character name, {nickname} nickname"
+msgstr ""
+"可用占位符：{corp_ticker} 军团简称、{alliance_ticker} 联盟简称、{character_name} "
+"主角色名、{nickname} 昵称"
+
+msgid "Verification code lifetime (minutes)"
+msgstr "验证码有效期（分钟）"
+
+msgid "Member list max age (days)"
+msgstr "群成员名单有效期（天）"
+
+msgid ""
+"If the bot has not reported a group's member list for this many days, that "
+"group no longer counts for \"Trusted (already in group)\"."
+msgstr "机器人超过这么多天没有上报某个群的成员名单，该群就不能再用于「老成员免验证」。"
+
+msgid "Change QQ cooldown (hours)"
+msgstr "换绑冷却（小时）"
+
+msgid "Settings"
+msgstr "设置"
+
+msgid "QQ binding settings"
+msgstr "QQ 绑定设置"
+
+msgid "Fixed group"
+msgstr "固定群"
+
+msgid "Role group"
+msgstr "身份组小群"
+
+msgid "Group name"
+msgstr "群名称"
+
+msgid "Group number"
+msgstr "群号"
+
+msgid "Type"
+msgstr "类型"
+
+msgid "Required AA groups"
+msgstr "需要的 AA 组"
+
+msgid "Only for role groups: being in any one of these groups is enough."
+msgstr "只对身份组小群有效：属于其中任意一个组即可。"
+
+msgctxt "qqbot"
+msgid "Description"
+msgstr "说明"
+
+msgid "Sort order"
+msgstr "排序"
+
+msgctxt "qqbot"
+msgid "Enabled"
+msgstr "启用"
+
+msgid "Last member list report"
+msgstr "最近一次名单上报"
+
+msgid "QQ group"
+msgstr "QQ 群"
+
+msgid "QQ groups"
+msgstr "QQ 群"
+
+msgid "Verified"
+msgstr "已验证"
+
+msgid "Trusted (already in group)"
+msgstr "老成员免验证"
+
+msgid "Verification code"
+msgstr "验证码"
+
+msgid "Confirmed by manager"
+msgstr "管理员确认"
+
+msgid "QQ number"
+msgstr "QQ 号"
+
+msgid "Nickname"
+msgstr "昵称"
+
+msgid "Status"
+msgstr "状态"
+
+msgid "Verified via"
+msgstr "验证方式"
+
+msgid "Verified at"
+msgstr "验证时间"
+
+msgid "Group nickname set by manager"
+msgstr "管理员指定的群名片"
+
+msgid "Leave empty to generate it from the format in Settings."
+msgstr "留空则按设置里的格式自动生成。"
+
+msgid "QQ binding"
+msgstr "QQ 绑定"
+
+msgid "QQ bindings"
+msgstr "QQ 绑定"
+
+msgid "Verification codes"
+msgstr "验证码"
+
+msgid "Recheck QQ"
+msgstr "复查该 QQ"
+
+msgid "Group nickname changed"
+msgstr "群名片变化"
+
+msgid "Recheck all"
+msgstr "全部复查"
+
+msgid "Group settings changed"
+msgstr "群配置变化"
+
+msgid "Bind"
+msgstr "绑定"
+
+msgid "Verification succeeded"
+msgstr "验证成功"
+
+msgid "Verification failed"
+msgstr "验证失败"
+
+msgid "Conflict"
+msgstr "冲突"
+
+msgid "Conflict resolved"
+msgstr "冲突解决"
+
+msgid "Change QQ"
+msgstr "换绑"
+
+msgid "Unbind"
+msgstr "解绑"
+
+msgid "Force unbind"
+msgstr "强制解绑"
+
+msgid "Change nickname"
+msgstr "修改昵称"
+
+msgid "Change group nickname"
+msgstr "修改群名片"
+
+msgid "Generate verification code"
+msgstr "生成验证码"
+
+msgid "Change group settings"
+msgstr "修改群配置"
+
+msgid "Change settings"
+msgstr "修改设置"
+
+msgid "Account deleted"
+msgstr "账号删除"
+
+msgid "Audit log entry"
+msgstr "操作记录"
+
+msgid "Audit log"
+msgstr "操作记录"
+
+msgid "My own QQ binding is on the Services page"
+msgstr "我自己的 QQ 绑定在「服务」页"
+
+msgid "Bindings"
+msgstr "已绑定成员"
+
+msgid "Needs attention"
+msgstr "待处理"
+
+msgid "Time"
+msgstr "时间"
+
+msgid "Action"
+msgstr "操作"
+
+msgid "By"
+msgstr "操作人"
+
+msgid "Target account"
+msgstr "对象账号"
+
+msgctxt "qqbot"
+msgid "Details"
+msgstr "详情"
+
+msgid "Pagination"
+msgstr "分页"
+
+msgid "First"
+msgstr "第一页"
+
+msgid "Previous"
+msgstr "上一页"
+
+#, python-format
+msgid "Page %(number)s of %(num_pages)s"
+msgstr "第 %(number)s / %(num_pages)s 页"
+
+msgid "Next"
+msgstr "下一页"
+
+msgid "Last"
+msgstr "最后一页"
+
+msgid "This QQ is verified by someone else"
+msgstr "此 QQ 已被别人验证"
+
+msgid "Bound"
+msgstr "已绑定"
+
+#, python-format
+msgid "Verified %(verified)s · Trusted %(trusted)s"
+msgstr "已验证 %(verified)s · 免验证 %(trusted)s"
+
+msgid "Conflicting QQ numbers"
+msgstr "冲突的 QQ"
+
+msgid "Two accounts claim the same QQ"
+msgstr "两个账号认领同一个 QQ"
+
+msgid "In a group but not bound"
+msgstr "群里有、但没绑定的 QQ"
+
+msgid "From the bot's latest check"
+msgstr "来自机器人最近的巡检"
+
+msgid "Only records for this QQ"
+msgstr "只看这个 QQ 的记录"
+
+msgctxt "qqbot"
+msgid "Filter"
+msgstr "筛选"
+
+msgid "Clear"
+msgstr "清除"
+
+#, python-format
+msgid "%(counter)s record in total."
+msgid_plural "%(counter)s records in total."
+msgstr[0] "共 %(counter)s 条记录。"
+
+msgid "No audit records found."
+msgstr "没有找到操作记录。"
+
+msgid "Binding details"
+msgstr "绑定详情"
+
+msgid "Back to bindings"
+msgstr "返回已绑定成员"
+
+msgid "Binding info"
+msgstr "绑定信息"
+
+msgid "No main character"
+msgstr "没有主角色"
+
+msgid "AA username"
+msgstr "AA 用户名"
+
+msgid "Account disabled"
+msgstr "账号已停用"
+
+msgctxt "separator between clauses"
+msgid ", "
+msgstr "，"
+
+msgid "Bound at"
+msgstr "绑定时间"
+
+msgid "Confirm binding (mark as verified)"
+msgstr "确认绑定（设为已验证）"
+
+msgid "Group nickname"
+msgstr "群名片"
+
+msgid "Current group nickname:"
+msgstr "现在的群名片："
+
+#, python-format
+msgid "%(card_bytes)s / %(card_max)s bytes"
+msgstr "%(card_bytes)s / %(card_max)s 字节"
+
+#, python-format
+msgid "Set by a manager (automatic would be: %(auto_card)s)"
+msgstr "管理员指定（自动生成的是：%(auto_card)s）"
+
+msgid "Automatic, from the format in Settings"
+msgstr "按设置里的格式自动生成"
+
+msgid "Save group nickname"
+msgstr "保存群名片"
+
+msgid "Back to automatic nickname"
+msgstr "恢复自动群名片"
+
+msgid "The same QQ is also claimed by:"
+msgstr "同一个 QQ 还被这些账号认领："
+
+#, python-format
+msgid "(%(name)s)"
+msgstr "（%(name)s）"
+
+msgctxt "dash before a status"
+msgid "—"
+msgstr "——"
+
+msgid "Per-group decisions"
+msgstr "各群的判定"
+
+msgctxt "qqbot"
+msgid "Group"
+msgstr "群"
+
+msgid "Result"
+msgstr "结果"
+
+msgid "Reason"
+msgstr "原因"
+
+msgid "No enabled groups yet."
+msgstr "还没有启用的群。"
+
+msgid "Recent audit log"
+msgstr "最近的操作记录"
+
+msgid "No records."
+msgstr "没有记录。"
+
+msgid "Confirm force unbind"
+msgstr "确认强制解绑"
+
+#, python-format
+msgid ""
+"Are you sure you want to unbind <strong>%(name)s</strong> (AA username "
+"%(username)s) from QQ <strong class=\"font-monospace\">%(qq)s</strong>?"
+msgstr ""
+"你确定要解除 <strong>%(name)s</strong>（AA 用户名 %(username)s） 和 QQ <strong "
+"class=\"font-monospace\">%(qq)s</strong> 的绑定吗？"
+
+msgid ""
+"After unbinding, this QQ no longer counts as an alliance member. The bot will"
+" re-check it and may stop approving it or remove it from managed groups."
+msgstr "解绑后，这个 QQ 就不再算作联盟成员，机器人会复查它，可能不再批准它入群，也可能把它移出受管的群。"
+
+msgid "This is recorded in the audit log. The member can bind again later."
+msgstr "这个操作会写进操作记录。对方以后可以重新绑定。"
+
+msgid "Back, don't unbind"
+msgstr "返回，不解绑"
+
+msgid "Search"
+msgstr "搜索"
+
+msgid "Username, character, QQ number or corporation ticker"
+msgstr "用户名、角色名、QQ 号或军团简称"
+
+msgid "Conflicts only"
+msgstr "只看冲突"
+
+msgid "Clear filters"
+msgstr "清除条件"
+
+#, python-format
+msgid "%(counter)s binding found."
+msgid_plural "%(counter)s bindings found."
+msgstr[0] "共找到 %(counter)s 条绑定。"
+
+msgid "User / main character"
+msgstr "用户 / 主角色"
+
+msgid "Allowed groups"
+msgstr "可进的群"
+
+msgid "Inactive"
+msgstr "已停用"
+
+msgid "Set by manager"
+msgstr "管理员指定"
+
+msgid "No matching bindings found."
+msgstr "没有找到符合条件的绑定。"
+
+msgid "Delete group"
+msgstr "删除群"
+
+msgid "Confirm group deletion"
+msgstr "确认删除群"
+
+#, python-format
+msgid ""
+"Are you sure you want to delete the group <strong>%(name)s</strong> (<span "
+"class=\"font-monospace\">%(group_id)s</span>)?"
+msgstr ""
+"你确定要删除群 <strong>%(name)s</strong>（<span class=\"font-"
+"monospace\">%(group_id)s</span>）吗？"
+
+msgid ""
+"After deletion the bot stops managing this group, and members no longer see "
+"it in the QQ binding card on the Services page."
+msgstr "删除后，机器人不再管理这个群，成员在「服务」页的 QQ 绑定卡片里也看不到它了。"
+
+#, python-format
+msgid ""
+"The member list the bot reported for this group (%(counter)s member) is "
+"deleted too."
+msgid_plural ""
+"The member list the bot reported for this group (%(counter)s members) is "
+"deleted too."
+msgstr[0] "机器人上报的这个群的成员名单（%(counter)s 人）也会一起删除。"
+
+#, python-format
+msgid ""
+"If you only need to pause it, <a href=\"%(edit_url)s\">edit</a> it and untick"
+" \"Enabled\" instead; you can turn it back on later."
+msgstr "如果只是暂时不用，建议改为<a href=\"%(edit_url)s\">编辑</a>并取消「启用」，以后还能恢复。"
+
+msgid "Confirm delete"
+msgstr "确认删除"
+
+msgid "Back, don't delete"
+msgstr "返回，不删除"
+
+msgid "Edit group"
+msgstr "编辑群"
+
+msgid "Add group"
+msgstr "添加群"
+
+#, python-format
+msgid "Edit group: %(name)s"
+msgstr "编辑群：%(name)s"
+
+msgid "Not saved: fix the fields marked in red below, then save again."
+msgstr "没有保存：请按照下面红色的提示修改后再保存。"
+
+msgid "Save"
+msgstr "保存"
+
+msgid "Back, don't save"
+msgstr "返回，不保存"
+
+msgid "Managed QQ groups"
+msgstr "受管的 QQ 群"
+
+msgid ""
+"The bot only manages groups listed here that are \"Enabled\". Any member can "
+"join a <strong>Fixed group</strong>; only people in the selected AA groups "
+"can join a <strong>Role group</strong>."
+msgstr ""
+"机器人只管理这里列出并且「启用」的群。<strong>固定群</strong>所有成员都能加入；<strong>身份组小群</strong>只有所选 AA"
+" 组里的人能加入。"
+
+msgid "Member list"
+msgstr "名单"
+
+msgid "None selected (please edit)"
+msgstr "未选择（请编辑）"
+
+msgid "All members"
+msgstr "所有成员"
+
+#, python-format
+msgid "%(counter)s member"
+msgid_plural "%(counter)s members"
+msgstr[0] "%(counter)s 人"
+
+msgid " (outdated)"
+msgstr "（已过期）"
+
+msgid "Not reported by the bot yet"
+msgstr "机器人还没上报"
+
+msgid "Enabled"
+msgstr "启用"
+
+msgctxt "qqbot"
+msgid "Disabled"
+msgstr "停用"
+
+msgid "Edit"
+msgstr "编辑"
+
+msgid "Delete"
+msgstr "删除"
+
+msgid "No groups added yet. Click \"Add group\" at the top right to start."
+msgstr "还没有添加任何群。点右上角的「添加群」开始。"
+
+msgid ""
+"Two or more accounts claim the same QQ as \"Trusted (already in group)\". The"
+" bot neither kicks nor rejects a conflicting QQ; it waits for you to decide "
+"who owns it. First check who the real owner is (for example, by messaging "
+"them on QQ), then click \"Confirm as owner\" on their row; the other claims "
+"are cancelled automatically. If none of them is right, force-unbind the wrong"
+" one. (While the owner is still in the group, this QQ cannot get a "
+"verification code, so conflicts can only be resolved here.)"
+msgstr ""
+"同一个 QQ 被两个或更多账号以「老成员免验证」认领。机器人对冲突的 QQ 不会踢人也不会拒绝，只等你来决定归谁。 请先核实谁是真正的号主（例如在 QQ "
+"上私聊确认），然后点他那一行的「确认归他」，其他账号的认领会自动作废； 如果都不对，可以把错误的一方强制解绑。 （号主还在群里时，这个 QQ "
+"拿不到验证码，所以冲突只能在这里处理。）"
+
+#, python-format
+msgid "%(counter)s account claims it"
+msgid_plural "%(counter)s accounts claim it"
+msgstr[0] "%(counter)s 个账号认领"
+
+msgid "Nickname / group nickname"
+msgstr "昵称 / 群名片"
+
+msgid "Claimed at"
+msgstr "认领时间"
+
+msgid "Confirm as owner"
+msgstr "确认归他"
+
+msgid "No conflicts right now."
+msgstr "现在没有冲突。"
+
+msgid "QQ numbers in a group but not bound"
+msgstr "群里有、但没有绑定的 QQ"
+
+#, python-format
+#| msgid ""
+#| "From the member lists the bot last reported (within %(days)s day). These QQ "
+#| "numbers are in the group, but no AA account is bound to them yet. You can "
+#| "remind them to bind in the QQ binding card on AA's Services page; existing "
+#| "members take effect right away after entering their QQ, no verification code "
+#| "needed."
+#| msgid_plural ""
+#| "From the member lists the bot last reported (within %(days)s days). These QQ "
+#| "numbers are in the group, but no AA account is bound to them yet. You can "
+#| "remind them to bind in the QQ binding card on AA's Services page; existing "
+#| "members take effect right away after entering their QQ, no verification code "
+#| "needed."
+msgid ""
+"From the member lists the bot last reported (within %(days)s day). These QQ "
+"numbers are in the group, but no AA account is bound to them yet. You can "
+"remind them to bind in the QQ binding card on AA's Services page; for "
+"existing members the binding takes effect as soon as they enter their QQ, "
+"with no verification code."
+msgid_plural ""
+"From the member lists the bot last reported (within %(days)s days). These QQ "
+"numbers are in the group, but no AA account is bound to them yet. You can "
+"remind them to bind in the QQ binding card on AA's Services page; for "
+"existing members the binding takes effect as soon as they enter their QQ, "
+"with no verification code."
+msgstr[0] ""
+"来自机器人最近一次（%(days)s 天以内）上报的群成员名单。这些 QQ 在群里，但还没有任何 AA 账号绑定它们。 可以提醒他们到 AA「服务」页的 "
+"QQ 绑定卡片里绑定；老成员填写 QQ 后会直接生效，不需要验证码。"
+
+#, python-format
+msgid "%(counter)s QQ"
+msgid_plural "%(counter)s QQs"
+msgstr[0] "%(counter)s 个"
+
+#, python-format
+msgid "List reported at %(reported_at)s"
+msgstr "名单上报于 %(reported_at)s"
+
+msgid "No unbound QQ numbers found."
+msgstr "没有发现未绑定的 QQ。"
+
+#, python-format
+msgid ""
+"The member lists of these groups have not been updated for more than %(days)s"
+" day (or the bot has never reported them), so they are not listed. Check that"
+" the bot is running its regular checks:"
+msgid_plural ""
+"The member lists of these groups have not been updated for more than %(days)s"
+" days (or the bot has never reported them), so they are not listed. Check "
+"that the bot is running its regular checks:"
+msgstr[0] "下面这些群的成员名单超过 %(days)s 天没有更新（或机器人还没上报过），所以没有列出。请检查机器人是否在正常巡检："
+
+#, python-format
+msgid "%(name)s (<span class=\"font-monospace\">%(group_id)s</span>)"
+msgstr "%(name)s（<span class=\"font-monospace\">%(group_id)s</span>）"
+
+#, python-format
+msgid ": last reported at %(reported_at)s"
+msgstr "：最近一次上报于 %(reported_at)s"
+
+msgid ": not reported yet"
+msgstr "：还没有上报"
+
+msgid ""
+"The group nickname format can use these placeholders (write them exactly as "
+"shown, braces included):"
+msgstr "群名片格式可以使用这些占位符（照原样写，包括大括号）："
+
+msgid "corporation ticker"
+msgstr "军团简称"
+
+msgid "alliance ticker"
+msgstr "联盟简称"
+
+msgid "main character name"
+msgstr "主角色名"
+
+msgid "nickname entered by the member"
+msgstr "成员填写的昵称"
+
+#, python-format
+msgid ""
+"With the current format, your own group nickname would be: <strong "
+"id=\"qqbot-example-card\">%(example_card)s</strong>. A group nickname is at "
+"most 60 bytes; if it is too long, the character name is shortened first. "
+"After you change the format, everyone's group nickname is recalculated in the"
+" background and the bot then updates them automatically."
+msgstr ""
+"按现在的格式，你自己的群名片会是：<strong id=\"qqbot-example-card\">%(example_card)s</strong>。"
+" 群名片最长 60 字节，超长时会先缩短角色名。修改格式后，所有人的群名片会在后台重新计算，机器人随后会自动改名片。"
+
+msgid "Save settings"
+msgstr "保存设置"
+
+msgid ""
+"Group nickname (the first part is generated for you; enter only your "
+"nickname)"
+msgstr "群名片（前面自动生成，只填昵称）"
+
+msgid "Your nickname"
+msgstr "你的昵称"
+
+#, python-format
+msgid ""
+"The corporation ticker and character name come from your main character. "
+"Nickname: %(help)s"
+msgstr "军团简称和角色名来自你的主角色。昵称%(help)s"
+
+#, python-format
+msgid ""
+"Your character name is long. QQ group nicknames are limited to %(max_bytes)s "
+"bytes (a Chinese character takes 3 bytes)."
+msgstr "你的角色名比较长。QQ 群名片最长 %(max_bytes)s 个字节（一个汉字算 3 个字节），"
+
+#, python-format
+msgid ""
+"To show your full character name, keep your nickname to %(cjk)s Chinese "
+"character (or %(ascii)s English letters and digits); anything longer and the "
+"character name is shortened automatically."
+msgid_plural ""
+"To show your full character name, keep your nickname to %(cjk)s Chinese "
+"characters (or %(ascii)s English letters and digits); anything longer and the"
+" character name is shortened automatically."
+msgstr[0] "昵称最多写 %(cjk)s 个汉字（或 %(ascii)s 个英文字母、数字）才能完整显示角色名；再长的话，角色名会被自动缩短。"
+
+msgid "Your character name is shortened automatically."
+msgstr "再长的话，角色名会被自动缩短。"
+
+msgid "Fixed groups"
+msgstr "固定群"
+
+msgid "Role groups"
+msgstr "身份组小群"
+
+msgid ""
+"The verification code you got for changing QQ has expired (timed out or "
+"replaced). Your current binding is unchanged. If you still want to change, "
+"submit again under “Change QQ” below."
+msgstr "你上次换绑拿到的验证码已经失效了（过期或已作废），现在的绑定没有变。需要的话，请在下面的「换绑」里再提交一次。"
+
+msgid ""
+"The verification code you got has expired (timed out or replaced). If you "
+"still want to bind, submit again below."
+msgstr "你上次拿到的验证码已经失效了（过期或已作废）。需要的话，请在下面重新提交。"
+
+msgid ""
+"You have no main character yet. Add a character on the AA dashboard and make "
+"it your main, then come back to bind your QQ."
+msgstr "你还没有设置主角色。请先在 AA 首页添加角色并设为主角色，然后再来绑定 QQ。"
+
+msgid "Bind your QQ to join the alliance QQ groups."
+msgstr "绑定后可以加入联盟 QQ 群。"
+
+msgid "Your QQ number"
+msgstr "你的 QQ 号"
+
+msgid ""
+"Existing members (already in an alliance QQ group) are done right away; new "
+"members get a verification code to use when applying to join a group."
+msgstr "老成员（已经在联盟 QQ 群里）填完马上生效；新成员会拿到一个验证码，用它申请入群。"
+
+#, python-format
+msgid ""
+"Current QQ: <span class=\"font-monospace\">%(qq)s</span>. Your current "
+"binding stays as it is until the new QQ is verified."
+msgstr ""
+"现在绑定的 QQ：<span class=\"font-monospace\">%(qq)s</span>。新的 QQ 验证通过之前，现在的绑定保持不变。"
+
+#, python-format
+msgid "Current QQ: %(state)s"
+msgstr "现在的 QQ：%(state)s"
+
+msgid "Your current QQ is also claimed by another account."
+msgstr "现在绑定的 QQ 同时被其他账号认领了。"
+
+msgid "Your current QQ has already been verified by another account."
+msgstr "现在绑定的 QQ 已经被其他账号验证。"
+
+msgid ""
+"Once the new QQ below is verified, it replaces the current one. If you have "
+"questions, contact a QQ admin."
+msgstr "下面的新 QQ 验证通过后，就会换成新的 QQ；如有疑问，请联系 QQ 管理员。"
+
+#, python-format
+msgid "QQ being verified: <strong class=\"font-monospace\">%(qq)s</strong>"
+msgstr "正在验证的 QQ：<strong class=\"font-monospace\">%(qq)s</strong>"
+
+#, python-format
+msgid "Nickname: <strong>%(nickname)s</strong>"
+msgstr "昵称：<strong>%(nickname)s</strong>"
+
+msgid "Your verification code"
+msgstr "你的验证码"
+
+#, python-format
+msgid "Valid for about %(minutes)s more minute. It can be used only once."
+msgid_plural ""
+"Valid for about %(minutes)s more minutes. It can be used only once."
+msgstr[0] "还有大约 %(minutes)s 分钟有效，只能用一次"
+
+msgid ""
+"The code is only shown in the browser that created it. Click “Regenerate”."
+msgstr "验证码只在生成它的浏览器里显示，请点「重新生成」。"
+
+msgid "The old code stops working automatically."
+msgstr "旧的验证码会自动作废。"
+
+msgid "In QQ, search for one of the group numbers below."
+msgstr "在 QQ 里搜索下面的群号。"
+
+msgid "Click “Join Group”."
+msgstr "点「申请加入」。"
+
+#, python-format
+msgid ""
+"Enter the verification code <strong class=\"font-"
+"monospace\">%(code)s</strong> as the verification message and send the "
+"request."
+msgstr "在「验证信息」里填验证码 <strong class=\"font-monospace\">%(code)s</strong>，发送。"
+
+msgid ""
+"Enter the verification code as the verification message and send the request."
+msgstr "在「验证信息」里填验证码，发送。"
+
+msgid "The bot approves it automatically."
+msgstr "机器人会自动通过。"
+
+msgid "Groups you can apply to"
+msgstr "可以申请的群"
+
+msgid ""
+"There are no groups you can apply to right now. If you have questions, "
+"contact a QQ admin."
+msgstr "目前没有你可以申请的群。如有疑问，请联系 QQ 管理员。"
+
+#, python-format
+msgid "Bound QQ: <strong class=\"font-monospace\">%(qq)s</strong>"
+msgstr "已绑定 QQ：<strong class=\"font-monospace\">%(qq)s</strong>"
+
+#, python-format
+#| msgid "(%(state)s)"
+msgid "· %(state)s"
+msgstr "（%(state)s）"
+
+msgid ""
+"This QQ is also claimed by another account. Contact a QQ admin to sort it "
+"out; group numbers are hidden here until then."
+msgstr "这个 QQ 同时被其他账号认领了。请联系 QQ 管理员处理，处理好之前这里不显示群号。"
+
+msgid ""
+"This QQ has already been verified by another account. If it is yours, contact"
+" a QQ admin."
+msgstr "这个 QQ 已经被其他账号验证。如果这是你的 QQ，请联系 QQ 管理员。"
+
+#, python-format
+msgid "My group nickname: <strong class=\"text-break\">%(card)s</strong>"
+msgstr "我的群名片：<strong class=\"text-break\">%(card)s</strong>"
+
+#, python-format
+msgid ""
+"Group nicknames are limited to %(max_bytes)s bytes, so your character name "
+"was shortened. Use a shorter nickname to show the full character name."
+msgstr "群名片最长 %(max_bytes)s 个字节，角色名已自动缩短。想显示完整的角色名，可以把昵称改短一些。"
+
+msgid "Groups you can join"
+msgstr "你可以加入的群"
+
+msgid ""
+"In QQ, search for the group number and click “Join Group”; the bot approves "
+"it automatically."
+msgstr "在 QQ 里搜索群号，点「申请加入」，机器人会自动通过。"
+
+msgid ""
+"There are no groups you can join right now. If you have questions, contact a "
+"QQ admin."
+msgstr "目前没有你可以加入的群。如有疑问，请联系 QQ 管理员。"
+
+#| msgid "Edit nickname"
+msgctxt "card panel title"
+msgid "Edit nickname"
+msgstr "修改昵称"
+
+msgid "Save nickname"
+msgstr "保存昵称"
+
+msgid "Change to a new QQ number"
+msgstr "换绑到新的 QQ 号"
+
+msgid "New QQ number"
+msgstr "新的 QQ 号"
+
+msgid "Your current binding stays as it is until the new QQ is verified."
+msgstr "新的 QQ 验证通过之前，现在的绑定保持不变。"
+
+#, python-format
+msgid ""
+"<strong id=\"qqbot-rebind-cooldown\">You can change QQ again in "
+"%(left)s</strong> (after a change you must wait %(hours)s hour)."
+msgid_plural ""
+"<strong id=\"qqbot-rebind-cooldown\">You can change QQ again in "
+"%(left)s</strong> (after a change you must wait %(hours)s hours)."
+msgstr[0] ""
+"<strong id=\"qqbot-rebind-cooldown\">还要等 %(left)s才能换绑</strong>（上次换号后要等 "
+"%(hours)s 小时）。"
+
+#, python-format
+msgid "After changing QQ, you cannot change again for %(hours)s hour."
+msgid_plural "After changing QQ, you cannot change again for %(hours)s hours."
+msgstr[0] "换绑后 %(hours)s 小时内不能再换。"
+
+msgid "Unbind QQ"
+msgstr "解除绑定"
+
+msgid ""
+"After unbinding, this QQ no longer counts as an alliance member, and the bot "
+"may remove it from the alliance QQ groups. You can bind again later."
+msgstr "解除后，这个 QQ 不再算联盟成员，机器人可能把它移出联盟的 QQ 群。以后可以重新绑定。"
+
+#, python-format
+msgid ""
+"Unbinding does not reset the change-QQ cooldown: you must wait %(left)s "
+"before binding a different QQ. Until then you can only bind this QQ again."
+msgstr "解除绑定不会让换绑冷却重新计算：还要等 %(left)s才能改绑别的 QQ，在这之前只能重新绑定这个 QQ。"
+
+msgid "I want to unbind this QQ"
+msgstr "我确认要解除绑定"
+
+msgid "Get a new verification code; the old one stops working"
+msgstr "生成一个新的验证码，旧的作废"
+
+msgid "Regenerate"
+msgstr "重新生成"
+
+msgid "Don’t bind this QQ after all"
+msgstr "不绑定这个 QQ 了"
+
+msgid "Cancel"
+msgstr "取消"
+
+#| msgid "Change the nickname in your group nickname"
+msgid "Change the nickname part of your group nickname"
+msgstr "修改群名片上的昵称"
+
+msgid "Edit nickname"
+msgstr "改昵称"
+
+msgid "Bind a different QQ number"
+msgstr "改绑另一个 QQ 号"
+
+msgid "Remove the QQ binding"
+msgstr "解除 QQ 绑定"
+
+msgid "The QQ admins’ management pages"
+msgstr "QQ 管理员的管理页面"
+
+msgid "Eligible"
+msgstr "合格"
+
+msgid "Not bound"
+msgstr "未绑定"
+
+msgctxt "qqbot"
+msgid "Pending"
+msgstr "待验证"
+
+msgid "No member access"
+msgstr "没有成员权限"
+
+msgid "Not in a required group"
+msgstr "不在要求的组"
+
+msgid "Group misconfigured"
+msgstr "群配置有误"
+
+msgid "Allow"
+msgstr "允许"
+
+msgid "Deny"
+msgstr "不允许"
+
+msgid "Needs manual review"
+msgstr "需人工处理"
+
+msgid "Done."
+msgstr "操作完成。"
+
+msgid "Failed."
+msgstr "操作失败。"
+
+msgid "This group number has already been added; don't add it twice."
+msgstr "这个群号已经添加过了，请不要重复添加。"
+
+#, python-format
+msgid "Added group \"%(name)s\"."
+msgstr "已添加群「%(name)s」。"
+
+#, python-format
+msgid "Saved group \"%(name)s\"."
+msgstr "已保存群「%(name)s」。"
+
+#, python-format
+msgid "Deleted group \"%(name)s\"."
+msgstr "已删除群「%(name)s」。"
+
+msgid ""
+"Settings saved. The group nickname format changed; everyone's group nickname "
+"will be recalculated in the background."
+msgstr "设置已保存。群名片格式已修改，所有人的群名片会在后台重新计算。"
+
+msgid "Settings saved."
+msgstr "设置已保存。"
+
+msgid "Changed"
+msgstr "修改了"
+
+msgid "Previous status"
+msgstr "原来的状态"
+
+msgid "Old"
+msgstr "原来"
+
+msgid "New"
+msgstr "改为"
+
+msgid "Previous QQ"
+msgstr "原来的 QQ"
+
+msgid "Other claiming accounts"
+msgstr "其他认领的账号"
+
+msgid "Winning account"
+msgstr "胜出的账号"
+
+msgid "Method"
+msgstr "方式"
+
+msgid "Expires at"
+msgstr "有效期到"
+
+msgid "Applicant QQ"
+msgstr "申请人 QQ"
+
+msgid "Created"
+msgstr "新增"
+
+msgid "Updated"
+msgstr "修改"
+
+msgid "Deleted"
+msgstr "删除"
+
+msgid "Taken over by verification code"
+msgstr "被验证码接管"
+
+msgid "Applicant QQ mismatch"
+msgstr "申请人 QQ 不一致"
+
+#, python-format
+msgctxt "audit detail: label and value"
+msgid "%(label)s: %(value)s"
+msgstr "%(label)s %(value)s"
+
+msgctxt "list separator"
+msgid ", "
+msgstr "、"
+
+msgctxt "qqbot"
+msgid "Yes"
+msgstr "是"
+
+msgctxt "qqbot"
+msgid "No"
+msgstr "否"
+
+msgid "Bot / system"
+msgstr "机器人 / 系统"
+
+msgid "QQ group number, 5–11 digits."
+msgstr "QQ 群号，5–11 位数字。"
+
+msgid "The name members see."
+msgstr "显示给成员看的名字。"
+
+msgid ""
+"Fixed group: any member can join. Role group: only people in the AA groups "
+"selected below can join."
+msgstr "固定群：所有成员都可以加入。身份组小群：只有下面所选 AA 组里的人可以加入。"
+
+msgid "A short line shown next to the group number. Optional."
+msgstr "显示在群号旁边的一句话，可以不填。"
+
+msgid "Lower numbers are listed first."
+msgstr "数字越小越靠前。"
+
+msgid ""
+"When unticked, members don't see this group and the bot stops managing it."
+msgstr "取消勾选后，成员看不到这个群，机器人也不再管理它。"
+
+msgid ""
+"Only for role groups: anyone in any of these groups can join. Leave empty for"
+" a fixed group."
+msgstr "只有身份组小群需要选择：属于其中任意一个组的人就可以加入。固定群请不要选择。"
+
+msgid "Enter a group name."
+msgstr "请填写群名称。"
+
+#, python-format
+msgid "Invalid group number: %(hint)s"
+msgstr "群号格式不正确：%(hint)s"
+
+msgid "A role group needs at least one AA group, otherwise nobody can join it."
+msgstr "身份组小群至少要选择一个 AA 组，否则谁都进不了这个群。"
+
+msgid ""
+"A fixed group is open to every member and needs no AA groups. If this group "
+"is only for certain groups, change the type to \"Role group\"; otherwise "
+"untick all groups."
+msgstr "固定群对所有成员开放，不需要选择 AA 组。如果这个群只给特定组的人，请把类型改成「身份组小群」；否则请取消勾选所有组。"
+
+#, python-format
+msgid ""
+"Leave empty to generate it from the format in Settings. At most %(max_bytes)s"
+" bytes (a Chinese character takes 3 bytes)."
+msgstr "留空表示按设置里的格式自动生成。最多 %(max_bytes)s 字节（一个汉字占 3 字节）。"
+
+msgid "Custom group nickname"
+msgstr "指定群名片"
+
+msgid "All statuses"
+msgstr "全部状态"
+
+msgid "All actions"
+msgstr "全部操作"
+
+#, python-format
+msgid "Invalid QQ number: %(hint)s"
+msgstr "QQ 号格式不正确：%(hint)s"
+
+msgid ""
+"Shown in small print under the QQ binding card on the Services page; each "
+"line is shown separately."
+msgstr "显示在「服务」页的 QQ 绑定卡片下方（小字），每一行单独显示。"
+
+msgid "5–60 minutes."
+msgstr "5–60 分钟。"
+
+msgid ""
+"After a member changes QQ, they must wait this many hours before changing "
+"again. 0 means no limit."
+msgstr "成员换绑 QQ 之后，要等这么多小时才能再换。填 0 表示不限制。"
+
+msgid "Enter a group nickname format."
+msgstr "请填写群名片格式。"
+
+#, python-format
+msgid ""
+"Invalid group nickname format. Only these placeholders are allowed: "
+"%(names)s; braces must come in pairs with nothing else inside. To show a "
+"brace itself, write {{ or }}."
+msgstr "群名片格式有误。只能使用这些占位符：%(names)s；大括号要成对出现，里面不能加别的内容。如果要显示大括号本身，请写成 {{ 或 }}。"
+
+msgid "Conflict - contact a QQ admin"
+msgstr "冲突 - 请联系 QQ 管理员"
+
+msgid "Verified by another account - contact a QQ admin"
+msgstr "已被其他账号验证 - 请联系 QQ 管理员"
+
+msgid "Something went wrong."
+msgstr "操作失败。"
+
+msgctxt "status badge"
+msgid "Conflict"
+msgstr "冲突"
+
+msgctxt "status badge"
+msgid "Taken"
+msgstr "已被占用"
+
+msgctxt "status badge"
+msgid "Enabled"
+msgstr "已启用"
+
+msgctxt "status badge"
+msgid "Pending"
+msgstr "待验证"
+
+msgctxt "status badge"
+msgid "Disabled"
+msgstr "未启用"
+
+msgid ""
+"The verification code has expired. Enter your QQ number and nickname again "
+"and submit."
+msgstr "验证码已经失效，请重新填写 QQ 号和昵称后提交。"
+
+msgid "Verification code cancelled."
+msgstr "验证码已取消。"
+
+msgid "There is no verification code to cancel."
+msgstr "没有需要取消的验证码。"
+
+msgid "Please enter a QQ number."
+msgstr "请填写 QQ 号。"
+
+msgid "Tick “I want to unbind this QQ” first, then click “Unbind QQ”."
+msgstr "请先勾选「我确认要解除绑定」，再点「解除绑定」。"
+
+msgid ""
+"Something is wrong with what you submitted. Please check it and try again."
+msgstr "提交的内容有误，请检查后重试。"
+
+#, python-format
+msgid ""
+"at most %(max)s characters; only Chinese characters, English letters, digits,"
+" spaces and _ - . · ( ) are allowed."
+msgstr "最长 %(max)s 个字；只能用中文、英文字母、数字、空格和 _ - . · ( )。"

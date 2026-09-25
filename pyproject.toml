@@ -46,4 +46,6 @@ exclude = ["qqbot.tests*"]
 qqbot = [
     "templates/qqbot/*.html",
     "templates/qqbot/**/*.html",
+    "locale/*/LC_MESSAGES/*.po",
+    "locale/*/LC_MESSAGES/*.mo",
 ]
