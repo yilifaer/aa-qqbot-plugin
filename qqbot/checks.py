@@ -92,7 +92,7 @@ def _messages() -> dict:
         ),
         E002: Error(
             "QQBOT_API_KEYS 没有配置（或者不是字典），机器人接口会一直返回 503。",
-            hint='在 local.py 里写 QQBOT_API_KEYS = {"bot1": "<密钥>"}，密钥的生成方法见 README。',
+            hint='在 local.py 里写 QQBOT_API_KEYS = {"koishi-1": "<密钥>"}，密钥的生成方法见 README 第 2 节。',
             id=E002,
         ),
         E003: Error(

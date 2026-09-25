@@ -3,6 +3,8 @@
 > 给 **Koishi 机器人插件**（另一个仓库）的作者看的完整接口契约。
 > AA 端的实现在本仓库 `qqbot/api/`；实现规格见 `docs/SPEC.md` 第 4 节。
 > 本文件和实现不一致时，以本仓库的测试为准，并请提 issue。
+> 适用于 aa-qqbot **1.0.0b1** 起（接口 v1，路径 `/qqbot/api/v1/`）。以后只会**增加**字段、`reason` 和事件类型，
+> 不会改变已有字段的含义；不兼容的改动会换成 `/qqbot/api/v2/`。
 
 ---
 
@@ -85,9 +87,9 @@ AA 按下面的顺序检查，第一个不通过的就返回对应错误（错�
 2. AA 没有配置任何密钥 → `503 misconfigured`
 3. 请求头缺失或格式不对 → `401 missing_headers`
 4. 密钥编号不存在 → `401 unknown_key`
-5. 时间戳与 AA 服务器时间相差超过 **300 秒**（前后都算，可由 IT 调整） → `401 stale_timestamp`
+5. 时间戳与 AA 服务器时间相差超过 **300 秒**（前后都算，IT 可以用 `QQBOT_API_MAX_SKEW` 调整） → `401 stale_timestamp`
 6. 签名不对 → `401 bad_signature`
-7. 请求体超过上限（默认 256 KB） → `413 too_large`
+7. 请求体超过上限（默认 256 KB，IT 可以用 `QQBOT_API_MAX_BODY` 调整） → `413 too_large`
 8. 随机数用过（同一个密钥编号下，约 11 分钟内） → `401 replayed_nonce`
    （只有签名正确的请求才会记录随机数）
 9. 超过每分钟请求上限（每个密钥编号默认 120 次/分钟） → `429 rate_limited`
@@ -133,6 +135,7 @@ AA 的 `QQBOT_API_KEYS` 可以同时配置多把密钥，例如 `{"koishi-2025":
 | 请求体（原样） | `{"qq":"10001","text":"我是凯拉 QQ-ABC234"}` |
 | 请求体字节（十六进制，共 46 字节） | `7b227171223a223130303031222c2274657874223a22e68891e698afe587afe68b892051512d414243323334227d` |
 | 请求体 SHA-256 | `0420addccba85a2add4a1260989df656a91b169a103a3ce56dc05e6c5e1e6e68` |
+| 待签名字符串 | `POST\n/qqbot/api/v1/claim/\n1767225600\nNonce_For-Vector-2\n0420addccba85a2add4a1260989df656a91b169a103a3ce56dc05e6c5e1e6e68` |
 | **签名** | `8ac11ec05b15b17b7449676b2f2bb3c7395bd2578ac396389e4af3854af11be2` |
 
 （`\n` 表示一个换行符。）
@@ -187,6 +190,11 @@ export async function callApi({ baseUrl, keyId, secret }, name, payload = {}) {
   }
 }
 ```
+
+用 `JSON.stringify({qq: "10001", text: "我是凯拉 QQ-ABC234"})` 得到的正是样例 2 的请求体；
+`JSON.stringify({group_id: "123456789", qqs: ["10001", "20002"], full_roster: false})` 得到的正是样例 1 的请求体。
+可以直接拿来写单元测试：`sign('koishi-test-vector-secret-0123456789ABCDEFGHIJ', '/qqbot/api/v1/claim/', '1767225600', 'Nonce_For-Vector-2', 请求体)`
+应该等于样例 2 的签名。
 
 > 如果改用 Koishi 的 `ctx.http`，请确认：不跟随重定向；请求体按原样发送（传入已经序列化好的字符串，
 > 不要让它再序列化一次）；非 2xx 时能拿到状态码和响应体。
@@ -273,7 +281,7 @@ export async function callApi({ baseUrl, keyId, secret }, name, payload = {}) {
 {
   "ok": true,
   "server_time": "2026-09-25T08:00:00.123456+00:00",
-  "version": "1.0.0",
+  "version": "1.0.0b1",
   "config_ok": true,
   "problems": []
 }
@@ -281,8 +289,8 @@ export async function callApi({ baseUrl, keyId, secret }, name, payload = {}) {
 
 | 字段 | 类型 | 说明 |
 |---|---|---|
-| `version` | string | AA 插件版本 |
-| `config_ok` | bool | 没有错误级别（`E`）的问题时为 `true` |
+| `version` | string | AA 插件版本，例如 `1.0.0b1`（PEP 440 格式）。只用于显示和排查问题，不要用它做逻辑判断 |
+| `config_ok` | bool | 没有错误级别（`E`）的问题时为 `true`；只有警告（`W`）时仍为 `true` |
 | `problems` | string[] | AA 系统检查发现的问题代码，见下表 |
 
 | 问题代码 | 含义 | 怎么修（告诉 IT） |
@@ -291,7 +299,11 @@ export async function callApi({ baseUrl, keyId, secret }, name, payload = {}) {
 | `qqbot.E002` | `QQBOT_API_KEYS` 为空或格式不对 | 在 `local.py` 配置 `QQBOT_API_KEYS = {"编号": "密钥"}` |
 | `qqbot.E003` | 有密钥短于 32 个字符 | 换一把更长的密钥 |
 | `qqbot.E004` | 有密钥编号不符合第 2.1 节的格式（空格、中文、超过 64 个字符） | 用这个编号发的请求会一直得到 `missing_headers`；把编号改成 `koishi-1` 这样的英文名字，两边同步修改 |
-| `qqbot.W001` | 缓存不是 Redis 一类的共享缓存 | 防重放需要跨进程共享的缓存；AA 默认就是 Redis，一般不会出现 |
+| `qqbot.W001` | 缓存不是 Redis 一类的共享缓存 | 防重放需要跨进程共享的缓存；AA 本身要求 Redis，一般不会出现 |
+| `qqbot.W002` | `local.py` 的 `CELERYBEAT_SCHEDULE` 里没有每日对账任务 | 接口照常工作，但 AA 每天的自动对账不会运行；让 IT 按 README 第 2 节第 3 步加上（在后台手动添加了定时任务时可以忽略） |
+
+注：没有配置密钥时，所有接口（包括 `health`）都直接返回 `503 misconfigured`，所以 `problems` 里实际不会出现 `qqbot.E002`；
+列在这里是为了和 AA 的 `manage.py check` 对照。以后可能增加新的问题代码，不认识的代码原样显示即可。
 
 ### 5.2 `groups`
 
@@ -362,8 +374,10 @@ export async function callApi({ baseUrl, keyId, secret }, name, payload = {}) {
 | `roster` | object 或 null | 只有 `full_roster: true` 时有值：`{"added": 新增数, "removed": 移除数, "total": 名单总数}` |
 
 错误：
-- 群不存在或已停用 → `404 unknown_group`（请重新拉取 `groups`）。
-- 字段不合法、超过 3000 个、`full_roster: true` 但名单里没有一个合法 QQ → `400 bad_request`。
+- `group_id` 缺失或不是 5–11 位数字 → `400 bad_request`；格式正确但群不存在或已停用 → `404 unknown_group`（请重新拉取 `groups`）。
+- `qqs` 不是列表、超过 3000 个，或者里面有字符串和整数以外的值（`null`、小数、`true`/`false`、对象）→ 整个请求 `400 bad_request`。
+  只有「是字符串或整数、但不是合法 QQ 号」的项才会单独返回 `BAD_QQ`。
+- `full_roster` 不是 `true`/`false`，或 `full_roster: true` 但名单里没有一个合法 QQ → `400 bad_request`。
 
 ### 5.4 `claim`
 
@@ -387,7 +401,7 @@ AA 接受的写法比 `QQ-XXXXXX` 宽得多——不区分大小写、`-` 可以
 |---|---|---|---|
 | `qq` | string 或整数 | 是 | 申请人的 QQ（**必须**来自 QQ 平台的事件数据，不能来自申请人填写的文字） |
 | `text` | string | 是 | 入群申请的验证信息原文，最长 2000 个字符；可以是空字符串 |
-| `group_id` | string 或整数 | 否 | 申请加入的群。带上时响应里会给出这个 QQ 在该群的判定 |
+| `group_id` | string 或整数 | 否 | 申请加入的群。带上时响应里会给出这个 QQ 在该群的判定；传 `null` 等于不传 |
 
 响应：
 
@@ -423,8 +437,8 @@ AA 接受的写法比 `QQ-XXXXXX` 宽得多——不区分大小写、`-` 可以
 `outcome` 和 `message` 只用来决定给申请人看什么提示。例如 `qq_mismatch` 时，如果申请人自己的 QQ
 本来就已验证、有资格，`result.decision` 仍然是 `allow`，应当批准。
 
-错误：`group_id` 对应的群不存在或已停用 → `404 unknown_group`（此时验证码**不会**被使用）；
-`qq` 不合法、`text` 不是字符串或太长 → `400 bad_request`。
+错误：`group_id` 不是 5–11 位数字 → `400 bad_request`；`group_id` 对应的群不存在或已停用 → `404 unknown_group`
+（这两种情况验证码都**不会**被使用）；`qq` 不合法、`text` 不是字符串或太长 → `400 bad_request`。
 
 ### 5.5 `events`
 
@@ -506,6 +520,7 @@ AA 接受的写法比 `QQ-XXXXXX` 宽得多——不区分大小写、`-` 可以
 |---|---|---|
 | **302** 重定向到 `/account/login/` 之类 | AA 的 `local.py` 里**缺少** `APPS_WITH_PUBLIC_VIEWS += ["qqbot"]`，AA 把机器人当成未登录用户 | 联系 IT 追加这一行后重启 AA |
 | 301 / 308 重定向 | 路径末尾少了 `/`；或者用了 `http://`，服务器要求 `https://` | 用 `https://`，路径以 `/` 结尾 |
+| **400** 网页（Bad Request） | 请求用的主机名（例如局域网 IP）不在 AA 的 `ALLOWED_HOSTS` 里。AA 默认只允许 `SITE_URL` 里的域名 | 用 AA `SITE_URL` 里的域名访问；或让 IT 在 `local.py` 里追加 `ALLOWED_HOSTS += ["<这个 IP>"]` 并重启 AA |
 | 404 网页 | 路径写错、AA 上没装 / 没启用插件，或插件版本太旧 | 检查网址；让 IT 确认插件已安装 |
 | 403 网页 | 网关、防火墙或 Cloudflare 拦截 | 让 IT 放行机器人的请求 |
 | 413 网页 | nginx 的 `client_max_body_size` 太小 | 让 IT 调大（至少 1 MB） |
@@ -565,6 +580,9 @@ AA 这边的一次误操作，就可能让一个群里**所有人**同时变成 
   重启后从保存的值继续。先处理、后保存：宁可重复处理（处理是幂等的），也不要漏掉。
 - 游标丢失时：从 `after: 0` 开始把所有页拉完（只取 `last_id`，不处理），然后做一次完整巡检，再按正常流程继续。
   AA 保留 30 天内的事件。
+- **AA 那边重装插件或恢复旧的数据库备份后**，事件编号会从更小的数重新开始，机器人保存的游标会比 AA 上所有事件都大，
+  于是一直拿不到新事件（AA 返回空列表，`last_id` 等于请求的 `after`，不会报错）。遇到这种情况（IT 或 QQ 管理员会告知），
+  按上面「游标丢失」的步骤把游标清零。建议 Koishi 插件提供一个重置游标的管理命令。
 - 事件只是「快速通道」，AA 每天还会做一次对账，补上可能漏掉的变化；再加上每 6 小时一次的巡检，偶尔漏掉一条事件也会被纠正。
 
 ---
@@ -611,6 +629,7 @@ AA 这边的一次误操作，就可能让一个群里**所有人**同时变成 
 - [ ] 巡检每 6 小时一次，发送完整名单并设 `full_roster: true`。
 - [ ] 入群申请：**一律**调用 `claim`（带 `group_id`，验证信息原文照传），只按 `result.decision` 处理。
 - [ ] `events` 每 60 秒轮询，游标持久化，先处理后保存；一页事件按群合并成一次 `check`，不要逐条调用。
+- [ ] 提供重置事件游标的管理命令（第 8 节）。
 - [ ] 熔断（第 7.1 节）：一轮要移出的人数超过阈值时，这个群这一轮一个都不移出，只报告并等管理员确认；踢人有速率上限。
 - [ ] AA 装在子路径下时，签名用的路径带上前缀（按第 2.6 节从完整网址取路径）。
 - [ ] 名片只在 `allow` 且与当前不同时修改；所有外部文字写进消息前转义。

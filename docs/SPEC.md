@@ -199,6 +199,7 @@ def evaluate_many(groups, qqs, now=None, config=None) -> dict[str, dict[int, Dec
   - `qqbot.E003`：有密钥短于 32 个字符
   - `qqbot.E004`：有 key id 不符合 `signing.KEY_ID_RE`（有空格、非 ASCII、超过 64 字符），用它的请求永远是 `missing_headers`
   - `qqbot.W001`：缓存后端不是 Redis 一类的共享缓存（nonce 防重放需要跨进程共享）
+  - `qqbot.W002`：`CELERYBEAT_SCHEDULE` 里没有 `task == "qqbot.tasks.reconcile"` 的条目（条目名不限；在后台手动添加定时任务的站点可以忽略这条警告）
   - health 接口复用同一套检查逻辑（纯函数 `problems() -> list[str]`）
 - `admin.py`：注册 `QQGroup`、`Binding`（只读，改动走前台）、`AuditLog`（只读）、`Config`。
 - `management/commands/qqbot_reconcile.py`：手动执行对账。
