@@ -9,7 +9,7 @@ from django.contrib.auth.models import Group, User
 from django.core.exceptions import ValidationError
 from django.core.validators import MaxValueValidator, MinValueValidator
 from django.db import models
-from django.db.models import Q
+from django.db.models import F, Q
 
 QQ_RE = re.compile(r"^[1-9][0-9]{4,10}$")
 
@@ -147,8 +147,11 @@ class QQGroup(models.Model):
 class Binding(models.Model):
     """The one QQ number bound to an AA user (decision #6: one per account).
 
-    ``verified`` bindings own their QQ exclusively (DB-level partial unique
-    constraint). ``trusted`` bindings ("老成员免验证") may collide with another
+    ``verified`` bindings own their QQ exclusively: ``verified_qq`` mirrors
+    ``qq`` while verified and is NULL otherwise, and carries a plain unique
+    index. (A conditional ``UniqueConstraint`` would need a partial index,
+    which MySQL/MariaDB -- AllianceAuth's usual database -- do not support, so
+    Django would silently skip it there.) ``trusted`` bindings ("老成员免验证") may collide with another
     trusted binding for the same QQ, which is a conflict for managers to
     resolve. Pending (not yet verified) submissions live in :class:`BindCode`,
     not here.
@@ -179,6 +182,11 @@ class Binding(models.Model):
     # Hash of the last computed per-group decisions + card; used by
     # reconciliation to emit events only when something actually changed.
     fingerprint = models.CharField(max_length=64, blank=True, default="")
+    # == qq while status is verified, NULL otherwise (kept in sync by save()).
+    # Unique, so a verified QQ has one owner on every database backend.
+    verified_qq = models.CharField(
+        max_length=11, null=True, blank=True, unique=True, editable=False
+    )
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
@@ -187,15 +195,38 @@ class Binding(models.Model):
         verbose_name = "QQ 绑定"
         verbose_name_plural = "QQ 绑定"
         constraints = [
-            models.UniqueConstraint(
-                fields=["qq"],
-                condition=Q(status="verified"),
-                name="qqbot_unique_verified_qq",
+            models.CheckConstraint(
+                condition=(
+                    Q(status="verified", verified_qq=F("qq"))
+                    | (~Q(status="verified") & Q(verified_qq__isnull=True))
+                ),
+                name="qqbot_verified_qq_in_sync",
             )
         ]
 
+    def save(self, *args, **kwargs):
+        self.verified_qq = self.qq if self.status == self.Status.VERIFIED else None
+        update_fields = kwargs.get("update_fields")
+        if update_fields is not None and {"qq", "status"} & set(update_fields):
+            kwargs["update_fields"] = {*update_fields, "verified_qq"}
+        super().save(*args, **kwargs)
+
     def __str__(self):
         return f"{self.user.username} - {self.qq}"
+
+
+class Lock(models.Model):
+    """Rows used as mutexes (``SELECT ... FOR UPDATE``) by ``qqbot.core.locks``.
+
+    Users and QQ numbers are hashed onto a fixed set of rows that the
+    migration creates, so taking a lock never inserts anything. See
+    ``core/locks.py`` for the lock order.
+    """
+
+    id = models.PositiveIntegerField(primary_key=True)
+
+    class Meta:
+        default_permissions = ()
 
 
 class BindCode(models.Model):
