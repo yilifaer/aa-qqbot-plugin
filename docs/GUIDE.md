@@ -1,6 +1,6 @@
 # aa-qqbot 分步安装说明
 
-> 简版安装步骤见 [README](../README.md)。这里是给第一次安装的人看的分步说明，以及常见问题。
+> 简版安装步骤见 [README](../README.zh-CN.md)。这里是给第一次安装的人看的分步说明，以及常见问题。
 
 [Alliance Auth](https://gitlab.com/allianceauth/allianceauth)（AA）的 QQ 绑定插件：
 **只让 AA 认可的人留在联盟的 QQ 群里。**
@@ -436,7 +436,7 @@ sudo supervisorctl restart myauth:
    python manage.py shell -c "from django_celery_beat.models import PeriodicTask; print(PeriodicTask.objects.filter(name='qqbot_reconcile').delete())"
    ```
 
-4. 从 `local.py` 里删掉第 2 节第 3 步加的整段（从 `# ---------- aa-qqbot ----------` 到 `# ---------- aa-qqbot 结束 ----------`）。
+4. 从 `local.py` 里删掉安装时加的那段（按本文第 2 节安装的，是从 `# ---------- aa-qqbot ----------` 到 `# ---------- aa-qqbot 结束 ----------`；按 README 安装的，是 README 第 2 步那几行）。
 
 5. 卸载插件，并清理后台里残留的两个 QQ 权限：
 

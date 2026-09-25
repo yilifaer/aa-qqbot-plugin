@@ -154,7 +154,7 @@ OneBot 实现为 LLBot，已启用 `database-sqlite`。
 
 ## 7. 怎么接上树莓派上的测试 AA
 
-1. **树莓派上装好 aa-qqbot**：按 aa-qqbot 仓库的 [`README.md`](README.md) 操作，包括 `APPS_WITH_PUBLIC_VIEWS`
+1. **树莓派上装好 aa-qqbot**：按 aa-qqbot 仓库的 [`README.zh-CN.md`](README.zh-CN.md) 操作，包括 `APPS_WITH_PUBLIC_VIEWS`
    和 `QQBOT_API_KEYS` 两项配置，并按 [docs/GUIDE.md](docs/GUIDE.md) 第 2 节第 7 步确认装好了。Koishi 插件写好之前，可以先用那里的
    「模拟机器人」和 [`docs/TESTING.md`](docs/TESTING.md) 把 AA 这一侧测一遍。
 2. **生成一把测试密钥**（所有者在自己电脑上运行，不要贴进对话）：
