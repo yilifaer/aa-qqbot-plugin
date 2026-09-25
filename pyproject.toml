@@ -4,8 +4,8 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "aa-qqbot"
-version = "0.2.0"
-description = "Alliance Auth plugin for QQ number binding (IGCCN)"
+dynamic = ["version"]
+description = "Alliance Auth plugin: QQ binding and QQ group membership gate"
 readme = "README.md"
 authors = [{ name = "yilifaer" }]
 license = { text = "MIT" }
@@ -13,24 +13,30 @@ requires-python = ">=3.10"
 classifiers = [
     "Environment :: Web Environment",
     "Framework :: Django",
+    "Framework :: Django :: 5.2",
     "Intended Audience :: Developers",
     "License :: OSI Approved :: MIT License",
     "Programming Language :: Python :: 3",
     "Programming Language :: Python :: 3.10",
     "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
 ]
 dependencies = [
-    "allianceauth>=4.0.0",
+    "allianceauth>=5.2,<6",
 ]
 
 [project.urls]
 Homepage = "https://github.com/yilifaer/aa-qqbot-plugin"
 Repository = "https://github.com/yilifaer/aa-qqbot-plugin"
 
+[tool.setuptools.dynamic]
+version = { attr = "qqbot.__version__" }
+
 [tool.setuptools.packages.find]
 where = ["."]
 include = ["qqbot*"]
+exclude = ["qqbot.tests*"]
 
 [tool.setuptools.package-data]
 qqbot = [

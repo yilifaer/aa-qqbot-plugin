@@ -1,0 +1,24 @@
+{% extends "allianceauth/base-bs5.html" %}
+{% comment %}
+Shared layout for all qqbot pages. Child templates fill `qqbot_title` and
+`qqbot_body`. The tab bar shows the manage tab only to QQ managers.
+{% endcomment %}
+
+{% block page_title %}{% block qqbot_title %}QQ 绑定{% endblock qqbot_title %}{% endblock page_title %}
+
+{% block header_nav_brand %}QQ 绑定{% endblock header_nav_brand %}
+
+{% block content %}
+    <ul class="nav nav-tabs mb-3">
+        <li class="nav-item">
+            <a class="nav-link {% if qqbot_nav == 'member' %}active{% endif %}" href="{% url 'qqbot:my_qq' %}">我的 QQ</a>
+        </li>
+        {% if perms.qqbot.manage %}
+            <li class="nav-item">
+                <a class="nav-link {% if qqbot_nav == 'manage' %}active{% endif %}" href="{% url 'qqbot:manage_index' %}">QQ 管理</a>
+            </li>
+        {% endif %}
+    </ul>
+
+    {% block qqbot_body %}{% endblock qqbot_body %}
+{% endblock content %}
