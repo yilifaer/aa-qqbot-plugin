@@ -25,7 +25,13 @@ Alliance Auth 的 QQ 群成员管理插件。成员在 AA 的「服务」页绑�
 pip install git+https://github.com/yilifaer/aa-qqbot-plugin.git
 ```
 
-2. 在 `local.py` 末尾加上：
+2. 生成机器人密钥。记下输出的这一串，下一步要用，之后还要交给机器人那边：
+
+```bash
+python -c "import secrets; print(secrets.token_urlsafe(48))"
+```
+
+3. 在 `local.py` 末尾加上下面这段，把 `这里换成生成的密钥` 换成第 2 步生成的密钥：
 
 ```python
 from celery.schedules import crontab
@@ -43,10 +49,7 @@ CELERYBEAT_SCHEDULE["qqbot_reconcile"] = {
 }
 ```
 
-密钥用 `python -c "import secrets; print(secrets.token_urlsafe(48))"` 生成。
-如果 `local.py` 里还没有 `APPS_WITH_PUBLIC_VIEWS`，先加一行 `APPS_WITH_PUBLIC_VIEWS = []`。
-
-3. 检查配置，然后建表：
+4. 检查配置，然后建表：
 
 ```bash
 python manage.py check
@@ -55,11 +58,15 @@ python manage.py migrate
 
 `check` 没有 `qqbot.` 开头的提示就说明配置对了。
 
-4. 重启 AA（例如 `sudo supervisorctl restart myauth:`）。
+5. 重启 AA：
 
-5. 在 Django 后台分配权限（在权限选择框里搜索中文名）：
-   - `QQ 绑定 - 成员`（`qqbot.basic_access`）→ 挂到 Member 状态
-   - `QQ 绑定 - 管理员`（`qqbot.manage`）→ 挂到 QQ 管理员所在的组
+```bash
+sudo supervisorctl restart myauth:
+```
+
+6. 在 Django 后台分配两个权限（权限选择框比较窄，两个权限分开搜）：
+   - 搜索 `QQ 绑定 - 成员`（或 `QQ binding: member`），加到 Member 状态上（权限代码 `qqbot.basic_access`）。
+   - 新建一个 QQ 管理员组（例如「QQ 管理」），搜索 `QQ 绑定 - 管理员`（或 `QQ binding: manager`）加到这个组上（权限代码 `qqbot.manage`），再在「Users」里把管理员账号加进这个组。
 
 完成后，成员在「服务」页能看到「QQ 绑定」卡片，QQ 管理员的侧边栏会出现「QQ 管理」。然后由 QQ 管理员在「QQ 管理」→「QQ 群」里添加要管理的群。
 
@@ -94,9 +101,17 @@ python manage.py remove_stale_contenttypes --include-stale-apps
 
 - 机器人对接：[API.md](API.md)；写 Koishi 插件前先看 [KOISHI_START.md](KOISHI_START.md)。机器人需要接口地址（`https://你的AA网址/qqbot/api/v1/`）、密钥编号和密钥。
 - 分步安装说明和常见问题：[docs/GUIDE.md](docs/GUIDE.md)
-- 装过本仓库 0.x 旧版的：做第 2 步之前，先删掉 `local.py` 里旧版加的 `"qqbot"`、`QQBOT_GROUP_CHAT` 和 `QQBOT_PING_GROUP`。旧版的绑定不会导入，所有人要重新绑定。
-- AA 5.2/5.3 所有页面都报 `sri_static` 错误时：执行 `pip install "django-sri<1"` 后重启。
+- 装过本仓库 0.x 旧版的：做第 3 步之前，先删掉 `local.py` 里旧版加的 `"qqbot"`、`QQBOT_GROUP_CHAT` 和 `QQBOT_PING_GROUP`。旧版的绑定不会导入，所有人要重新绑定。
+- 报错 `NameError: name 'APPS_WITH_PUBLIC_VIEWS' is not defined`：说明 `local.py` 比 AA 5 的模板旧，在第 3 步那段前面加一行：
+  ```python
+  APPS_WITH_PUBLIC_VIEWS = []
+  ```
+- AA 5.2/5.3 所有页面都报 `sri_static` 错误时，执行下面这条后重启：
+  ```bash
+  pip install "django-sri<1"
+  ```
 - 超级管理员不会自动获得入群资格，测试时请用普通成员账号。
+- 界面语言：「QQ 绑定」卡片和「QQ 管理」页面在用户的 AA 语言是中文时显示中文，其他语言都显示英文（卡片叫 "QQ binding"，菜单叫 "QQ Admin"）。没选过语言的成员按浏览器语言显示，浏览器是英文就会看到英文；让他在 AA 的语言菜单里选「简体中文」即可（AA 会记住）。改 `LANGUAGE_CODE` 没用，因为 Django 先看浏览器的语言。
 
 ## 许可证
 

@@ -3,29 +3,30 @@ Counts shown at the top of the bindings page. Context: summary.
 
 绑定页顶部显示的各项数量。上下文：summary。
 {% endcomment %}
+{% load i18n %}
 <div class="row g-2 mb-3" id="qqbot-summary">
     <div class="col-6 col-md">
         <div class="card text-center h-100"><div class="card-body py-2">
-            <div class="small text-body-secondary">已绑定</div>
+            <div class="small text-body-secondary">{% translate "Bound" %}</div>
             <div class="fs-4 fw-bold">{{ summary.bound }}</div>
-            <div class="small text-body-secondary">已验证 {{ summary.verified }} · 免验证 {{ summary.trusted }}</div>
+            <div class="small text-body-secondary">{% blocktranslate with verified=summary.verified trusted=summary.trusted %}Verified {{ verified }} · Trusted {{ trusted }}{% endblocktranslate %}</div>
         </div></div>
     </div>
     <div class="col-6 col-md">
         <a class="card text-center h-100 text-decoration-none {% if summary.conflicts %}border-danger{% endif %}" href="{% url 'qqbot:manage_pending' %}">
             <div class="card-body py-2">
-                <div class="small text-body-secondary">冲突的 QQ</div>
+                <div class="small text-body-secondary">{% translate "Conflicting QQ numbers" %}</div>
                 <div class="fs-4 fw-bold {% if summary.conflicts %}text-danger{% endif %}">{{ summary.conflicts }}</div>
-                <div class="small text-body-secondary">两个账号认领同一个 QQ</div>
+                <div class="small text-body-secondary">{% translate "Two accounts claim the same QQ" %}</div>
             </div>
         </a>
     </div>
     <div class="col-12 col-md">
         <a class="card text-center h-100 text-decoration-none {% if summary.unbound %}border-warning{% endif %}" href="{% url 'qqbot:manage_pending' %}#unbound">
             <div class="card-body py-2">
-                <div class="small text-body-secondary">群里有、但没绑定的 QQ</div>
+                <div class="small text-body-secondary">{% translate "In a group but not bound" %}</div>
                 <div class="fs-4 fw-bold">{{ summary.unbound }}</div>
-                <div class="small text-body-secondary">来自机器人最近的巡检</div>
+                <div class="small text-body-secondary">{% translate "From the bot's latest check" %}</div>
             </div>
         </a>
     </div>

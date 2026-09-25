@@ -1,32 +1,36 @@
 {% extends "qqbot/manage/_base.html" %}
+{% load i18n %}
 
-{% block qqbot_title %}强制解绑 - QQ 管理{% endblock qqbot_title %}
+{% block qqbot_title %}{% translate "Force unbind" %} - {% translate "QQ Admin" %}{% endblock qqbot_title %}
 
 {% block manage_body %}
     <div class="card border-danger mb-3">
-        <div class="card-header text-bg-danger">确认强制解绑</div>
+        <div class="card-header text-bg-danger">{% translate "Confirm force unbind" %}</div>
         <div class="card-body">
             <p class="fs-5">
-                你确定要解除
-                <strong>{% if main %}{{ main.character_name }}{% else %}{{ binding.user.username }}{% endif %}</strong>（AA 用户名 {{ binding.user.username }}）
-                和 QQ <strong class="font-monospace">{{ binding.qq }}</strong> 的绑定吗？
+                {% if main %}{% firstof main.character_name as display_name %}{% else %}{% firstof binding.user.username as display_name %}{% endif %}
+                {% blocktranslate trimmed with name=display_name username=binding.user.username qq=binding.qq %}
+                    Are you sure you want to unbind
+                    <strong>{{ name }}</strong> (AA username {{ username }})
+                    from QQ <strong class="font-monospace">{{ qq }}</strong>?
+                {% endblocktranslate %}
             </p>
             <ul>
-                <li>解绑后，这个 QQ 就不再算作联盟成员，机器人会复查它，可能不再批准它入群，也可能把它移出受管的群。</li>
-                <li>这个操作会写进操作记录。对方以后可以重新绑定。</li>
+                <li>{% translate "After unbinding, this QQ no longer counts as an alliance member. The bot will re-check it and may stop approving it or remove it from managed groups." %}</li>
+                <li>{% translate "This is recorded in the audit log. The member can bind again later." %}</li>
             </ul>
             <form method="post" action="{% url 'qqbot:manage_binding_unbind' binding.pk %}" class="d-inline">
                 {% csrf_token %}
                 <input type="hidden" name="qq" value="{{ binding.qq }}">
                 {% if back %}<input type="hidden" name="back" value="{{ back }}">{% endif %}
                 <button type="submit" class="btn btn-danger">
-                    <i class="fa-solid fa-link-slash fa-fw"></i> 确认强制解绑
+                    <i class="fa-solid fa-link-slash fa-fw"></i> {% translate "Confirm force unbind" %}
                 </button>
             </form>
             {% if back == 'pending' %}
-                <a class="btn btn-info ms-2" href="{% url 'qqbot:manage_pending' %}">返回，不解绑</a>
+                <a class="btn btn-info ms-2" href="{% url 'qqbot:manage_pending' %}">{% translate "Back, don't unbind" %}</a>
             {% else %}
-                <a class="btn btn-info ms-2" href="{% url 'qqbot:manage_binding' binding.pk %}">返回，不解绑</a>
+                <a class="btn btn-info ms-2" href="{% url 'qqbot:manage_binding' binding.pk %}">{% translate "Back, don't unbind" %}</a>
             {% endif %}
         </div>
     </div>

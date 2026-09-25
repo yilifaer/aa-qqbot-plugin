@@ -28,6 +28,7 @@ from django.contrib.auth.decorators import login_required, permission_required
 from django.shortcuts import redirect
 from django.urls import reverse
 from django.utils import timezone
+from django.utils.translation import gettext, gettext_lazy, pgettext
 from django.views.decorators.http import require_http_methods, require_POST
 
 from allianceauth.services.hooks import get_extension_logger
@@ -35,8 +36,9 @@ from allianceauth.services.hooks import get_extension_logger
 from ..core import bindings, cards, codes, eligibility
 from ..core.access import has_main_character
 from ..core.util import NICKNAME_MAX_LENGTH, mask_qq
+from ..i18n import ui_language_view
 from ..models import Binding, BindCode, Config, QQGroup, normalize_qq
-from .member_forms import NICKNAME_HELP, NicknameForm, SubmitForm, UnbindForm, first_error
+from .member_forms import NicknameForm, SubmitForm, UnbindForm, first_error, nickname_help
 
 logger = get_extension_logger(__name__)
 
@@ -55,10 +57,10 @@ STATE_CONFLICT = bindings.STATE_CONFLICT
 STATE_TAKEN = bindings.STATE_TAKEN
 
 STATE_LABELS = {
-    STATE_VERIFIED: "已验证",
-    STATE_TRUSTED: "老成员免验证",
-    STATE_CONFLICT: "冲突 - 请联系 QQ 管理员",
-    STATE_TAKEN: "已被其他账号验证 - 请联系 QQ 管理员",
+    STATE_VERIFIED: gettext_lazy("Verified"),
+    STATE_TRUSTED: gettext_lazy("Trusted (already in group)"),
+    STATE_CONFLICT: gettext_lazy("Conflict - contact a QQ admin"),
+    STATE_TAKEN: gettext_lazy("Verified by another account - contact a QQ admin"),
 }
 PROBLEM_STATES = {STATE_CONFLICT, STATE_TAKEN}
 
@@ -121,7 +123,8 @@ class MemberStatus:
 
     @property
     def state_label(self) -> str:
-        return STATE_LABELS.get(self.state, "")
+        label = STATE_LABELS.get(self.state)
+        return str(label) if label else ""
 
     @property
     def masked_qq(self) -> str:
@@ -191,7 +194,7 @@ def _flash(request, level: str, text: str, *, ok: bool, panel: str = "", qq: str
 
 def _flash_result(request, result, *, panel: str = "", qq: str = "", nickname: str = "") -> None:
     level = OUTCOME_LEVELS.get(result.outcome) or (INFO if result.ok else ERROR)
-    text = result.message or ("操作完成。" if result.ok else "操作失败。")
+    text = result.message or (gettext("Done.") if result.ok else gettext("Something went wrong."))
     _flash(request, level, text, ok=result.ok, panel=panel, qq=qq, nickname=nickname)
 
 
@@ -299,14 +302,14 @@ def _badge(view: str, status: MemberStatus) -> tuple[str, str]:
     总会配上卡片里的红色说明（``#qqbot-problem``，在已绑定和待验证视图里）。
     """
     if status.state == STATE_CONFLICT:
-        return "冲突", "text-bg-danger"
+        return pgettext("status badge", "Conflict"), "text-bg-danger"
     if status.state == STATE_TAKEN:
-        return "已被占用", "text-bg-danger"
+        return pgettext("status badge", "Taken"), "text-bg-danger"
     if status.binding is not None:
-        return "已启用", "text-bg-success"
+        return pgettext("status badge", "Enabled"), "text-bg-success"
     if view == VIEW_PENDING:
-        return "待验证", "text-bg-primary"
-    return "未启用", "text-bg-warning"  # like AA's own "Disabled" badge / 和 AA 自带的「Disabled」徽章一样
+        return pgettext("status badge", "Pending"), "text-bg-primary"
+    return pgettext("status badge", "Disabled"), "text-bg-warning"  # like AA's own "Disabled" badge / 和 AA 自带的「Disabled」徽章一样
 
 
 def card_context(request, now=None) -> dict:
@@ -333,7 +336,7 @@ def card_context(request, now=None) -> dict:
         "result": result,
         "is_manager": user.has_perm(MANAGE),
         "has_main": has_main_character(user),
-        "nickname_help": NICKNAME_HELP,
+        "nickname_help": nickname_help(),
         "nickname_max_length": NICKNAME_MAX_LENGTH,
         "card_max_bytes": cards.CARD_MAX_BYTES,
     }
@@ -476,6 +479,7 @@ def _no_main_redirect(request):
 
 @login_required
 @permission_required(BASIC_ACCESS, raise_exception=True)
+@ui_language_view
 def my_qq(request):
     """The old "我的 QQ" page: everything is in the services card now.
 
@@ -487,6 +491,7 @@ def my_qq(request):
 @login_required
 @permission_required(BASIC_ACCESS, raise_exception=True)
 @require_POST
+@ui_language_view
 def submit(request):
     user = request.user
     if not has_main_character(user):
@@ -513,7 +518,12 @@ def submit(request):
         elif session.get("qq") and session.get("nickname"):
             qq, nickname = session["qq"], session["nickname"]
         else:
-            _flash(request, WARNING, "验证码已经失效，请重新填写 QQ 号和昵称后提交。", ok=False)
+            _flash(
+                request,
+                WARNING,
+                gettext("The verification code has expired. Enter your QQ number and nickname again and submit."),
+                ok=False,
+            )
             return _back()
         panel = ""
 
@@ -534,19 +544,21 @@ def submit(request):
 @login_required
 @permission_required(BASIC_ACCESS, raise_exception=True)
 @require_POST
+@ui_language_view
 def code_cancel(request):
     n = bindings.cancel_code(request.user)
     request.session.pop(SESSION_KEY, None)
     if n:
-        _flash(request, SUCCESS, "验证码已取消。", ok=True)
+        _flash(request, SUCCESS, gettext("Verification code cancelled."), ok=True)
     else:
-        _flash(request, INFO, "没有需要取消的验证码。", ok=True)
+        _flash(request, INFO, gettext("There is no verification code to cancel."), ok=True)
     return _back()
 
 
 @login_required
 @permission_required(BASIC_ACCESS, raise_exception=True)
 @require_POST
+@ui_language_view
 def nickname(request):
     if not has_main_character(request.user):
         return _no_main_redirect(request)
@@ -563,6 +575,7 @@ def nickname(request):
 @login_required
 @permission_required(BASIC_ACCESS, raise_exception=True)
 @require_http_methods(["GET", "HEAD", "POST"])
+@ui_language_view
 def unbind(request):
     """POST with the ticked confirm box unbinds; GET (old links) goes back
     to the card, where the unbind form is.

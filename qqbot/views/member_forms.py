@@ -12,11 +12,12 @@ place; the core result message is shown to the member.
 """
 
 from django import forms
+from django.utils.translation import gettext, gettext_lazy
 
 from ..core.util import NICKNAME_MAX_LENGTH
 
-_REQUIRED_QQ = {"required": "请填写 QQ 号。"}
-_REQUIRED_NICKNAME = {"required": "请填写昵称。"}
+_REQUIRED_QQ = {"required": gettext_lazy("Please enter a QQ number.")}
+_REQUIRED_NICKNAME = {"required": gettext_lazy("Please enter a nickname.")}
 
 
 class SubmitForm(forms.Form):
@@ -28,13 +29,13 @@ class SubmitForm(forms.Form):
     """
 
     qq = forms.CharField(
-        label="QQ 号",
+        label=gettext_lazy("QQ number"),
         max_length=32,
         required=False,
         error_messages=_REQUIRED_QQ,
     )
     nickname = forms.CharField(
-        label="昵称",
+        label=gettext_lazy("Nickname"),
         max_length=64,
         required=False,
         error_messages=_REQUIRED_NICKNAME,
@@ -53,7 +54,7 @@ class SubmitForm(forms.Form):
 
 class NicknameForm(forms.Form):
     nickname = forms.CharField(
-        label="昵称",
+        label=gettext_lazy("Nickname"),
         max_length=64,
         error_messages=_REQUIRED_NICKNAME,
     )
@@ -67,7 +68,7 @@ class UnbindForm(forms.Form):
 
     confirm = forms.BooleanField(
         required=True,
-        error_messages={"required": "请先勾选「我确认要解除绑定」，再点「解除绑定」。"},
+        error_messages={"required": gettext_lazy("Tick “I want to unbind this QQ” first, then click “Unbind QQ”.")},
     )
 
 
@@ -79,7 +80,14 @@ def first_error(form) -> str:
     for errors in form.errors.values():
         for error in errors:
             return str(error)
-    return "提交的内容有误，请检查后重试。"
+    return gettext("Something is wrong with what you submitted. Please check it and try again.")
 
 
-NICKNAME_HELP = f"最长 {NICKNAME_MAX_LENGTH} 个字；只能用中文、英文字母、数字、空格和 _ - . · ( )。"
+def nickname_help() -> str:
+    """The nickname rules shown under the nickname input (in the user's language).
+
+    昵称输入框下方显示的昵称规则（按用户的语言显示）。
+    """
+    return gettext(
+        "at most %(max)s characters; only Chinese characters, English letters, digits, spaces and _ - . · ( ) are allowed."
+    ) % {"max": NICKNAME_MAX_LENGTH}

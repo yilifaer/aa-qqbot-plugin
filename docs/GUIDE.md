@@ -9,7 +9,7 @@
 - QQ 机器人（Koishi，另一个仓库）来问 AA：「这个 QQ 能不能进这个群？群名片该叫什么？」；
 - 成员离开联盟、账号被停用、换了主角色，AA 都会记下来，机器人下次来取时就知道了。
 
-当前版本：**1.0.0b2**（测试版），更新内容见 [`CHANGELOG.md`](../CHANGELOG.md)。
+当前版本：**1.0.0b3**（测试版），更新内容见 [`CHANGELOG.md`](../CHANGELOG.md)。
 需要 Alliance Auth 5.x（5.2 及以上）、Python 3.10 及以上。
 
 ---
@@ -55,7 +55,8 @@
 「真的把人踢出群」这个开关只在机器人那边，AA 网页上开不了，防止误操作。
 
 > AA 默认是英文界面，左侧菜单显示为「Services」。可以在左侧菜单底部的语言选择里切换成简体中文。
-> QQ 绑定卡片和「QQ 管理」页面本身始终是中文。
+> QQ 绑定卡片和「QQ 管理」页面也跟着这个语言走：选英文时显示英文（卡片叫 "QQ binding"，菜单叫 "QQ Admin"），
+> 选中文时显示中文，选其他语言时显示英文。见第 5 节末尾。
 
 ### 截图（演示数据）
 
@@ -143,7 +144,7 @@ pip show allianceauth django-sri aa-qqbot | grep -E '^(Name|Version)'
 pip install git+https://github.com/yilifaer/aa-qqbot-plugin.git
 ```
 
-- 最后一行出现 `Successfully installed aa-qqbot-1.0.0b2` 就装好了（可能还会列出其他包，是 AA 缺的依赖）。
+- 最后一行出现 `Successfully installed aa-qqbot-1.0.0b3` 就装好了（可能还会列出其他包，是 AA 缺的依赖）。
 - 提示 `Cannot find command 'git'`：先安装 git（见「准备」），或者改用不需要 git 的写法：
   `pip install https://github.com/yilifaer/aa-qqbot-plugin/archive/refs/heads/main.zip`
 - 注意：包名是 `aa-qqbot`，只能用上面的 GitHub 地址安装。**不要**运行 `pip install qqbot`：
@@ -328,8 +329,8 @@ QQBOT_API_KEYS = {
 
 | 权限 | 在后台里显示为 | 建议挂给 |
 |---|---|---|
-| `qqbot.basic_access` | `QQ 绑定 \| general \| QQ 绑定 - 成员：可以绑定自己的 QQ` | **Member 状态** |
-| `qqbot.manage` | `QQ 绑定 \| general \| QQ 绑定 - 管理员：可以在前台管理 QQ 群与绑定` | 新建一个组，例如「QQ 管理」，把管理员加进去 |
+| `qqbot.basic_access` | `QQ binding / QQ 绑定 \| general \| QQ binding: member, can bind own QQ / QQ 绑定 - 成员：可以绑定自己的 QQ` | **Member 状态** |
+| `qqbot.manage` | `QQ binding / QQ 绑定 \| general \| QQ binding: manager, can manage QQ groups and bindings / QQ 绑定 - 管理员：可以在前台管理 QQ 群与绑定` | 新建一个组，例如「QQ 管理」，把管理员加进去 |
 
 操作步骤：
 
@@ -366,6 +367,14 @@ QQBOT_API_KEYS = {
 ```bash
 python manage.py qqbot_reconcile
 ```
+
+**界面语言**：QQ 绑定卡片和「QQ 管理」页面跟随每个人在 AA 里的语言：任何中文（简体、繁体）都显示简体中文，其他语言（英语、德语、俄语等）都显示英文。
+没在 AA 里选过语言的人，按浏览器的语言算：浏览器是中文就显示中文，其他语言显示英文（很多人的 Windows / Chrome 是英文的）。
+如果有成员看到的是英文：让他在 AA 左侧菜单底部的语言选择里选「简体中文」（AA 会记住这个选择，以后登录也是中文）。
+注意：在 `local.py` 里设 `LANGUAGE_CODE = "zh-hans"` **解决不了**这个问题。浏览器是英文时，Django 会直接用浏览器的语言，
+`LANGUAGE_CODE` 只在浏览器没有发送任何 AA 支持的语言时才用得上。
+成员填写和管理员设置的内容（入群须知、昵称、群名称等）按原样显示，不会翻译；默认的入群须知是中文，可以在「设置」里改。
+机器人接口返回的提示文字和 `python manage.py check` 的检查信息不跟语言走：接口是中文，检查信息是英文和中文各一行。
 
 ---
 
@@ -436,7 +445,7 @@ sudo supervisorctl restart myauth:
    python manage.py shell -c "from django_celery_beat.models import PeriodicTask; print(PeriodicTask.objects.filter(name='qqbot_reconcile').delete())"
    ```
 
-4. 从 `local.py` 里删掉安装时加的那段（按本文第 2 节安装的，是从 `# ---------- aa-qqbot ----------` 到 `# ---------- aa-qqbot 结束 ----------`；按 README 安装的，是 README 第 2 步那几行）。
+4. 从 `local.py` 里删掉安装时加的那段（按本文第 2 节安装的，是从 `# ---------- aa-qqbot ----------` 到 `# ---------- aa-qqbot 结束 ----------`；按 README 安装的，是 README 第 3 步那几行）。
 
 5. 卸载插件，并清理后台里残留的两个 QQ 权限：
 
@@ -471,6 +480,7 @@ sudo supervisorctl restart myauth:
 | 所有 AA 页面都报错，错误信息里有 `sri_static` | AA 5.2.x / 5.3.x 没有限制 `django-sri` 的版本，而 2026-09 发布的 `django-sri` 1.0 删掉了 AA 页面要用的 `sri_static` 标签 | `pip install "django-sri<1"`，然后重启。AA 5.4 及以上已自带这个限制，最简单的办法是把 AA 升到 5.4 |
 | 「服务」页没有「QQ 绑定」卡片 | 账号没有「QQ 绑定 - 成员」权限，或者装完没重启 | 第 4 节；`sudo supervisorctl restart myauth:` |
 | 左侧菜单没有「QQ 管理」 | 没有「QQ 绑定 - 管理员」权限 | 第 4 节 |
+| 卡片和「QQ 管理」页面是英文（"QQ binding"、"QQ Admin"） | 这个人在 AA 里选的是英文（或者没选、浏览器是英文） | 让他在 AA 左侧菜单底部的语言选择里选「简体中文」。改 `LANGUAGE_CODE` 没用（第 5 节末尾） |
 | 超级管理员能看到卡片，但显示「目前没有你可以加入的群」 | 超级管理员**不会**自动获得入群资格 | 让这个账号所在的状态（例如 Member）带上成员权限，或者用普通成员账号测试 |
 | 老成员填了 QQ 也拿到验证码 | 机器人还没上报过这个群的完整名单，或者名单已超过有效期（默认 7 天） | 等机器人巡检；树莓派上还没有机器人时，用 [`docs/TESTING.md`](TESTING.md) 里的「模拟机器人」 |
 | 机器人收到 `302` 或登录网页 | `APPS_WITH_PUBLIC_VIEWS` 里没有 `"qqbot"`（`qqbot.E001`） | 在 `local.py` 里**追加**，然后重启 |
