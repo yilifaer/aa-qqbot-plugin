@@ -9,7 +9,7 @@
 - QQ 机器人（Koishi，另一个仓库）来问 AA：「这个 QQ 能不能进这个群？群名片该叫什么？」；
 - 成员离开联盟、账号被停用、换了主角色，AA 都会记下来，机器人下次来取时就知道了。
 
-当前版本：**1.0.0b2**（测试版），更新内容见 [`CHANGELOG.md`](../CHANGELOG.md)。
+当前版本：**1.0.0b3**（测试版），更新内容见 [`CHANGELOG.md`](../CHANGELOG.md)。
 需要 Alliance Auth 5.x（5.2 及以上）、Python 3.10 及以上。
 
 ---
@@ -143,7 +143,7 @@ pip show allianceauth django-sri aa-qqbot | grep -E '^(Name|Version)'
 pip install git+https://github.com/yilifaer/aa-qqbot-plugin.git
 ```
 
-- 最后一行出现 `Successfully installed aa-qqbot-1.0.0b2` 就装好了（可能还会列出其他包，是 AA 缺的依赖）。
+- 最后一行出现 `Successfully installed aa-qqbot-1.0.0b3` 就装好了（可能还会列出其他包，是 AA 缺的依赖）。
 - 提示 `Cannot find command 'git'`：先安装 git（见「准备」），或者改用不需要 git 的写法：
   `pip install https://github.com/yilifaer/aa-qqbot-plugin/archive/refs/heads/main.zip`
 - 注意：包名是 `aa-qqbot`，只能用上面的 GitHub 地址安装。**不要**运行 `pip install qqbot`：
@@ -328,8 +328,8 @@ QQBOT_API_KEYS = {
 
 | 权限 | 在后台里显示为 | 建议挂给 |
 |---|---|---|
-| `qqbot.basic_access` | `QQ 绑定 \| general \| QQ 绑定 - 成员：可以绑定自己的 QQ` | **Member 状态** |
-| `qqbot.manage` | `QQ 绑定 \| general \| QQ 绑定 - 管理员：可以在前台管理 QQ 群与绑定` | 新建一个组，例如「QQ 管理」，把管理员加进去 |
+| `qqbot.basic_access` | `QQ binding / QQ 绑定 \| general \| QQ binding: member, can bind own QQ / QQ 绑定 - 成员：可以绑定自己的 QQ` | **Member 状态** |
+| `qqbot.manage` | `QQ binding / QQ 绑定 \| general \| QQ binding: manager, can manage QQ groups and bindings / QQ 绑定 - 管理员：可以在前台管理 QQ 群与绑定` | 新建一个组，例如「QQ 管理」，把管理员加进去 |
 
 操作步骤：
 
@@ -436,7 +436,7 @@ sudo supervisorctl restart myauth:
    python manage.py shell -c "from django_celery_beat.models import PeriodicTask; print(PeriodicTask.objects.filter(name='qqbot_reconcile').delete())"
    ```
 
-4. 从 `local.py` 里删掉安装时加的那段（按本文第 2 节安装的，是从 `# ---------- aa-qqbot ----------` 到 `# ---------- aa-qqbot 结束 ----------`；按 README 安装的，是 README 第 2 步那几行）。
+4. 从 `local.py` 里删掉安装时加的那段（按本文第 2 节安装的，是从 `# ---------- aa-qqbot ----------` 到 `# ---------- aa-qqbot 结束 ----------`；按 README 安装的，是 README 第 3 步那几行）。
 
 5. 卸载插件，并清理后台里残留的两个 QQ 权限：
 

@@ -59,8 +59,16 @@ class General(models.Model):
         managed = False
         default_permissions = ()
         permissions = (
-            ("basic_access", "QQ 绑定 - 成员：可以绑定自己的 QQ"),
-            ("manage", "QQ 绑定 - 管理员：可以在前台管理 QQ 群与绑定"),
+            # English first so IT can search the admin permission picker in
+            # English; the Chinese part keeps the names the Chinese docs use.
+            # 英文在前，方便 IT 在后台权限选择框里用英文搜索；
+            # 中文部分保持中文文档里用的名字不变。
+            ("basic_access", "QQ binding: member, can bind own QQ / QQ 绑定 - 成员：可以绑定自己的 QQ"),
+            (
+                "manage",
+                "QQ binding: manager, can manage QQ groups and bindings"
+                " / QQ 绑定 - 管理员：可以在前台管理 QQ 群与绑定",
+            ),
         )
 
 

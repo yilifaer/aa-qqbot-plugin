@@ -4,6 +4,15 @@
 每次交给别人安装的改动都要提升版本号（`qqbot/__init__.py` 里的 `__version__`）并在这里写一段，
 否则装的人很难确认自己装的是哪一版（决定 #20）。升级方法见 [README](README.zh-CN.md#升级)。
 
+## [1.0.0b3] - 2026-09-25
+
+- 两个权限的名字改成英中双语（英文在前）：`QQ binding: member ... / QQ 绑定 - 成员 ...`、
+  `QQ binding: manager ... / QQ 绑定 - 管理员 ...`；后台里应用名显示为 `QQ binding / QQ 绑定`。
+  IT 在后台权限选择框里搜 `QQ binding` 就能找到。新的迁移 `0002_bilingual_permission_names`
+  会把已经装过 1.0.0b1/b2 的站点里的权限一起改名（Django 本身不会改已有权限的名字）。
+- README：生成密钥单独成一步，命令都放在可以一键复制的代码框里；英文 README 里出现的中文界面名称都附上英文意思。
+- 升级后请照常运行 `python manage.py migrate`。
+
 ## [1.0.0b2] - 2026-09-25
 
 只改了文档和注释，功能没有变化。
