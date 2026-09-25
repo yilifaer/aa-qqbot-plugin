@@ -1,6 +1,8 @@
 """The "QQ 绑定" card on AA's services page (docs/SPEC.md section 5).
 
-The card is only an entry point to the member page. AA's service callbacks
+Members do everything inside this card (DECISIONS.md #18): bind, see the
+code and the groups, change the nickname, re-bind, unbind. The card's
+context comes from ``views.member.card_context``. AA's service callbacks
 (``validate_user``, ``delete_user``, ...) do nothing: correctness comes from
 the signal handlers and the daily reconciliation, which judge every binding
 from scratch anyway.
@@ -57,18 +59,8 @@ class QQBotService(ServicesHook):
     # Card ---------------------------------------------------------------------
 
     def render_services_ctrl(self, request):
-        from .core.access import has_main_character
-        from .views.member import member_status
+        from .views.member import card_context
 
-        user = request.user
-        status = member_status(user)
-        return render_to_string(
-            self.service_ctrl_template,
-            {
-                "service_name": self.title,
-                "username": status.masked_qq,
-                "status": status,
-                "has_main": has_main_character(user),
-            },
-            request=request,
-        )
+        context = card_context(request)
+        context["service_name"] = self.title
+        return render_to_string(self.service_ctrl_template, context, request=request)

@@ -1,7 +1,11 @@
-"""Member pages: "我的 QQ" (docs/SPEC.md section 5, DESIGN.md 4.2 / 5).
+"""Member side: the "QQ 绑定" card on AA's services page (DECISIONS.md #18,
+docs/SPEC.md section 5, DESIGN.md 4.1 / 5).
 
-Every change goes through ``qqbot.core``; these views only read, call core
-and turn the core result into a Django message.
+Members do everything inside that card; there is no separate member page.
+:func:`card_context` collects what the card shows, the POST views below
+change data (always through ``qqbot.core``), turn the core result into a
+Django message and go back to the card (``/services/#qqbot``), where AA's
+base template shows the message.
 """
 
 import hmac
@@ -10,7 +14,8 @@ from dataclasses import dataclass
 
 from django.contrib import messages
 from django.contrib.auth.decorators import login_required, permission_required
-from django.shortcuts import redirect, render
+from django.shortcuts import redirect
+from django.urls import reverse
 from django.utils import timezone
 from django.views.decorators.http import require_http_methods, require_POST
 
@@ -20,12 +25,14 @@ from ..core import bindings, cards, codes, eligibility
 from ..core.access import has_main_character
 from ..core.util import NICKNAME_MAX_LENGTH, mask_qq
 from ..models import Binding, BindCode, Config, QQGroup, normalize_qq
-from .member_forms import NICKNAME_HELP, NicknameForm, SubmitForm, first_error
+from .member_forms import NICKNAME_HELP, NicknameForm, SubmitForm, UnbindForm, first_error
 
 logger = get_extension_logger(__name__)
 
 BASIC_ACCESS = "qqbot.basic_access"
+MANAGE = "qqbot.manage"
 SESSION_KEY = "qqbot_code"
+CARD_ANCHOR = "qqbot"  # id of the card on the services page
 
 # Binding states shown to the member.
 STATE_VERIFIED = bindings.STATE_VERIFIED
@@ -40,6 +47,12 @@ STATE_LABELS = {
     STATE_TAKEN: "已被其他账号验证 - 请联系 QQ 管理员",
 }
 PROBLEM_STATES = {STATE_CONFLICT, STATE_TAKEN}
+
+# What the card shows (``card_context()["view"]``).
+VIEW_NO_MAIN = "no_main"
+VIEW_UNBOUND = "unbound"
+VIEW_PENDING = "pending"
+VIEW_BOUND = "bound"
 
 # Message level per core outcome (submit / nickname / unbind / cancel).
 OUTCOME_LEVELS = {
@@ -62,7 +75,7 @@ _NICK_MARK = ""
 
 @dataclass
 class MemberStatus:
-    """What the member pages and the services card show about a user."""
+    """What the services card shows about a user's binding."""
 
     binding: Binding | None = None
     state: str = ""
@@ -97,6 +110,15 @@ def member_status(user, now=None) -> MemberStatus:
 # --------------------------------------------------------------------------
 # helpers
 # --------------------------------------------------------------------------
+
+
+def services_url() -> str:
+    """The services page, scrolled to our card."""
+    return reverse("services:services") + "#" + CARD_ANCHOR
+
+
+def _back():
+    return redirect(services_url())
 
 
 def _message(request, result) -> None:
@@ -155,31 +177,42 @@ def _minutes_left(expires_at, now) -> int:
     return max(1, math.ceil((expires_at - now).total_seconds() / 60))
 
 
-def _no_main_redirect(request):
-    messages.warning(request, "请先在 AA 首页设置主角色，然后再来绑定 QQ。")
-    return redirect("qqbot:my_qq")
+def _badge(view: str, status: MemberStatus) -> tuple[str, str]:
+    """``(label, bootstrap class)`` of the status badge in the card header."""
+    if status.state == STATE_CONFLICT:
+        return "冲突", "text-bg-danger"
+    if status.state == STATE_TAKEN:
+        return "已被占用", "text-bg-danger"
+    if status.binding is not None:
+        return "已启用", "text-bg-success"
+    if view == VIEW_PENDING:
+        return "待验证", "text-bg-primary"
+    return "未启用", "text-bg-secondary"
 
 
-# --------------------------------------------------------------------------
-# views
-# --------------------------------------------------------------------------
+def card_context(request, now=None) -> dict:
+    """Everything ``qqbot/service_ctrl.html`` needs for ``request.user``.
 
-
-@login_required
-@permission_required(BASIC_ACCESS, raise_exception=True)
-def my_qq(request):
+    Runs on every services page load, so it only does the queries the
+    current state needs. It may drop a stale verification code from the
+    session (and then says so once, pre-filling the form).
+    """
     user = request.user
-    now = timezone.now()
-    config = Config.get_solo()
+    now = now or timezone.now()
     context = {
-        "qqbot_nav": "member",
-        "rules_text": config.rules_text,
-        "nickname_help": NICKNAME_HELP,
+        "is_manager": user.has_perm(MANAGE),
         "has_main": has_main_character(user),
+        "nickname_help": NICKNAME_HELP,
+        "nickname_max_length": NICKNAME_MAX_LENGTH,
+        "card_max_bytes": cards.CARD_MAX_BYTES,
     }
     if not context["has_main"]:
-        return render(request, "qqbot/member/my_qq.html", context)
+        status = MemberStatus()
+        context.update({"view": VIEW_NO_MAIN, "status": status})
+        context["badge_label"], context["badge_class"] = _badge(VIEW_NO_MAIN, status)
+        return context
 
+    config = Config.get_solo()
     status = member_status(user, now)
     binding, live = status.binding, status.live_code
     session = _session_code(request)
@@ -196,42 +229,65 @@ def my_qq(request):
         else:
             session = {}
 
-    groups = eligibility.groups_for_user(user, now)
-    before, after, nick_in_card = _card_parts(user, config)
-    room = _nickname_room(before, after, nick_in_card)
+    if live is not None:
+        view = VIEW_PENDING
+    elif binding is not None:
+        view = VIEW_BOUND
+    else:
+        view = VIEW_UNBOUND
 
     context.update(
         {
+            "view": view,
             "status": status,
             "binding": binding,
             "live": live,
-            "card_before": before,
-            "card_after": after,
-            "nick_in_card": nick_in_card,
-            # Hint under the nickname input (DESIGN.md 6).
-            "nick_room_cjk": None if room is None else room // 3,
-            "nick_room_ascii": room,
-            "card_max_bytes": cards.CARD_MAX_BYTES,
-            "groups": _split_groups(groups),
-            "has_groups": bool(groups),
+            "rules_text": config.rules_text,
+            "code_ttl_minutes": config.code_ttl_minutes,
+            "cooldown_hours": config.rebind_cooldown_hours,
             "stale_code": stale_code,
         }
     )
+    context["badge_label"], context["badge_class"] = _badge(view, status)
+
+    # Groups: only where they are shown (a QQ with a problem shows none).
+    groups = []
+    if view == VIEW_PENDING or (view == VIEW_BOUND and not status.has_problem):
+        groups = eligibility.groups_for_user(user, now)
+    context["groups"] = _split_groups(groups)
+    context["has_groups"] = bool(groups)
+
+    # The nickname input with the card prefix: bind form and "改昵称".
+    if view in (VIEW_UNBOUND, VIEW_BOUND):
+        before, after, nick_in_card = _card_parts(user, config)
+        room = _nickname_room(before, after, nick_in_card)
+        context.update(
+            {
+                "card_before": before,
+                "card_after": after,
+                "nick_in_card": nick_in_card,
+                # Hint under the nickname input (DESIGN.md 6).
+                "nick_room_cjk": None if room is None else room // 3,
+                "nick_room_ascii": room,
+            }
+        )
+
     if live is not None:
         context.update(
             {
                 "code": session.get("code") if _session_code_matches(session, live) else "",
                 "code_qq": mask_qq(live.qq),
                 "code_nickname": live.nickname,
-                "expires_at": live.expires_at,
                 "minutes_left": _minutes_left(live.expires_at, now),
             }
         )
     if binding is not None:
         context["card"] = cards.render_card(binding, config)
         context["card_shortened"] = cards.is_shortened(binding, config)
+        # Unbinding does not reset the rebind cooldown (DESIGN.md 5.5).
+        context["cooldown_ends"] = bindings.cooldown_ends(binding.qq_changed_at, now, config)
 
-    # Pre-fill the submit form: the last typed values, else the binding.
+    # Pre-fill the bind form: the last typed values, else the binding.
     initial_qq = ""
     initial_nickname = binding.nickname if binding else ""
     if stale_code:
@@ -239,7 +295,24 @@ def my_qq(request):
         initial_nickname = session.get("nickname") or initial_nickname
     context["initial_qq"] = initial_qq
     context["initial_nickname"] = initial_nickname
-    return render(request, "qqbot/member/my_qq.html", context)
+    return context
+
+
+def _no_main_redirect(request):
+    messages.warning(request, "请先在 AA 首页设置主角色，然后再来绑定 QQ。")
+    return _back()
+
+
+# --------------------------------------------------------------------------
+# views
+# --------------------------------------------------------------------------
+
+
+@login_required
+@permission_required(BASIC_ACCESS, raise_exception=True)
+def my_qq(request):
+    """The old "我的 QQ" page: everything is in the services card now."""
+    return _back()
 
 
 @login_required
@@ -252,7 +325,7 @@ def submit(request):
     form = SubmitForm(request.POST)
     if not form.is_valid():
         messages.error(request, first_error(form))
-        return redirect("qqbot:my_qq")
+        return _back()
 
     qq = form.cleaned_data["qq"]
     nickname = form.cleaned_data["nickname"]
@@ -265,7 +338,7 @@ def submit(request):
             qq, nickname = session["qq"], session["nickname"]
         else:
             messages.warning(request, "验证码已经失效，请重新填写 QQ 号和昵称后提交。")
-            return redirect("qqbot:my_qq")
+            return _back()
 
     result = bindings.submit(user, qq, nickname)
     _message(request, result)
@@ -278,7 +351,7 @@ def submit(request):
         }
     elif result.outcome in ("trusted", "conflict"):
         request.session.pop(SESSION_KEY, None)
-    return redirect("qqbot:my_qq")
+    return _back()
 
 
 @login_required
@@ -291,7 +364,7 @@ def code_cancel(request):
         messages.success(request, "验证码已取消。")
     else:
         messages.info(request, "没有需要取消的验证码。")
-    return redirect("qqbot:my_qq")
+    return _back()
 
 
 @login_required
@@ -303,33 +376,25 @@ def nickname(request):
     form = NicknameForm(request.POST)
     if not form.is_valid():
         messages.error(request, first_error(form))
-        return redirect("qqbot:my_qq")
+        return _back()
     result = bindings.set_nickname(request.user, form.cleaned_data["nickname"])
     _message(request, result)
-    return redirect("qqbot:my_qq")
+    return _back()
 
 
 @login_required
 @permission_required(BASIC_ACCESS, raise_exception=True)
 @require_http_methods(["GET", "HEAD", "POST"])
 def unbind(request):
-    """GET shows the confirmation page, POST unbinds."""
-    if request.method == "POST":
-        result = bindings.unbind(request.user, actor=request.user)
-        request.session.pop(SESSION_KEY, None)
-        _message(request, result)
-        return redirect("qqbot:my_qq")
-    status = member_status(request.user)
-    if status.binding is None:
-        messages.info(request, "你还没有绑定 QQ。")
-        return redirect("qqbot:my_qq")
-    return render(
-        request,
-        "qqbot/member/unbind_confirm.html",
-        {
-            "qqbot_nav": "member",
-            "status": status,
-            # Unbinding does not reset the rebind cooldown (DESIGN.md 5.5).
-            "cooldown_ends": bindings.cooldown_ends(status.binding.qq_changed_at),
-        },
-    )
+    """POST with the ticked confirm box unbinds; GET (old links) goes back
+    to the card, where the unbind form is."""
+    if request.method != "POST":
+        return _back()
+    form = UnbindForm(request.POST)
+    if not form.is_valid():
+        messages.warning(request, first_error(form))
+        return _back()
+    result = bindings.unbind(request.user, actor=request.user)
+    request.session.pop(SESSION_KEY, None)
+    _message(request, result)
+    return _back()

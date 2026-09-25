@@ -1,4 +1,4 @@
-"""Forms for the member pages.
+"""Forms for the member actions in the services card.
 
 The forms only parse the POST data. All real validation (QQ format,
 nickname rules) happens in ``qqbot.core`` so that the rules live in one
@@ -46,6 +46,15 @@ class NicknameForm(forms.Form):
         label="昵称",
         max_length=64,
         error_messages=_REQUIRED_NICKNAME,
+    )
+
+
+class UnbindForm(forms.Form):
+    """Unbinding needs the ticked "我确认要解除绑定" box (no separate page)."""
+
+    confirm = forms.BooleanField(
+        required=True,
+        error_messages={"required": "请先勾选「我确认要解除绑定」，再点「解除绑定」。"},
     )
 
 
