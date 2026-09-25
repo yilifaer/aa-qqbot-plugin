@@ -60,6 +60,9 @@
 pip install git+https://github.com/yilifaer/aa-qqbot-plugin.git
 ```
 
+> 如果 AA 是 **5.2.x**：AA 5.2 没有限制 `django-sri` 的版本，而 `django-sri` 1.0 删掉了 AA 页面要用的 `sri_static` 标签。
+> 安装或升级任何包时如果顺带装上了 `django-sri` 1.0，AA 页面会报错。可以用 `pip install "django-sri<1"` 固定版本（AA 5.3 及以上已自带这个限制）。
+
 ### 第 2 步：修改 `myauth/myauth/settings/local.py`
 
 在文件**末尾**加上下面这段：
@@ -74,6 +77,7 @@ INSTALLED_APPS += ["qqbot"]
 APPS_WITH_PUBLIC_VIEWS += ["qqbot"]
 
 # 机器人通信密钥：{"密钥名": "密钥"}。生成方法见本文第 3 节。
+# 密钥名只能用英文字母、数字和 - _ . 等符号（不能有空格、不能用中文，最长 64 个字符），例如 "koishi-1"。
 # 可以同时写多把，每把都有效，方便不停机更换（见第 3 节）。
 QQBOT_API_KEYS = {
     "koishi-1": "这里换成生成的密钥",
@@ -124,6 +128,7 @@ python manage.py check
 | `qqbot.E001` | `APPS_WITH_PUBLIC_VIEWS` 里没有 `"qqbot"` | 按第 2 步**追加** |
 | `qqbot.E002` | 没配 `QQBOT_API_KEYS`，或者格式不是 `{...}` 字典 | 按第 2 步配置 |
 | `qqbot.E003` | 有密钥太短（少于 32 个字符） | 按第 3 节重新生成 |
+| `qqbot.E004` | 有密钥名格式不对（有空格、中文，或超过 64 个字符），机器人用它发的请求会一直被拒绝 | 改成 `koishi-1` 这样的英文名字，机器人那边同步修改 |
 | `qqbot.W001` | 缓存不是 Redis 这类多进程共享的缓存 | AA 默认就是 Redis，检查 `local.py` 有没有改过 `CACHES` |
 
 没有出现 `qqbot.` 开头的提示，就说明配置好了。
@@ -188,7 +193,7 @@ python -c "import secrets; print(secrets.token_urlsafe(48))"
 | 页面 | 地址 | 谁能看 |
 |---|---|---|
 | 我的 QQ（绑定、换绑、解绑） | 左侧菜单「QQ 绑定」，或「服务」页里的 QQ 卡片，地址 `/qqbot/` | 成员 |
-| QQ 管理（群、已绑定成员、待处理、设置、操作记录） | 在「QQ 绑定」页顶部点「QQ 管理」标签，地址 `/qqbot/manage/` | QQ 管理员 |
+| QQ 管理（群、已绑定成员、待处理、设置、操作记录） | 在「QQ 绑定」页顶部点「QQ 管理」标签，地址 `/qqbot/manage/`。只有管理员权限、没有成员权限的人（例如不在 Member 状态的管理员），点左侧菜单「QQ 绑定」会直接进入这里 | QQ 管理员 |
 | Django 后台 | `/admin/` 里的「QQ 绑定」 | 超级管理员（绑定和操作记录在后台只能看不能改，改动请走前台） |
 
 装好之后的第一件事：QQ 管理员打开「QQ 管理」→「QQ 群」，把要管理的群一个个加进去。
@@ -232,7 +237,15 @@ python manage.py migrate qqbot zero
 
 2. 从 `local.py` 里删掉第 2 步加的整段（`INSTALLED_APPS`、`APPS_WITH_PUBLIC_VIEWS`、
    `QQBOT_API_KEYS`、`CELERYBEAT_SCHEDULE["qqbot_reconcile"]`）。
-3. 卸载并重启：
+3. 删掉数据库里的定时任务。AA 5 的 celery beat 会把 `CELERYBEAT_SCHEDULE` 抄进数据库，
+   只从 `local.py` 删掉并不会让它停下，以后每天仍会发出 `qqbot.tasks.reconcile`，worker 日志里会一直报
+   「unregistered task」。在后台 `/admin/` →「Periodic tasks」里删掉名为 `qqbot_reconcile` 的任务，或者运行：
+
+```bash
+python manage.py shell -c "from django_celery_beat.models import PeriodicTask; print(PeriodicTask.objects.filter(name='qqbot_reconcile').delete())"
+```
+
+4. 卸载并重启：
 
 ```bash
 pip uninstall aa-qqbot

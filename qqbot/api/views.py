@@ -70,7 +70,9 @@ def _parse_json(body: bytes) -> dict:
         return {}
     try:
         data = json.loads(body.decode("utf-8"))
-    except (UnicodeDecodeError, ValueError):
+    except (UnicodeDecodeError, ValueError, RecursionError):
+        # RecursionError: absurdly deep nesting ("[[[[...]]]]") -- still just
+        # a bad request, not an internal error the bot would retry.
         raise bad_request("请求体不是合法的 JSON（需要 UTF-8 编码）。") from None
     if not isinstance(data, dict):
         raise bad_request("请求体必须是一个 JSON 对象（{...}）。")
@@ -141,6 +143,29 @@ def _active_group(value) -> QQGroup:
     return group
 
 
+# Longest invalid item echoed back as-is in a ``BAD_QQ`` result.
+MAX_ECHO_LENGTH = 64
+
+
+def _echo(value):
+    """An invalid ``qqs`` item as it may be echoed in a ``BAD_QQ`` result.
+
+    Integers and short printable strings come back unchanged. Anything else
+    (lone surrogates such as ``"\\ud800"`` that cannot be encoded as UTF-8,
+    control characters, very long strings) comes back as ``None``, so one bad
+    item can never break the response for the whole batch.
+    """
+    if _is_int(value):
+        return value
+    if isinstance(value, str) and len(value) <= MAX_ECHO_LENGTH and value.isprintable():
+        try:
+            value.encode("utf-8")
+        except UnicodeEncodeError:
+            return None
+        return value
+    return None
+
+
 def _decision(d: eligibility.Decision) -> dict:
     return {"qq": d.qq, "decision": d.decision, "reason": d.reason, "card": d.card}
 
@@ -203,7 +228,8 @@ def check(request, data):
             results.append(_decision(decisions[n]))
         else:
             results.append(
-                {"qq": original, "decision": eligibility.REVIEW, "reason": BAD_QQ, "card": None}
+                {"qq": _echo(original), "decision": eligibility.REVIEW, "reason": BAD_QQ,
+                 "card": None}
             )
     logger.info(
         "qqbot: check group %s: %d QQs (%d invalid)%s",

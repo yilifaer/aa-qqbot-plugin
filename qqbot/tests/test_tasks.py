@@ -4,6 +4,9 @@ from datetime import timedelta
 from io import StringIO
 from unittest import mock
 
+from celery import states
+
+from django.core.cache import cache
 from django.core.management import call_command
 from django.test import TestCase
 from django.utils import timezone
@@ -39,6 +42,26 @@ class ReconcileTests(TestCase):
         from allianceauth.services.tasks import QueueOnce
 
         self.assertIsInstance(tasks.reconcile, QueueOnce)
+
+    def test_change_during_run_queues_another_run(self):
+        """A card-format change saved while reconcile runs must get its own
+        run; QueueOnce used to reject it silently while the lock was held."""
+        cache.clear()
+        inner = []
+        started = []
+
+        def fake_run():
+            if not started:  # e.g. the settings page saving a new card format
+                started.append(True)
+                # Eager mode: the nested run happens right here.
+                inner.append(tasks.reconcile.delay())
+            return {}
+
+        with mock.patch.object(tasks, "run_reconcile", side_effect=fake_run) as run:
+            tasks.reconcile.delay()
+        self.assertEqual(len(inner), 1)
+        self.assertNotEqual(inner[0].state, states.REJECTED)
+        self.assertEqual(run.call_count, 2)
 
     def test_task_apply(self):
         result = tasks.reconcile.apply()

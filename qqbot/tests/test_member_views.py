@@ -355,6 +355,21 @@ class BoundPageTests(MemberViewTestCase):
         self.assertFalse(Binding.objects.filter(user=self.user).exists())
         self.assertContains(r, "绑定 QQ")
 
+    def test_unbind_confirm_mentions_running_cooldown(self):
+        bind(self.user, QQ, qq_changed_at=timezone.now())
+        r = self.client.get(UNBIND)
+        self.assertContains(r, "解除绑定不会让换绑冷却重新计算")
+        self.post(UNBIND)
+        r = self.post(SUBMIT, {"qq": OTHER_QQ, "nickname": "凯拉"})
+        self.assertTrue(any("换绑太频繁" in m for m in message_texts(r)))
+        self.assertFalse(BindCode.objects.exists())
+
+    def test_unbind_confirm_without_cooldown(self):
+        bind(self.user, QQ, qq_changed_at=timezone.now() - timedelta(days=2))
+        r = self.client.get(UNBIND)
+        self.assertNotContains(r, "换绑冷却")
+        self.assertContains(r, "可以随时重新绑定")
+
     def test_unbind_get_when_not_bound_redirects(self):
         r = self.client.get(UNBIND)
         self.assertRedirects(r, MY_QQ)
@@ -367,3 +382,60 @@ class BoundPageTests(MemberViewTestCase):
         self.assertContains(r, "87****21")
         self.assertIsNotNone(page_code(r))
         self.assertEqual(Binding.objects.get(user=self.user).qq, QQ)
+
+
+class CardLengthHintTests(TestCase):
+    """DESIGN.md 6: when the card is too long the page says so."""
+
+    LONG_NAME = "Kaela Vossington-Smithers"  # "[IGC] <name> - " is 34 bytes
+
+    def setUp(self):
+        cache.clear()
+
+    def login(self, name):
+        user = create_member("m", character_name=name, corp_ticker="IGC")
+        self.client.force_login(user)
+        return user
+
+    def test_short_name_no_hint(self):
+        user = self.login("Kaela Voss")
+        r = self.client.get(MY_QQ)
+        self.assertNotContains(r, "角色名会被自动缩短")
+        bind(user, QQ, nickname="凯拉")
+        r = self.client.get(MY_QQ)
+        self.assertNotContains(r, "已自动缩短")
+
+    def test_long_name_form_hint(self):
+        self.login(self.LONG_NAME)
+        r = self.client.get(MY_QQ)
+        # 60 - 34 = 26 bytes: 8 CJK characters or 26 letters.
+        self.assertContains(r, "昵称最多写 8 个汉字（或 26 个英文字母、数字）")
+        self.assertContains(r, "角色名会被自动缩短")
+
+    def test_long_card_notice_when_bound(self):
+        user = self.login(self.LONG_NAME)
+        bind(user, QQ, nickname="凯拉" * 6)
+        r = self.client.get(MY_QQ)
+        card = r.context["card"]
+        self.assertNotIn(self.LONG_NAME, card)
+        self.assertTrue(r.context["card_shortened"])
+        self.assertContains(r, "角色名已自动缩短")
+
+    def test_manager_override_is_not_reported(self):
+        user = self.login(self.LONG_NAME)
+        bind(user, QQ, nickname="凯拉" * 6, card_override="固定名片")
+        r = self.client.get(MY_QQ)
+        self.assertFalse(r.context["card_shortened"])
+        self.assertNotContains(r, "角色名已自动缩短")
+
+
+class QQInputTests(MemberViewTestCase):
+    def test_qq_inputs_do_not_cut_pasted_numbers(self):
+        """maxlength=11 made the browser silently drop the last digit of
+        " 1234567890" (leading space) -- a different, valid QQ."""
+        r = self.client.get(MY_QQ)
+        self.assertNotContains(r, 'maxlength="11"')
+        bind(self.user, QQ)
+        r = self.client.get(MY_QQ)
+        self.assertNotContains(r, 'maxlength="11"')
+        self.assertContains(r, 'name="qq"')

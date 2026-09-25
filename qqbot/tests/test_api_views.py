@@ -20,7 +20,7 @@ from ..api import urls as api_urls
 from ..api import views
 from ..core import bindings
 from ..core import events as core_events
-from ..models import BindCode, Event, QQGroup, RosterEntry
+from ..models import Binding, BindCode, Event, QQGroup, RosterEntry
 from .utils import add_to_groups, bind, create_group, create_member, put_in_roster
 
 KEY = "test"
@@ -226,6 +226,7 @@ class AuthTests(ApiTestCase):
             {"X-QQBot-Timestamp": "12.5"},
             {"X-QQBot-Timestamp": "-100"},
             {"X-QQBot-Timestamp": "abc"},
+            {"X-QQBot-Timestamp": "1" * 17},
             {"X-QQBot-Nonce": "short-nonce"},  # < 16
             {"X-QQBot-Nonce": "x" * 65},
             {"X-QQBot-Nonce": "bad nonce with spaces"},
@@ -246,6 +247,14 @@ class AuthTests(ApiTestCase):
     def test_stale_timestamp_future(self):
         r = self.call("health", ts=int(time.time()) + 400)
         self.assertError(r, 401, "stale_timestamp")
+
+    def test_millisecond_timestamp_is_stale_not_missing_headers(self):
+        # The most common unit bug (Date.now()) must get the error whose
+        # message says "seconds, not milliseconds".
+        data = self.assertError(
+            self.call("health", ts=int(time.time() * 1000)), 401, "stale_timestamp"
+        )
+        self.assertIn("毫秒", data["message"])
 
     def test_timestamp_within_skew(self):
         self.assertOk(self.call("health", ts=int(time.time()) - 250))
@@ -363,6 +372,14 @@ class BodyAndErrorTests(ApiTestCase):
         for body in (b"[]", b"1", b'"x"', b"null"):
             self.assertError(self.call("health", body=body), 400, "bad_request")
 
+    def test_deeply_nested_json_is_400_not_500(self):
+        # json.loads raises RecursionError (not ValueError) for this; ~100 KB,
+        # under the body size limit.
+        body = b"[" * 50000 + b"]" * 50000
+        for name in ("events", "check"):
+            self.assertError(self.call(name, body=body), 400, "bad_request")
+        self.logger.exception.assert_not_called()
+
     def test_internal_exception_is_json_500(self):
         group = create_group(700001)
         with mock.patch.object(bindings, "claim", side_effect=RuntimeError("boom")):
@@ -463,6 +480,26 @@ class CheckTests(ApiTestCase):
         self.assertIsNone(res[0]["card"])
         for r in res:
             self.assertEqual(set(r), {"qq", "decision", "reason", "card"})
+
+    def test_bad_qq_echo_is_always_encodable(self):
+        # A lone surrogate parses fine but cannot be encoded as UTF-8; it must
+        # not turn the whole batch into a 500.
+        body = (
+            '{"group_id":"700001","qqs":["\\ud800","11111111","x\\u0000y",'
+            f'"{"9" * 100}","１２"],"full_roster":true}}'
+        ).encode()
+        data = self.assertOk(self.call("check", body=body))
+        self.assertEqual(
+            [(r["qq"], r["decision"], r["reason"]) for r in data["results"]],
+            [
+                (None, "review", "BAD_QQ"),
+                ("11111111", "allow", "OK"),
+                (None, "review", "BAD_QQ"),
+                (None, "review", "BAD_QQ"),
+                ("１２", "review", "BAD_QQ"),
+            ],
+        )
+        self.logger.exception.assert_not_called()
 
     def test_group_id_as_int_and_fullwidth_qq(self):
         data = self.assertOk(self.call("check", {"group_id": 700001, "qqs": ["１１１１１１１１"]}))
@@ -619,6 +656,47 @@ class ClaimTests(ApiTestCase):
         self.assertEqual((data["claimed"], data["outcome"]), (False, "no_code"))
         self.assertEqual(data["result"]["decision"], "deny")
         self.assertEqual(data["result"]["reason"], "NOT_BOUND")
+
+    def test_no_code_result_equals_check(self):
+        """API.md 5.4: every join request may go to claim; without a code
+        the result is exactly what check would say."""
+        bob = create_member("bob", corp_ticker="IGC", character_name="Bob B")
+        bind(bob, "22222222", nickname="小B")
+        for qq in ("22222222", "33333333"):
+            claimed = self.assertOk(self.call("claim", {"qq": qq, "text": "",
+                                                        "group_id": "700001"}))
+            checked = self.assertOk(self.call("check", {"group_id": "700001", "qqs": [qq]}))
+            self.assertEqual(claimed["outcome"], "no_code")
+            self.assertEqual(claimed["result"], checked["results"][0])
+
+    def test_code_without_hyphen_or_full_width_is_claimed(self):
+        for text in ("qq{body}", "ＱＱ－{wide}"):
+            with self.subTest(text=text):
+                BindCode.objects.all().delete()
+                cache.delete(f"qqbot:codes:{self.user.pk}")
+                code = self.new_code()
+                body = code[3:]
+                wide = body.translate(str.maketrans(
+                    "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ",
+                    "０１２３４５６７８９ＡＢＣＤＥＦＧＨＩＪＫＬＭＮＯＰＱＲＳＴＵＶＷＸＹＺ",
+                ))
+                data = self.assertOk(self.call("claim", {
+                    "qq": "12345678", "text": text.format(body=body.lower(), wide=wide),
+                    "group_id": "700001",
+                }))
+                self.assertEqual(data["outcome"], "claimed")
+                self.assertEqual(data["result"]["decision"], "allow")
+                Binding.objects.all().delete()
+
+    def test_qq_mismatch_with_eligible_applicant_is_allow(self):
+        """API.md 5.4: act on result.decision, not on outcome."""
+        bind(self.user, "11111111", nickname="艾丽")  # verified, eligible
+        cache.delete(f"qqbot:codes:{self.user.pk}")
+        code = self.new_code(qq="12345678")  # a code for another QQ
+        data = self.assertOk(self.call("claim", {"qq": "11111111", "text": code,
+                                                 "group_id": "700001"}))
+        self.assertEqual(data["outcome"], "qq_mismatch")
+        self.assertEqual(data["result"]["decision"], "allow")
 
     def test_pending_decision_when_code_wrong(self):
         self.new_code()

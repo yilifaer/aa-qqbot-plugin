@@ -389,7 +389,9 @@ def binding_card(request, pk):
 @require_POST
 def binding_confirm(request, pk):
     binding = _get_binding(pk)
-    _message(request, bindings.confirm(binding, request.user))
+    # The QQ shown on the page: a member may have rebound (same pk) since.
+    result = bindings.confirm(binding, request.user, expected_qq=request.POST.get("qq", ""))
+    _message(request, result)
     return _back(request, "qqbot:manage_binding", pk=binding.pk)
 
 
@@ -399,8 +401,13 @@ def binding_confirm(request, pk):
 def binding_unbind(request, pk):
     binding = _get_binding(pk)
     if request.method == "POST":
-        result = bindings.unbind(binding.user, actor=request.user, forced=True)
+        result = bindings.unbind(
+            binding.user, actor=request.user, forced=True,
+            expected_qq=request.POST.get("qq", ""),
+        )
         _message(request, result)
+        if result.outcome == "qq_changed":
+            return redirect("qqbot:manage_binding", pk=binding.pk)
         return _back(request, "qqbot:manage_bindings")
     back = request.GET.get("back", "")
     return render(

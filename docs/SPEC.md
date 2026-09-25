@@ -46,7 +46,7 @@
 ### 3.2 `core/codes.py`
 - 格式：`QQ-` 加 6 个字符，字符集 `23456789ABCDEFGHJKMNPQRSTUVWXYZ`（去掉易混字符）。生成用 `secrets`。
 - `hash_code(code) -> str`：先规范化（大写，把 `QQ` 后面缺失的连字符补上），再计算 `hmac_sha256(settings.SECRET_KEY, "qqbot-code:" + code)` 的十六进制。
-- `extract_code(text) -> str | None`：在任意文字（入群申请备注）里找 `QQ-?[验证码字符]{6}`，不区分大小写，可以前后有别的文字，取第一个匹配，返回规范化后的验证码。
+- `extract_code(text) -> str | None`：在任意文字（入群申请备注）里找 `QQ-?[验证码字符]{6}`，不区分大小写，可以前后有别的文字，取第一个匹配，返回规范化后的验证码。匹配前先做 NFKC 规范化（全角字母、数字、`－` 转半角），并把常见破折号（`‐‑‒–—―−ー`，连续多个算一个）当作 `-`。
 
 ### 3.3 `core/audit.py`
 - `log(action, *, actor=None, qq="", target_user=None, **detail) -> AuditLog`：同时快照 `actor_name` 和 `target_name`（用户名）。`actor=None` 表示机器人或系统。
@@ -93,6 +93,7 @@ def evaluate_many(groups, qqs, now=None, config=None) -> dict[str, dict[int, Dec
 - `preview_card(user, nickname, config=None) -> str`：给页面预览用，不需要已有绑定。
 - 结果按 **UTF-8 60 字节**截断：先缩短角色名，仍然超长再截断整串，不能切断多字节字符。常量 `CARD_MAX_BYTES = 60`。
 - 结果去掉首尾空白，并压缩连续空白。
+- `full_card(user, nickname, config=None)`：截断前的自动名片；`is_shortened(binding, config=None)`：自动名片是否被缩短过（管理员指定的名片不算）。成员页用它们按 DESIGN §6 提示「角色名已自动缩短」。
 
 ### 3.7 `core/roster.py`
 - `update_roster(group, qqs, now=None)`：在一个事务里整体替换该群的名单：删除不在列表里的，新增列表里有的（`bulk_create(ignore_conflicts=True)`），更新 `seen_at`，设置 `group.last_roster_at=now`。无效 QQ 静默丢弃。
@@ -116,8 +117,8 @@ def evaluate_many(groups, qqs, now=None, config=None) -> dict[str, dict[int, Dec
   - QQ 或昵称不合法 → `outcome="invalid"`。
   - QQ 与自己当前绑定相同 → 只更新昵称（`nickname_updated` 或 `unchanged`），写审计 `NICKNAME` 并写 `card` 事件。
   - QQ 已被**别人** `verified` → `outcome="taken"`（提示联系 QQ 管理员）。
-  - 用户已有绑定，且 `qq_changed_at` 还在 `Config.rebind_cooldown_hours` 冷却期内 → `outcome="cooldown"`，附剩余时间。
-  - `in_fresh_roster(qq)` → **老成员免验证**：新建或替换为 `trusted` 绑定，`verified_via=""`，`verified_at=None`，清空 `card_override`（换号时），设置 `qq_changed_at=now`，作废该用户所有有效验证码。换号时对旧 QQ 写 `recheck` 事件、写审计 `REBIND`，否则写 `BIND`。存在其他 `trusted` 同号绑定时写审计 `CONFLICT`。对新 QQ 调用 `refresh_binding`。返回 `outcome="trusted"` 或 `"conflict"`。
+  - 用户已有绑定，且 `qq_changed_at` 还在 `Config.rebind_cooldown_hours` 冷却期内 → `outcome="cooldown"`，附剩余时间。**成员自己解绑后冷却继续有效**：`unbind` 把被删绑定的 `qq_changed_at` 记进审计 `UNBIND` 的 `detail`，没有绑定时取冷却窗口内最近一条 `UNBIND` 的这个时间判断；重新提交刚解绑的同一个 QQ 不算换号；管理员强制解绑（`FORCE_UNBIND`）不延续冷却。
+  - `in_fresh_roster(qq)` → 先检查免验证绑定的频率限制（每个用户每小时最多 5 次，缓存计数，与验证码计数分开），超出返回 `outcome="rate_limited"`；否则 **老成员免验证**：新建或替换为 `trusted` 绑定，`verified_via=""`，`verified_at=None`，清空 `card_override`（换号时），设置 `qq_changed_at=now`，作废该用户所有有效验证码。换号时对旧 QQ 写 `recheck` 事件、写审计 `REBIND`，否则写 `BIND`。存在其他 `trusted` 同号绑定时写审计 `CONFLICT`。对新 QQ 调用 `refresh_binding`。返回 `outcome="trusted"` 或 `"conflict"`。
   - 否则 → **待验证**：作废旧验证码，生成新验证码，写审计 `CODE`，返回 `outcome="pending"`，并在结果里带上**明文验证码**和过期时间（明文只出现这一次，页面可以存在会话里）。现有绑定保持不变，等验证码被使用才替换。
   - 频率限制：每个用户每小时最多生成 5 个验证码（用缓存计数），超出返回 `outcome="rate_limited"`。
 - `live_code(user, now=None) -> BindCode | None`。
@@ -127,8 +128,10 @@ def evaluate_many(groups, qqs, now=None, config=None) -> dict[str, dict[int, Dec
   - 取验证码时加 `select_for_update`，把「标记已用」做成条件更新（`filter(pk=…, used_at__isnull=True, invalidated_at__isnull=True).update(used_at=now)`，要求影响行数 == 1），确保并发时只成功一次。
   - `qq_mismatch`：作废这个验证码（防止被抢用或暴力尝试），写审计 `CLAIM_FAILED`。
   - 成功：删除该 QQ 的其他所有绑定（其他用户的 `verified` 表示被接管，`trusted` 表示冲突解决），每条都写审计并记录 `detail`。然后把本用户的绑定设为 `verified`，`verified_via=code`，`verified_at=now`，昵称取验证码上的，换号时设置 `qq_changed_at`。对旧 QQ 写 `recheck`，写审计 `VERIFY`，并调用 `refresh_binding`。
-- `confirm(binding, actor)`：管理员确认。同号已有别人的 `verified` 时拒绝。否则设为 `verified`（`via=manager`），删除同号其他 `trusted` 绑定（审计 `CONFLICT_RESOLVED`），写审计 `CONFIRM`，并刷新。
-- `unbind(user, actor=None, forced=False)`：删除绑定，作废验证码，写 `recheck` 事件，写审计 `UNBIND` 或 `FORCE_UNBIND`。
+- `confirm(binding, actor, expected_qq=None)`：管理员确认。`expected_qq` 是管理员页面上显示的 QQ；加锁后绑定的 QQ 已经不是它（成员换绑时绑定行的 pk 不变）→ `outcome="qq_changed"`，什么都不改。管理页的确认表单必须带上隐藏字段 `qq`。同号已有别人的 `verified` 时拒绝。否则设为 `verified`（`via=manager`），删除同号其他 `trusted` 绑定（审计 `CONFLICT_RESOLVED`），写审计 `CONFIRM`，并刷新。
+- `unbind(user, actor=None, forced=False, expected_qq=None)`：删除绑定，作废验证码，写 `recheck` 事件，写审计 `UNBIND` 或 `FORCE_UNBIND`（`detail` 含 `status` 和 `qq_changed_at`）。`expected_qq` 同 `confirm`（管理员强制解绑时使用），不一致时返回 `qq_changed`。
+- `cooldown_ends(qq_changed_at, now=None, config=None)`：冷却结束时间（已结束为 `None`），给解绑确认页提示用。
+- 已知限制：号主还在群里时，冲突的 QQ 在新鲜名单里，任何一方提交都只会得到 `trusted`/`conflict`，拿不到验证码；因此这类冲突只能由管理员确认或强制解绑来解决，管理页不能引导成员「用验证码胜出」。
 - `set_nickname(user, nickname)`、`set_card_override(binding, card, actor)`（空串表示清除；按 60 字节校验）：写审计并刷新。
 - `conflicts() -> list[tuple[qq, list[Binding]]]`：没有 `verified`、且 `trusted` 绑定数 ≥ 2 的 QQ。
 - `on_user_deleted(user)`：在 `pre_delete` 时调用：写 `recheck` 事件和审计 `USER_DELETED`（快照 QQ）。
@@ -141,18 +144,18 @@ def evaluate_many(groups, qqs, now=None, config=None) -> dict[str, dict[int, Dec
 
 - 路由（在 `urls.py` 的嵌套 include 里）：`/qqbot/api/v1/{health,groups,check,claim,events}/`，URL 名为 `api_<name>`，视图函数在 `qqbot.api.views`，函数名与端点名相同（`auth_hooks.PUBLIC_VIEWS` 依赖这些名字）。
 - 只接受 `POST`，请求和响应都是 `Content-Type: application/json`，`csrf_exempt`。**任何情况**都返回 JSON，包括视图内部未捕获的异常（返回 500 `internal_error`）。
-- 请求头：`X-QQBot-Key`（key id）、`X-QQBot-Timestamp`（Unix 秒，整数）、`X-QQBot-Nonce`（16–64 位 `[A-Za-z0-9_-]`）、`X-QQBot-Signature`（小写十六进制）。
+- 请求头：`X-QQBot-Key`（key id，可打印 ASCII、无空格、1–64 字符）、`X-QQBot-Timestamp`（Unix 秒，整数，1–16 位数字：毫秒时间戳能通过格式检查，得到 `stale_timestamp`）、`X-QQBot-Nonce`（16–64 位 `[A-Za-z0-9_-]`）、`X-QQBot-Signature`（小写十六进制）。
 - 签名：`hex(HMAC-SHA256(secret, "POST\n" + request.path + "\n" + timestamp + "\n" + nonce + "\n" + hex(sha256(raw_body))))`。
-- 校验顺序：没配置密钥 → 503 `misconfigured`；请求头缺失或格式错 → 401 `missing_headers`；未知 key → 401 `unknown_key`；时间戳偏差超过 `api_max_skew()` → 401 `stale_timestamp`；签名错 → 401 `bad_signature`（`hmac.compare_digest`）；请求体过大 → 413 `too_large`；nonce 用过 → 401 `replayed_nonce`（`cache.add("qqbot:nonce:"+key+":"+nonce, 1, 2*skew+60)`，**签名通过后**才记录 nonce）；超过每分钟限速 → 429 `rate_limited`；JSON 或字段不合法 → 400 `bad_request`。
+- 校验顺序：没配置密钥 → 503 `misconfigured`；请求头缺失或格式错 → 401 `missing_headers`；未知 key → 401 `unknown_key`；时间戳偏差超过 `api_max_skew()` → 401 `stale_timestamp`；签名错 → 401 `bad_signature`（`hmac.compare_digest`）；请求体过大 → 413 `too_large`；nonce 用过 → 401 `replayed_nonce`（`cache.add("qqbot:nonce:"+key+":"+nonce, 1, 2*skew+60)`，**签名通过后**才记录 nonce）；超过每分钟限速 → 429 `rate_limited`；JSON 或字段不合法（包括嵌套过深导致的 `RecursionError`）→ 400 `bad_request`。
 - 错误格式：`{"ok": false, "error": "<code>", "message": "<中文说明，告诉运维该怎么做>"}`。
 - 成功格式：`{"ok": true, "server_time": "<ISO8601>", ...}`。
 - 端点：
   - `health {}` → `{version, config_ok, problems: [...]}`，其中 `problems` 为 system check 能发现的问题的简短代码。
   - `groups {}` → `{groups: [{group_id, name, kind}]}`，只含有效群。
-  - `check {group_id, qqs: [..≤3000], full_roster: bool}` → `{group_id, results: [{qq, decision, reason, card}]}`。未知或无效的群 → 404 `unknown_group`。`full_roster=true` 表示 `qqs` 是该群的完整成员名单，调用 `update_roster`。结果中无效的 QQ 原样返回，`decision=review, reason=BAD_QQ`。
+  - `check {group_id, qqs: [..≤3000], full_roster: bool}` → `{group_id, results: [{qq, decision, reason, card}]}`。未知或无效的群 → 404 `unknown_group`。`full_roster=true` 表示 `qqs` 是该群的完整成员名单，调用 `update_roster`。结果中无效的 QQ 原样返回，`decision=review, reason=BAD_QQ`；只原样返回整数和 64 字符以内、可打印、能编码为 UTF-8 的字符串，其他值返回 `null`（一个坏项不能让整批请求失败）。
   - `claim {qq, text, group_id?}` → `{claimed: bool, outcome, result: {qq, decision, reason, card} | null}`。带了 `group_id` 时给出该群的判定。
   - `events {after: int ≥ 0, limit?: 1..500 默认 200}` → `{events: [{id, kind, qq, created_at}], last_id, has_more}`，调用 `core.events.poll`；事件最多延迟约 10 秒可见（`API.md` 要写明）。
-- `API.md`（中文 + 字段表）：完整契约、错误码表、**签名测试向量**（固定 secret、时间戳、nonce、请求体，给出预期签名，并写一个测试确保向量与实现一致），以及给 Koishi 端的实现要点：`redirect: 'manual'`、只接受 200、三态处理、`review` 永不处置、昵称和名片要转义。
+- `API.md`（中文 + 字段表）：完整契约、错误码表、**签名测试向量**（固定 secret、时间戳、nonce、请求体，给出预期签名，并写一个测试确保向量与实现一致），以及给 Koishi 端的实现要点：`redirect: 'manual'`、只接受 200、三态处理、`review` 永不处置、昵称和名片要转义、入群申请一律走 `claim` 并只看 `result.decision`、事件按群合并成批量 `check`、大规模 `deny` 的熔断（一轮移出人数超过阈值时不处置、等人工确认）、子路径部署时签名路径带前缀。
 
 ## 5. 成员页面
 
@@ -162,7 +165,9 @@ def evaluate_many(groups, qqs, now=None, config=None) -> dict[str, dict[int, Dec
   - 表单：群名片前缀预览（`[ticker] 角色名 - `）、昵称输入、QQ 输入、入群须知（`Config.rules_text`，**转义后**把换行转成 `<br>`）。
   - 待验证：显示验证码（如果会话里有且对应的验证码仍有效）、过期时间、把验证码填进入群申请「验证信息」的指引、可加入的群、「重新生成」「取消」按钮。
   - 已绑定：打码的 QQ、状态（已验证 / 老成员免验证 / 冲突）、群名片预览、`groups_for_user` 按固定群和身份组小群分组列出（冲突时隐藏群号）、修改昵称、换绑（同一个提交表单）、解绑（确认页）。
-- `service_hook.QQBotService`：`name="qq"`，`title` 为「QQ 绑定」，`access_perm="qqbot.basic_access"`，`service_active_for_user = has_perm`，`render_services_ctrl` 渲染 `qqbot/service_ctrl.html`（继承 `services/services_ctrl_base.html`：标题、状态徽章、打码的 QQ、按钮链接到 `my_qq`）。`validate_user`、`delete_user` 等回调**什么都不做**（真正的正确性由 signals 和每日对账保证）。`sync_nickname(user)` 调用 `refresh_user`，外层包 try/except。
+- `service_hook.QQBotService`：`name="qq"`，`title` 为「QQ 绑定」，`access_perm="qqbot.basic_access"`，`service_active_for_user = has_perm`，`render_services_ctrl` 渲染 `qqbot/service_ctrl.html`（继承 `services/services_ctrl_base.html`：标题、状态徽章、打码的 QQ、按钮链接到 `my_qq`）。`validate_user`、`delete_user` 等回调**什么都不做**（真正的正确性由 signals 和每日对账保证）；`update_groups`、`update_all_groups` **不要覆盖**（AA 的用户后台会为覆盖了它们的服务加一个无用的「Sync groups」操作）。`sync_nickname(user)` 调用 `signals.schedule_refresh_user(user.pk)`（AA 在 pre_save 里、自己的事务中调用它，此时新数据还没写入），外层包 try/except。卡片覆盖 `{% block active %}`，状态徽章为：已启用（绿）、待验证（蓝）、冲突 / 已被占用（红）、未启用（灰）。
+- 菜单项（`auth_hooks.QQBotMenuItem`）：有 `basic_access` → 链接 `my_qq`；只有 `qqbot.manage` → 链接 `manage_index`；都没有 → 不显示。`base.html` 的「我的 QQ」标签只对有 `basic_access` 的人显示。
+- 成员页的 QQ 输入框不能设比 `SubmitForm` 更短的 `maxlength`（浏览器会静默截掉粘贴内容的末位，变成另一个合法 QQ）。
 
 ## 6. 管理页面
 
@@ -182,16 +187,17 @@ def evaluate_many(groups, qqs, now=None, config=None) -> dict[str, dict[int, Dec
   - `EveCharacter` 的 `post_save`（作为某人主角色时，名字、军团或联盟变化）
   - `User` 的 `pre_delete` → `bindings.on_user_deleted`
   - `Group.permissions` 或 `State.permissions` 的 `m2m_changed` 涉及 `basic_access` 时，以及任何 `Group` 的成员变化波及身份组小群时 → 写一条 `recheck_all`
-- `tasks.py`：`@shared_task(base=QueueOnce) def reconcile()` 调用 `refresh_all()` 和 `prune()`。README 给出 IT 需要加的 `CELERYBEAT_SCHEDULE` 条目（每天一次）。
+- `tasks.py`：`@shared_task(base=QueueOnce, once={"graceful": True, "unlock_before_run": True}) def reconcile()` 调用 `refresh_all()` 和 `prune()`（`unlock_before_run`：运行中再次排队不会被静默丢弃，名片格式在对账途中被修改时会再跑一次）。README 给出 IT 需要加的 `CELERYBEAT_SCHEDULE` 条目（每天一次）。
 - `checks.py`（`@register(deploy=False)`）：
   - `qqbot.E001`：`APPS_WITH_PUBLIC_VIEWS` 缺少 `"qqbot"`（提示：追加，不要覆盖）
   - `qqbot.E002`：`QQBOT_API_KEYS` 为空或不是 dict
   - `qqbot.E003`：有密钥短于 32 个字符
+  - `qqbot.E004`：有 key id 不符合 `signing.KEY_ID_RE`（有空格、非 ASCII、超过 64 字符），用它的请求永远是 `missing_headers`
   - `qqbot.W001`：缓存后端不是 Redis 一类的共享缓存（nonce 防重放需要跨进程共享）
   - health 接口复用同一套检查逻辑（纯函数 `problems() -> list[str]`）
 - `admin.py`：注册 `QQGroup`、`Binding`（只读，改动走前台）、`AuditLog`（只读）、`Config`。
 - `management/commands/qqbot_reconcile.py`：手动执行对账。
-- `README.md`（中文）：功能、给 IT 的安装步骤（`pip install`；`local.py` 中 `INSTALLED_APPS += ["qqbot"]`、`APPS_WITH_PUBLIC_VIEWS += ["qqbot"]`、`QQBOT_API_KEYS`、`CELERYBEAT_SCHEDULE`；`migrate`；重启）、权限怎么分配、如何生成密钥（`python -c "import secrets; print(secrets.token_urlsafe(48))"`）、升级与卸载。
+- `README.md`（中文）：功能、给 IT 的安装步骤（`pip install`；`local.py` 中 `INSTALLED_APPS += ["qqbot"]`、`APPS_WITH_PUBLIC_VIEWS += ["qqbot"]`、`QQBOT_API_KEYS`、`CELERYBEAT_SCHEDULE`；`migrate`；重启）、权限怎么分配、如何生成密钥（`python -c "import secrets; print(secrets.token_urlsafe(48))"`）、升级与卸载（卸载时要删掉数据库里的 `qqbot_reconcile` 定时任务，AA 5 的 beat 把它存在 django_celery_beat 表里）。
 
 ## 8. 安全底线（任何部分都必须遵守）
 

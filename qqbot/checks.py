@@ -14,6 +14,7 @@ from . import app_settings
 E001 = "qqbot.E001"
 E002 = "qqbot.E002"
 E003 = "qqbot.E003"
+E004 = "qqbot.E004"
 W001 = "qqbot.W001"
 
 # Cache backends that are not shared between processes (gunicorn workers),
@@ -25,6 +26,14 @@ def _cache_backend() -> str:
     caches = getattr(settings, "CACHES", None) or {}
     default = caches.get("default") or {}
     return str(default.get("BACKEND", ""))
+
+
+def _usable_key_id(key_id) -> bool:
+    """A key id the bot can actually send in ``X-QQBot-Key`` (same ``str()``
+    conversion as ``signing.configured_keys``)."""
+    from .api.signing import KEY_ID_RE
+
+    return bool(KEY_ID_RE.fullmatch(str(key_id)))
 
 
 def problems() -> list[str]:
@@ -39,11 +48,14 @@ def problems() -> list[str]:
     keys = getattr(settings, "QQBOT_API_KEYS", None)
     if not isinstance(keys, dict) or not keys:
         found.append(E002)
-    elif any(
-        not isinstance(secret, str) or len(secret) < app_settings.QQBOT_MIN_SECRET_LENGTH
-        for secret in keys.values()
-    ):
-        found.append(E003)
+    else:
+        if any(
+            not isinstance(secret, str) or len(secret) < app_settings.QQBOT_MIN_SECRET_LENGTH
+            for secret in keys.values()
+        ):
+            found.append(E003)
+        if any(not _usable_key_id(key_id) for key_id in keys):
+            found.append(E004)
     backend = _cache_backend().lower()
     if not backend or any(marker in backend for marker in _UNSHARED_CACHE_MARKERS):
         found.append(W001)
@@ -73,6 +85,14 @@ def _messages() -> dict:
                 "然后在机器人那边同步修改。"
             ),
             id=E003,
+        ),
+        E004: Error(
+            "QQBOT_API_KEYS 里有密钥编号（字典的键）格式不对，机器人用它发的请求会一直被拒绝（missing_headers）。",
+            hint=(
+                "密钥编号只能用英文字母、数字和 - _ . 等符号，不能有空格或中文，最长 64 个字符，"
+                '例如 "koishi-1"。改好后在机器人那边同步修改。'
+            ),
+            id=E004,
         ),
         W001: CheckWarning(
             "默认缓存不是 Redis 这类多进程共享的缓存，机器人接口的防重放和限速在多个进程之间不起作用。",

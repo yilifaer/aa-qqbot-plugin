@@ -69,6 +69,21 @@ class ExtractCodeTests(SimpleTestCase):
     def test_falls_back_to_glued_match(self):
         self.assertEqual(extract_code("codeQQ-7K3F9Pthanks"), "QQ-7K3F9P")
 
+    def test_full_width_and_dash_look_alikes(self):
+        # Chinese IMEs in full-width mode, phones and word processors.
+        for text in (
+            "ＱＱ－７Ｋ３Ｆ９Ｐ",
+            "QQ－7K3F9P",
+            "验证码：ｑｑ７ｋ３ｆ９ｐ",
+            "QQ—7K3F9P",
+            "QQ——7K3F9P",
+            "QQ–7K3F9P",
+            "QQ\u22127K3F9P",
+            "QQ\u20107K3F9P",
+        ):
+            with self.subTest(text=text):
+                self.assertEqual(extract_code(text), "QQ-7K3F9P")
+
     def test_no_code(self):
         for text in [None, "", "hello", "QQ-12345", "QQ-7K3F9", "7K3F9P", "QQ 7K3F9P", 123]:
             with self.subTest(text=text):

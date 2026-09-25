@@ -48,6 +48,22 @@ class ProblemsTests(SimpleTestCase):
         with override_settings(QQBOT_API_KEYS=exact):
             self.assertEqual(checks.problems(), [])
 
+    def test_e004_unusable_key_id(self):
+        # Key ids the bot cannot send in X-QQBot-Key (every request would get
+        # missing_headers) must be reported by `manage.py check`.
+        for key_id in ("koishi bot", "机器人1", "k" * 65, "", "a\n"):
+            value = {key_id: "s" * 48}
+            with self.subTest(key_id=key_id), override_settings(QQBOT_API_KEYS=value):
+                self.assertEqual(checks.problems(), ["qqbot.E004"])
+                self.assertEqual(self.ids(), ["qqbot.E004"])
+        for key_id in ("koishi-1", "k" * 64, "bot.2026_a"):
+            with self.subTest(key_id=key_id), override_settings(
+                QQBOT_API_KEYS={key_id: "s" * 48}
+            ):
+                self.assertEqual(checks.problems(), [])
+        with override_settings(QQBOT_API_KEYS={"a b": "short"}):
+            self.assertEqual(checks.problems(), ["qqbot.E003", "qqbot.E004"])
+
     def test_w001_unshared_cache(self):
         for backend in (
             "django.core.cache.backends.locmem.LocMemCache",

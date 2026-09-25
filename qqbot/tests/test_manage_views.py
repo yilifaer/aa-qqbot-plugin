@@ -398,7 +398,8 @@ class BindingDetailTests(ManagerTestCase):
         carol = create_member("carol")
         b1 = bind(bob, "33333333", status="trusted")
         b2 = bind(carol, "33333333", status="trusted")
-        r = self.client.post(reverse("qqbot:manage_binding_confirm", args=[b1.pk]))
+        r = self.client.post(reverse("qqbot:manage_binding_confirm", args=[b1.pk]),
+                             {"qq": "33333333"})
         self.assertRedirects(r, reverse("qqbot:manage_binding", args=[b1.pk]))
         b1.refresh_from_db()
         self.assertEqual(b1.status, "verified")
@@ -416,7 +417,8 @@ class BindingDetailTests(ManagerTestCase):
         bob = create_member("bob")
         b1 = bind(bob, "33333333", status="trusted")
         r = self.client.post(
-            reverse("qqbot:manage_binding_confirm", args=[b1.pk]), {"back": "pending"}
+            reverse("qqbot:manage_binding_confirm", args=[b1.pk]),
+            {"back": "pending", "qq": "33333333"},
         )
         self.assertRedirects(r, PENDING)
 
@@ -425,14 +427,15 @@ class BindingDetailTests(ManagerTestCase):
         b1 = bind(bob, "33333333", status="trusted")
         r = self.client.post(
             reverse("qqbot:manage_binding_confirm", args=[b1.pk]),
-            {"back": "https://evil.example/"},
+            {"back": "https://evil.example/", "qq": "33333333"},
         )
         self.assertRedirects(r, reverse("qqbot:manage_binding", args=[b1.pk]))
 
     def test_confirm_refused_when_someone_else_verified(self):
         bob = create_member("bob")
         b = bind(bob, "11111111", status="trusted")
-        r = self.client.post(reverse("qqbot:manage_binding_confirm", args=[b.pk]), follow=True)
+        r = self.client.post(reverse("qqbot:manage_binding_confirm", args=[b.pk]),
+                             {"qq": "11111111"}, follow=True)
         self.assertContains(r, "该 QQ 已被其他账号验证")
         b.refresh_from_db()
         self.assertEqual(b.status, "trusted")
@@ -446,7 +449,8 @@ class BindingDetailTests(ManagerTestCase):
         self.assertContains(r, "11111111")
         self.assertTrue(Binding.objects.filter(pk=self.binding.pk).exists())
 
-        r = self.client.post(url)
+        self.assertContains(r, 'name="qq" value="11111111"')
+        r = self.client.post(url, {"qq": "11111111"})
         self.assertRedirects(r, BINDINGS)
         self.assertFalse(Binding.objects.filter(pk=self.binding.pk).exists())
         log = AuditLog.objects.get(action=AuditLog.Action.FORCE_UNBIND)
@@ -463,9 +467,44 @@ class BindingDetailTests(ManagerTestCase):
         url = reverse("qqbot:manage_binding_unbind", args=[self.binding.pk])
         r = self.client.get(url, {"back": "pending"})
         self.assertContains(r, 'name="back" value="pending"')
-        r = self.client.post(url, {"back": "pending"})
+        r = self.client.post(url, {"back": "pending", "qq": "11111111"})
         self.assertRedirects(r, PENDING)
         self.assertIsNotNone(BindCode.objects.get().invalidated_at)
+
+    def test_confirm_refused_when_member_rebound_meanwhile(self):
+        """The page showed QQ X; the member rebound the same row to QQ Y."""
+        bob = create_member("bob")
+        b1 = bind(bob, "33333333", status="trusted")
+        bind(create_member("carol"), "33333333", status="trusted")
+        owner = create_member("dave")
+        b_owner = bind(owner, "44444444", status="trusted")
+        page = self.client.get(PENDING)
+        self.assertContains(page, 'name="qq" value="33333333"')
+        # bob moves his (same pk) binding to dave's QQ
+        Binding.objects.filter(pk=b1.pk).update(qq="44444444")
+        r = self.client.post(
+            reverse("qqbot:manage_binding_confirm", args=[b1.pk]),
+            {"back": "pending", "qq": "33333333"}, follow=True,
+        )
+        self.assertContains(r, "页面上的信息已经过时")
+        b1.refresh_from_db()
+        self.assertEqual(b1.status, "trusted")
+        self.assertTrue(Binding.objects.filter(pk=b_owner.pk).exists())
+        self.assertFalse(AuditLog.objects.filter(action=AuditLog.Action.CONFIRM).exists())
+
+    def test_confirm_without_qq_is_refused(self):
+        b1 = bind(create_member("bob"), "33333333", status="trusted")
+        self.client.post(reverse("qqbot:manage_binding_confirm", args=[b1.pk]))
+        b1.refresh_from_db()
+        self.assertEqual(b1.status, "trusted")
+
+    def test_force_unbind_refused_when_member_rebound_meanwhile(self):
+        url = reverse("qqbot:manage_binding_unbind", args=[self.binding.pk])
+        Binding.objects.filter(pk=self.binding.pk).update(qq="55555555", verified_qq="55555555")
+        r = self.client.post(url, {"qq": "11111111"})
+        self.assertRedirects(r, reverse("qqbot:manage_binding", args=[self.binding.pk]))
+        self.assertTrue(Binding.objects.filter(pk=self.binding.pk).exists())
+        self.assertFalse(AuditLog.objects.filter(action=AuditLog.Action.FORCE_UNBIND).exists())
 
 
 # --------------------------------------------------------------------------
@@ -496,6 +535,11 @@ class PendingTests(ManagerTestCase):
             )
         self.assertNotContains(r, "44444444")
         self.assertEqual(r.context["summary"]["pending"], 1)
+        # Each confirm form carries the QQ the manager is looking at.
+        self.assertContains(r, 'name="qq" value="33333333"', count=2)
+        # A QQ in a fresh roster cannot get a code, so the page must not send
+        # managers down that path (it would be a dead end).
+        self.assertNotContains(r, "用验证码完成验证")
 
     def test_lists_unbound_roster_by_group(self):
         g1 = create_group("123456", name="聊天群")

@@ -95,20 +95,23 @@ def _render(fmt: str, values: dict) -> str:
     return truncate_bytes(card).strip()
 
 
-def _card_for(user, nickname: str, card_override: str, config) -> str:
+def _card_for(user, nickname: str, card_override: str, config, *, fit=True) -> str:
+    """The card; with ``fit=False`` the formatted card *before* it is cut to
+    CARD_MAX_BYTES (not for overrides, which are always stored fitting)."""
     if card_override and clean_card(card_override):
         return truncate_bytes(clean_card(card_override)).strip()
     if config is None:
         config = Config.get_solo()
     fmt = config.card_format or ""
     values = _values(user, nickname)
+    render = _render if fit else (lambda f, v: clean_card(f.format(**v)))
     if fmt and format_is_valid(fmt):
         try:
-            return _render(fmt, values)
+            return render(fmt, values)
         except _FORMAT_ERRORS:
             pass
     logger.warning("qqbot: invalid card format %r, falling back to the default", fmt)
-    return _render(Config.DEFAULT_CARD_FORMAT, values)
+    return render(Config.DEFAULT_CARD_FORMAT, values)
 
 
 def render_card(binding: Binding, config=None) -> str:
@@ -119,3 +122,17 @@ def render_card(binding: Binding, config=None) -> str:
 def preview_card(user, nickname, config=None) -> str:
     """Card preview for the member page; no binding needed."""
     return _card_for(user, nickname or "", "", config)
+
+
+def full_card(user, nickname, config=None) -> str:
+    """The automatic card as formatted, before it is fitted into
+    CARD_MAX_BYTES (for the member page's "your card was shortened" hint)."""
+    return _card_for(user, nickname or "", "", config, fit=False)
+
+
+def is_shortened(binding: Binding, config=None) -> bool:
+    """True when this binding's automatic card had to be shortened
+    (DESIGN.md 6: the page must say so). Manager overrides never count."""
+    if binding.card_override and clean_card(binding.card_override):
+        return False
+    return byte_length(full_card(binding.user, binding.nickname, config)) > CARD_MAX_BYTES

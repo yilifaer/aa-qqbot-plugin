@@ -35,18 +35,22 @@ class QQBotService(ServicesHook):
     def delete_user(self, user, notify_user=False):
         return False
 
-    def update_groups(self, user):
-        pass
-
-    def update_all_groups(self):
-        pass
+    # update_groups / update_all_groups are deliberately NOT overridden: AA's
+    # User admin adds a "Sync groups" action for every service that overrides
+    # them, and here it would do nothing.
 
     def sync_nickname(self, user):
-        """Main character renamed etc.: recompute the card (emits events)."""
-        try:
-            from .core.events import refresh_user
+        """Main character renamed etc.: recompute the card (emits events).
 
-            refresh_user(user)
+        AA calls this from *pre_save* receivers, before the new name / corp is
+        written and inside AA's own transaction. So the refresh is only
+        scheduled (``on_commit``, in its own transaction via ``signals._safe``):
+        it then sees the committed data and cannot break AA's transaction.
+        """
+        try:
+            from .signals import schedule_refresh_user
+
+            schedule_refresh_user(getattr(user, "pk", user))
         except Exception:
             logger.exception("qqbot: sync_nickname failed for %s", user)
 

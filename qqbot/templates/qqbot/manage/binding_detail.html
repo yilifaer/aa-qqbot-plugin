@@ -42,6 +42,7 @@
                     {% if binding.status != 'verified' %}
                         <form method="post" action="{% url 'qqbot:manage_binding_confirm' binding.pk %}">
                             {% csrf_token %}
+                            <input type="hidden" name="qq" value="{{ binding.qq }}">
                             <button type="submit" class="btn btn-success" {% if other_verified %}disabled{% endif %}>
                                 <i class="fa-solid fa-circle-check fa-fw"></i> 确认绑定（设为已验证）
                             </button>

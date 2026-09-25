@@ -43,6 +43,13 @@
                 {% endif %}
 
                 <p class="mb-2">我的群名片：<strong>{{ card }}</strong></p>
+                {% if card_shortened %}
+                    <p class="form-text text-warning-emphasis mt-0 mb-2">
+                        <i class="fa-solid fa-circle-info fa-fw"></i>
+                        QQ 群名片最长 {{ card_max_bytes }} 个字节（一个汉字算 3 个字节），你的角色名加昵称超出了，所以角色名已自动缩短。
+                        想显示完整的角色名，可以把昵称改短一些。
+                    </p>
+                {% endif %}
 
                 {% if not live and not status.has_problem %}
                     <h5 class="mt-3">你可以加入的群</h5>
@@ -140,7 +147,7 @@
                     <div class="mb-3">
                         <label for="id_qq" class="form-label fw-bold">QQ 号</label>
                         <input type="text" name="qq" id="id_qq" class="form-control" inputmode="numeric"
-                               autocomplete="off" maxlength="11" required placeholder="你的 QQ 号" value="{{ initial_qq }}">
+                               autocomplete="off" maxlength="32" required placeholder="你的 QQ 号" value="{{ initial_qq }}">
                     </div>
                     <button type="submit" class="btn btn-primary">
                         <i class="fa-solid fa-check fa-fw"></i> 提交
@@ -182,7 +189,7 @@
                             <div class="mb-3">
                                 <label for="id_qq" class="form-label fw-bold">新的 QQ 号</label>
                                 <input type="text" name="qq" id="id_qq" class="form-control" inputmode="numeric"
-                                       autocomplete="off" maxlength="11" required placeholder="新的 QQ 号" value="{{ initial_qq }}">
+                                       autocomplete="off" maxlength="32" required placeholder="新的 QQ 号" value="{{ initial_qq }}">
                             </div>
                             <button type="submit" class="btn btn-primary">
                                 <i class="fa-solid fa-right-left fa-fw"></i> 换绑

@@ -25,7 +25,10 @@ HEADER_NONCE = "X-QQBot-Nonce"
 HEADER_SIGNATURE = "X-QQBot-Signature"
 
 KEY_ID_RE = re.compile(r"^[\x21-\x7e]{1,64}$")  # printable ASCII, no spaces
-TIMESTAMP_RE = re.compile(r"^[0-9]{1,12}$")
+# Up to 16 digits so that a millisecond timestamp (13 digits, a common bug)
+# passes the format check and is reported as ``stale_timestamp``, whose
+# message says the unit must be seconds.
+TIMESTAMP_RE = re.compile(r"^[0-9]{1,16}$")
 NONCE_RE = re.compile(r"^[A-Za-z0-9_-]{16,64}$")
 SIGNATURE_RE = re.compile(r"^[0-9a-f]{64}$")
 
@@ -61,8 +64,8 @@ MESSAGES = {
         "（换密钥时两边都要改）。"
     ),
     "stale_timestamp": (
-        "请求的时间戳与 AA 服务器时间相差太大。请校准机器人所在电脑的时间（开启自动对时 / NTP），"
-        "并确认时间戳单位是秒。"
+        "请求的时间戳与 AA 服务器时间相差太大。请确认时间戳单位是秒（不是毫秒），"
+        "并校准机器人所在电脑的时间（开启自动对时 / NTP）。"
     ),
     "bad_signature": (
         "签名不正确。请确认密钥与 AA 上配置的一致，并用 API.md 里的签名测试样例核对签名算法；"
@@ -156,10 +159,10 @@ def authenticate(request, body: bytes, now: float | None = None) -> str:
     nonce = _header(request, HEADER_NONCE)
     signature = _header(request, HEADER_SIGNATURE)
     if not (
-        KEY_ID_RE.match(key_id)
-        and TIMESTAMP_RE.match(ts)
-        and NONCE_RE.match(nonce)
-        and SIGNATURE_RE.match(signature)
+        KEY_ID_RE.fullmatch(key_id)
+        and TIMESTAMP_RE.fullmatch(ts)
+        and NONCE_RE.fullmatch(nonce)
+        and SIGNATURE_RE.fullmatch(signature)
     ):
         raise error(401, "missing_headers")
 

@@ -17,6 +17,7 @@
             </ul>
             <form method="post" action="{% url 'qqbot:manage_binding_unbind' binding.pk %}" class="d-inline">
                 {% csrf_token %}
+                <input type="hidden" name="qq" value="{{ binding.qq }}">
                 {% if back %}<input type="hidden" name="back" value="{{ back }}">{% endif %}
                 <button type="submit" class="btn btn-danger">
                     <i class="fa-solid fa-link-slash fa-fw"></i> 确认强制解绑

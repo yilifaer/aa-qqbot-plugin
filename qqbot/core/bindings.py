@@ -13,6 +13,7 @@ from django.core.exceptions import ValidationError
 from django.db import IntegrityError, transaction
 from django.db.models import Count, Q
 from django.utils import timezone
+from django.utils.dateparse import parse_datetime
 
 from allianceauth.services.hooks import get_extension_logger
 
@@ -28,8 +29,20 @@ Action = AuditLog.Action
 
 CODE_RATE_LIMIT = 5  # codes per user ...
 CODE_RATE_WINDOW = 3600  # ... per this many seconds
+TRUSTED_RATE_LIMIT = 5  # code-free (trusted) binds / QQ changes per user per window
 
 MSG_TAKEN = "该 QQ 已被绑定，如有疑问请联系 QQ 管理员。"
+MSG_QQ_CHANGED = "这个成员的 QQ 刚刚变了，页面上的信息已经过时。请重新打开页面核对后再操作。"
+
+
+def _qq_changed(binding, expected_qq) -> bool:
+    """True when a manager acted on a page that showed another QQ.
+
+    ``expected_qq=None`` skips the check; anything else (also ``""``) must
+    equal the binding's current QQ. Member rebinds keep the binding's pk, so
+    the pk alone does not say which QQ the manager reviewed.
+    """
+    return expected_qq is not None and normalize_qq(expected_qq) != binding.qq
 
 
 @dataclass
@@ -76,16 +89,67 @@ def _format_remaining(delta: timedelta) -> str:
     return f"{minutes} 分钟"
 
 
-def _rate_limited(user) -> bool:
-    """Count one code generation; True when the user is over the limit."""
-    key = f"qqbot:codes:{user.pk}"
+def _count(key: str, limit: int) -> bool:
+    """Count one attempt in a fixed window; True when over ``limit``."""
     cache.add(key, 0, CODE_RATE_WINDOW)
     try:
         count = cache.incr(key)
     except ValueError:  # expired between add and incr
         cache.set(key, 1, CODE_RATE_WINDOW)
         count = 1
-    return count > CODE_RATE_LIMIT
+    return count > limit
+
+
+def _rate_limited(user) -> bool:
+    """Count one code generation; True when the user is over the limit."""
+    return _count(f"qqbot:codes:{user.pk}", CODE_RATE_LIMIT)
+
+
+def _trusted_rate_limited(user) -> bool:
+    """Count one code-free (trusted) bind; True when the user is over the
+    limit. Separate from the code counter so failed code attempts never
+    block an old member."""
+    return _count(f"qqbot:trusted:{user.pk}", TRUSTED_RATE_LIMIT)
+
+
+def _last_qq_change(user, existing, qq_n, cooldown: timedelta, now):
+    """When the user last changed their QQ, for the rebind cooldown.
+
+    With a binding that is ``qq_changed_at``. Without one, the cooldown of a
+    binding the member removed themselves (``UNBIND``) still runs, so
+    "unbind, then submit another QQ" cannot skip it; binding the *same* QQ
+    again is not a change (an unbind by mistake can be undone at once). The
+    time is kept in that audit row's ``detail``. A manager's forced unbind
+    does not carry it over.
+    """
+    if existing is not None:
+        return existing.qq_changed_at
+    # qq_changed_at <= unbind time, so older unbinds cannot matter.
+    row = (
+        AuditLog.objects.filter(
+            target_user_id=user.pk, action=Action.UNBIND, created_at__gte=now - cooldown
+        )
+        .order_by("-id")
+        .values_list("qq", "detail")
+        .first()
+    )
+    if row is None or row[0] == qq_n:
+        return None
+    detail = row[1]
+    if not isinstance(detail, dict) or not isinstance(detail.get("qq_changed_at"), str):
+        return None
+    return parse_datetime(detail["qq_changed_at"])
+
+
+def cooldown_ends(qq_changed_at, now=None, config=None):
+    """When the rebind cooldown that started at ``qq_changed_at`` ends, or
+    ``None`` when it is already over (for the member pages)."""
+    now = now or timezone.now()
+    config = config or Config.get_solo()
+    if not qq_changed_at or not config.rebind_cooldown_hours:
+        return None
+    ends = qq_changed_at + timedelta(hours=config.rebind_cooldown_hours)
+    return ends if ends > now else None
 
 
 def _user_binding_for_update(user):
@@ -150,8 +214,10 @@ def submit(user, qq, nickname, now=None) -> SubmitResult:
         ).exists():
             return SubmitResult(False, "taken", MSG_TAKEN)
 
-        if existing is not None and existing.qq_changed_at and config.rebind_cooldown_hours:
-            ends = existing.qq_changed_at + timedelta(hours=config.rebind_cooldown_hours)
+        cooldown = timedelta(hours=config.rebind_cooldown_hours)
+        changed_at = _last_qq_change(user, existing, qq_n, cooldown, now) if cooldown else None
+        if changed_at:
+            ends = changed_at + cooldown
             if now < ends:
                 remaining = ends - now
                 return SubmitResult(
@@ -162,6 +228,11 @@ def submit(user, qq, nickname, now=None) -> SubmitResult:
                 )
 
         if in_fresh_roster(qq_n, now):
+            if _trusted_rate_limited(user):
+                return SubmitResult(
+                    False, "rate_limited",
+                    f"绑定或换绑太频繁（每小时最多 {TRUSTED_RATE_LIMIT} 次），请稍后再试。",
+                )
             return _submit_trusted(user, existing, qq_n, nickname, now)
 
         # Pending: the current binding stays untouched until the code is used.
@@ -365,8 +436,12 @@ def _claim(qq_n, code_hash, now) -> ClaimResult:
 # --------------------------------------------------------------------------
 
 
-def confirm(binding, actor) -> Result:
-    """A QQ manager confirms a binding (makes it verified)."""
+def confirm(binding, actor, expected_qq=None) -> Result:
+    """A QQ manager confirms a binding (makes it verified).
+
+    ``expected_qq`` is the QQ the manager was looking at; the confirmation is
+    refused (``qq_changed``) when the binding holds another QQ by now.
+    """
     with transaction.atomic():
         user_id = Binding.objects.filter(pk=binding.pk).values_list("user_id", flat=True).first()
         if user_id is None:
@@ -375,6 +450,8 @@ def confirm(binding, actor) -> Result:
         binding = Binding.objects.select_for_update().filter(pk=binding.pk).first()
         if binding is None:
             return Result(False, "not_found", "绑定不存在。")
+        if _qq_changed(binding, expected_qq):
+            return Result(False, "qq_changed", MSG_QQ_CHANGED)
         if binding.status == Binding.Status.VERIFIED:
             return Result(True, "unchanged", "该绑定已经是已验证状态。")
         if Binding.objects.filter(qq=binding.qq, status=Binding.Status.VERIFIED).exclude(
@@ -406,17 +483,24 @@ def confirm(binding, actor) -> Result:
         return Result(True, "confirmed", "已确认绑定。")
 
 
-def unbind(user, actor=None, forced=False) -> Result:
-    """Remove the user's binding (member or, with ``forced``, a manager)."""
+def unbind(user, actor=None, forced=False, expected_qq=None) -> Result:
+    """Remove the user's binding (member or, with ``forced``, a manager).
+
+    ``expected_qq`` (managers): refuse with ``qq_changed`` when the binding
+    holds another QQ than the one shown on the manager's page.
+    """
     now = timezone.now()
     with transaction.atomic():
         _lock_user_and_qqs(user.pk)
-        _invalidate_codes(user, now)
         binding = _user_binding_for_update(user)
+        if binding is not None and _qq_changed(binding, expected_qq):
+            return Result(False, "qq_changed", MSG_QQ_CHANGED)
+        _invalidate_codes(user, now)
         if binding is None:
             return Result(False, "not_bound", "没有绑定 QQ。")
         qq = binding.qq
         status = binding.status
+        changed_at = binding.qq_changed_at
         binding.delete()
         events.emit(Event.Kind.RECHECK, qq)
         audit.log(
@@ -425,6 +509,9 @@ def unbind(user, actor=None, forced=False) -> Result:
             qq=qq,
             target_user=user,
             status=status,
+            # Keeps the rebind cooldown running after a member's own unbind
+            # (see _last_qq_change).
+            qq_changed_at=changed_at.isoformat() if changed_at else None,
         )
         events.refresh_qq(qq)
         logger.info("qqbot: %s unbound %s", user, mask_qq(qq))

@@ -39,7 +39,15 @@ def run_reconcile() -> dict:
     return result
 
 
-@shared_task(base=QueueOnce, name="qqbot.tasks.reconcile")
+# unlock_before_run: the QueueOnce lock only stops duplicate *queued* runs.
+# A card-format change saved while a run is already going must queue a new
+# run (that one reads the new format); with the default lock held for the
+# whole run, that second queueing was silently rejected.
+@shared_task(
+    base=QueueOnce,
+    name="qqbot.tasks.reconcile",
+    once={"graceful": True, "unlock_before_run": True},
+)
 def reconcile() -> dict:
     """Daily reconciliation; also queued when the card format changes."""
     return run_reconcile()

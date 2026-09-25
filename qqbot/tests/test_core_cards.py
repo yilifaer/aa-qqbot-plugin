@@ -131,6 +131,17 @@ class RenderCardTests(TestCase):
         card = render_card(self.binding)
         self.assertEqual(card, "中" * 20)
 
+    def test_full_card_and_is_shortened(self):
+        self.assertFalse(cards.is_shortened(self.binding))
+        long_user = create_member("bob", character_name="Kaela Vossington-Smithers")
+        long_binding = bind(long_user, "22345678", nickname="凯" * 12)
+        full = cards.full_card(long_user, "凯" * 12)
+        self.assertEqual(full, "[IGC] Kaela Vossington-Smithers - " + "凯" * 12)
+        self.assertGreater(nbytes(full), CARD_MAX_BYTES)
+        self.assertTrue(cards.is_shortened(long_binding))
+        long_binding.card_override = "固定"
+        self.assertFalse(cards.is_shortened(long_binding))
+
     def test_short_card_untouched(self):
         self.assertLessEqual(nbytes(render_card(self.binding)), CARD_MAX_BYTES)
 

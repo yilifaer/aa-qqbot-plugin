@@ -15,8 +15,8 @@
 |---|---|---|
 | `health` | `/qqbot/api/v1/health/` | 启动时、状态命令 |
 | `groups` | `/qqbot/api/v1/groups/` | 启动时、定期（例如每小时），收到 `groups` 事件时 |
-| `check` | `/qqbot/api/v1/check/` | 定时巡检（带完整名单）、没带验证码的入群申请、新人入群、处理事件 |
-| `claim` | `/qqbot/api/v1/claim/` | 入群申请的验证信息里带了验证码 |
+| `check` | `/qqbot/api/v1/check/` | 定时巡检（带完整名单）、新人入群、处理事件 |
+| `claim` | `/qqbot/api/v1/claim/` | **每一个**入群申请（不管验证信息里有没有验证码，见第 5.4 节） |
 | `events` | `/qqbot/api/v1/events/` | 每 60 秒 |
 
 - 完整地址 = AA 的网址 + 路径，例如 `https://auth.example.com/qqbot/api/v1/check/`。
@@ -42,7 +42,7 @@
 |---|---|---|
 | `Content-Type` | `application/json` | |
 | `X-QQBot-Key` | 密钥编号（AA 的 `QQBOT_API_KEYS` 里的键） | 可打印 ASCII，不含空格，1–64 个字符 |
-| `X-QQBot-Timestamp` | 当前 Unix 时间，**单位秒**，整数 | 只含数字，例如 `1767225600` |
+| `X-QQBot-Timestamp` | 当前 Unix 时间，**单位秒**，整数 | 只含数字（最多 16 位），例如 `1767225600`。误传毫秒会得到 `stale_timestamp` |
 | `X-QQBot-Nonce` | 随机数，每个请求都不同 | 16–64 个字符，只能是 `A-Z a-z 0-9 _ -` |
 | `X-QQBot-Signature` | 签名 | 64 位**小写**十六进制 |
 
@@ -62,7 +62,8 @@ POST
 
 - 第 1 行固定为大写的 `POST`。
 - 路径：实际请求的 URL 路径，例如 `/qqbot/api/v1/check/`，**不含**域名、端口和 `?` 后的查询串，末尾带 `/`。
-  （如果 AA 部署在子路径下，例如 `https://example.com/auth/`，路径就要带上这个前缀：`/auth/qqbot/api/v1/check/`。）
+  （如果 AA 部署在子路径下，例如 `https://example.com/auth/`，路径就要带上这个前缀：`/auth/qqbot/api/v1/check/`。
+  最稳妥的做法是：先拼出完整网址，再取它的路径部分来签名，见第 2.6 节的参考实现。）
 - 时间戳、随机数：与请求头里的**完全相同**的字符串。
 - 请求体哈希：对**实际发送的原始字节**计算 SHA-256。空请求体的哈希是
   `e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855`。
@@ -148,14 +149,17 @@ export function sign(secret, path, timestamp, nonce, bodyText) {
 }
 
 // 调用一个接口。返回 { state: 'ok', data } 或 { state: 'unknown', retry, error }。
+// baseUrl 是 AA 的网址，末尾不带 '/'，例如 'https://auth.example.com'；
+// AA 装在子路径下时把前缀也写上，例如 'https://example.com/auth'。
 export async function callApi({ baseUrl, keyId, secret }, name, payload = {}) {
-  const path = `/qqbot/api/v1/${name}/`            // baseUrl 末尾不要带 '/'
+  const url = new URL(`${baseUrl}/qqbot/api/v1/${name}/`)
+  const path = url.pathname                         // 签名用实际请求的路径（含子路径前缀）
   const bodyText = JSON.stringify(payload)          // 只序列化一次
-  const timestamp = Math.floor(Date.now() / 1000).toString()
+  const timestamp = Math.floor(Date.now() / 1000).toString()   // 秒，不是毫秒
   const nonce = randomBytes(16).toString('hex')
   let res
   try {
-    res = await fetch(baseUrl + path, {
+    res = await fetch(url, {
       method: 'POST',
       redirect: 'manual',                           // 绝不跟随重定向
       headers: {
@@ -286,6 +290,7 @@ export async function callApi({ baseUrl, keyId, secret }, name, payload = {}) {
 | `qqbot.E001` | `APPS_WITH_PUBLIC_VIEWS` 里没有 `"qqbot"` | 在 `local.py` **追加** `APPS_WITH_PUBLIC_VIEWS += ["qqbot"]`（不要整行覆盖） |
 | `qqbot.E002` | `QQBOT_API_KEYS` 为空或格式不对 | 在 `local.py` 配置 `QQBOT_API_KEYS = {"编号": "密钥"}` |
 | `qqbot.E003` | 有密钥短于 32 个字符 | 换一把更长的密钥 |
+| `qqbot.E004` | 有密钥编号不符合第 2.1 节的格式（空格、中文、超过 64 个字符） | 用这个编号发的请求会一直得到 `missing_headers`；把编号改成 `koishi-1` 这样的英文名字，两边同步修改 |
 | `qqbot.W001` | 缓存不是 Redis 一类的共享缓存 | 防重放需要跨进程共享的缓存；AA 默认就是 Redis，一般不会出现 |
 
 ### 5.2 `groups`
@@ -352,7 +357,7 @@ export async function callApi({ baseUrl, keyId, secret }, name, payload = {}) {
 |---|---|---|
 | `group_id` | string | 群号（规范化后） |
 | `results` | object[] | 与请求的 `qqs` **一一对应、顺序相同**（重复的 QQ 也会重复出现） |
-| `results[].qq` | string | 规范化后的 QQ（整数会变成字符串，全角数字会变成半角）；`BAD_QQ` 时原样返回请求里的值 |
+| `results[].qq` | string / 整数 / null | 规范化后的 QQ（整数会变成字符串，全角数字会变成半角）；`BAD_QQ` 时原样返回请求里的值——但只限整数和 64 个字符以内的可打印字符串，其他值（例如含控制字符或无法编码的字符）返回 `null`，按位置对应即可 |
 | `results[].decision` / `reason` / `card` | | 见第 4 节 |
 | `roster` | object 或 null | 只有 `full_roster: true` 时有值：`{"added": 新增数, "removed": 移除数, "total": 名单总数}` |
 
@@ -362,8 +367,15 @@ export async function callApi({ baseUrl, keyId, secret }, name, payload = {}) {
 
 ### 5.4 `claim`
 
-机器人收到入群申请，验证信息里带了验证码（格式 `QQ-XXXXXX`，前后可以有别的文字，不区分大小写）时调用。
-AA 会自己从 `text` 里找出验证码，机器人把验证信息**原文**传过来即可。
+机器人收到**任何**入群申请时调用（验证信息里没有验证码也调用）。
+AA 会自己从 `text` 里找出验证码，机器人把验证信息**原文**传过来即可，**不要**自己先判断有没有验证码：
+AA 接受的写法比 `QQ-XXXXXX` 宽得多——不区分大小写、`-` 可以省略（`qq7k3f9p`）、全角字母数字和各种破折号
+（`ＱＱ－７Ｋ３Ｆ９Ｐ`、`QQ—7K3F9P`）都算，前后可以有别的文字。机器人自己用正则判断很容易漏掉，
+而漏掉的验证码不会被使用，申请人会被判成 `PENDING_VERIFY`。没有验证码时 `claim` 返回 `no_code`，
+`result` 与 `check` 的结果完全相同，所以统一走 `claim` 不会有任何损失。
+
+（仅供参考，机器人不需要实现：AA 先把全角字符转成半角、把破折号类字符转成 `-`，再用
+`QQ-?[23456789ABCDEFGHJKMNPQRSTUVWXYZ]{6}`（不区分大小写）查找。）
 
 请求：
 
@@ -400,14 +412,16 @@ AA 会自己从 `text` 里找出验证码，机器人把验证信息**原文**�
 | outcome | 含义 | 机器人怎么做 |
 |---|---|---|
 | `claimed` | 验证成功，QQ 已绑定 | 按 `result.decision` 处理（通常是批准） |
-| `no_code` | 验证信息里没有验证码 | 按 `result.decision` 处理；通常改用 `check` 流程 |
+| `no_code` | 验证信息里没有验证码 | 按 `result.decision` 处理（与 `check` 的结果相同） |
 | `code_invalid` | 验证码不存在（打错了） | 按 `result.decision` 处理；可以提示申请人核对验证码 |
-| `code_expired` | 验证码已过期 | 提示申请人在 AA 上重新生成 |
+| `code_expired` | 验证码已过期 | 按 `result.decision` 处理；提示申请人在 AA 上重新生成 |
 | `code_used` | 验证码已用过或已作废 | 按 `result.decision` 处理（可能是网络重试，其实已经成功了） |
-| `qq_mismatch` | 验证码是给另一个 QQ 的；该验证码已被作废 | 不批准；提示申请人在 AA 上重新生成，并确认填写的 QQ 正确 |
+| `qq_mismatch` | 验证码是给另一个 QQ 的；该验证码已被作废 | 按 `result.decision` 处理；提示申请人在 AA 上重新生成，并确认填写的 QQ 正确 |
 
-**入群申请统一按 `result.decision` 处理**（所以调用 `claim` 时请总是带上 `group_id`）：
+**入群申请统一按 `result.decision` 处理，不看 `outcome`**（所以调用 `claim` 时请总是带上 `group_id`）：
 `allow` → 批准；`deny` → 按模式拒绝或保持待处理；`review` 或拿不到结果 → 保持待处理、报告管理员。
+`outcome` 和 `message` 只用来决定给申请人看什么提示。例如 `qq_mismatch` 时，如果申请人自己的 QQ
+本来就已验证、有资格，`result.decision` 仍然是 `allow`，应当批准。
 
 错误：`group_id` 对应的群不存在或已停用 → `404 unknown_group`（此时验证码**不会**被使用）；
 `qq` 不合法、`text` 不是字符串或太长 → `400 bad_request`。
@@ -461,14 +475,20 @@ AA 会自己从 `text` 里找出验证码，机器人把验证信息**原文**�
 
 不认识的 `kind` 直接跳过。同一个 QQ 可能连续出现多条事件，处理是幂等的，可以合并。
 
+**批量处理，不要一条事件发一次 `check`**：AA 上一个操作可能一次写出上千条事件（例如 QQ 管理员改了群名片格式，
+每个绑定都会有一条 `card`；改了某个状态的权限，这个状态里的每个人都会有一条 `recheck`）。
+一页事件（或连续几页）拉完后，先把里面的 QQ 去重，再**按群合并**：对每个受管群只发**一次** `check`，
+`qqs` 里放这个群里所有相关的 QQ（最多 3000 个，更多就分几次）。一页里出现 `recheck_all` 时，
+直接做一次完整巡检，这一页的其他事件就不用单独处理了。逐条调用很快就会超过每分钟的请求上限（第 10 节）。
+
 ---
 
 ## 6. 错误码
 
 | HTTP | `error` | 含义 | 机器人怎么做 / 怎么修 |
 |---|---|---|---|
-| 400 | `bad_request` | JSON 不合法或字段不对，`message` 会说明哪个字段 | 修代码；不要重试 |
-| 401 | `missing_headers` | 缺少签名请求头或格式不对 | 检查四个 `X-QQBot-*` 请求头（第 2.1 节） |
+| 400 | `bad_request` | JSON 不合法（包括嵌套过深）或字段不对，`message` 会说明哪个字段 | 修代码；不要重试 |
+| 401 | `missing_headers` | 缺少签名请求头或格式不对 | 检查四个 `X-QQBot-*` 请求头（第 2.1 节）；密钥编号不能有空格或中文（AA 的 `health` 会报 `qqbot.E004`） |
 | 401 | `unknown_key` | 密钥编号不存在 | 机器人的密钥编号与 AA 的 `QQBOT_API_KEYS` 不一致；换密钥时两边都要改 |
 | 401 | `stale_timestamp` | 时间戳偏差超过 300 秒 | 校准机器人电脑的时间（开启 NTP 自动对时）；确认时间戳单位是**秒**不是毫秒 |
 | 401 | `bad_signature` | 签名不对 | 用第 2.5 节的测试样例核对算法；检查密钥、路径（末尾 `/`）、请求体是否与签名时完全一致 |
@@ -476,7 +496,7 @@ AA 会自己从 `text` 里找出验证码，机器人把验证信息**原文**�
 | 404 | `unknown_group` | 群不存在或已停用 | 重新拉取 `groups`；不要处置这个群里的任何人 |
 | 405 | `method_not_allowed` | 不是 POST | 修代码 |
 | 413 | `too_large` | 请求体太大 | 减少一次发送的内容（`check` 最多 3000 个 QQ） |
-| 429 | `rate_limited` | 请求太频繁（每个密钥默认 120 次/分钟） | 按 `Retry-After` 等待；检查是不是有死循环 |
+| 429 | `rate_limited` | 请求太频繁（每个密钥默认 120 次/分钟） | 按 `Retry-After` 等待；检查是不是逐条事件调用了 `check`（第 5.5 节）或有死循环 |
 | 500 | `internal_error` | AA 内部出错（已记日志） | 当作「无法判断」，稍后重试；多次出现请联系 IT 查看 AA 日志 |
 | 503 | `misconfigured` | AA 没有配置机器人密钥 | 当作「无法判断」，**绝不踢人**；联系 IT 配置 `QQBOT_API_KEYS` |
 
@@ -518,6 +538,22 @@ AA 会自己从 `text` 里找出验证码，机器人把验证信息**原文**�
 巡检拿到结果后：`allow` 的同步名片；`deny` 的按模式报告或处置；`review` 的只报告。
 **建议机器人永不处置：机器人自己、群主、群管理员**（在机器人那边加白名单）。
 
+### 7.1 防止大规模误踢（熔断，必须实现）
+
+AA 这边的一次误操作，就可能让一个群里**所有人**同时变成 `deny`，例如：管理员把一个大群改成了身份组小群，
+或者选错了要求的 AA 组（全员 `GROUP_ROLE_MISSING`）；有人在后台把 `basic_access` 从 Member 状态上拿掉了
+（全员 `NO_ACCESS`）；管理员账号被盗。AA 随后会发 `recheck_all`，机器人马上巡检，拿到的就是一片 `deny`。
+「真踢人」开关只能拦住开关**没打开**的群，所以打开了开关的群必须由机器人自己熔断：
+
+- 一次巡检（或一批事件处理）里，某个群**将要移出的人数**超过阈值时——建议「超过 5 人**或**超过该群人数的 10%」，
+  以较小者为准——**这一轮对这个群一个人都不移出**，改为只报告，并通知 QQ 管理员人工确认
+  （例如在管理群里发消息，由管理员用命令确认后再执行）。
+- 在熔断状态下，入群申请的 `deny` 也不要自动拒绝，保持待处理。
+- 另外对踢人设一个总速率上限（例如每个群每小时最多移出 10 人），超过的留到下一轮。
+- 阈值做成机器人的配置项，默认值宁小勿大。
+
+这样即使 AA 被误配置，最坏的结果也只是「报告了一大串 `deny`」，不会真的把人踢光。
+
 ---
 
 ## 8. 事件轮询
@@ -556,7 +592,9 @@ AA 会自己从 `text` 里找出验证码，机器人把验证信息**原文**�
 | `health` | 启动时、状态命令 | |
 | `claim` / 单个 `check` | 有入群申请或新人入群时 | |
 
-请求超时建议 30 秒（大群巡检的 `check` 最慢）。默认限速是每个密钥每分钟 120 次，正常使用远远用不到。
+请求超时建议 30 秒（大群巡检的 `check` 最慢）。默认限速是每个密钥每分钟 120 次（IT 可以用 AA 的
+`QQBOT_API_RATE_LIMIT` 设置调整）。按上面的频率、并且**按群批量处理事件**（第 5.5 节）时远远用不到；
+逐条事件调用 `check` 则会在 AA 批量操作后很快超限。
 
 ---
 
@@ -571,8 +609,10 @@ AA 会自己从 `text` 里找出验证码，机器人把验证信息**原文**�
 - [ ] 「真踢人」开关只在机器人这边，默认关闭（只报告）。
 - [ ] 只管理 `groups` 返回的群；拉取失败时沿用上一次的列表。
 - [ ] 巡检每 6 小时一次，发送完整名单并设 `full_roster: true`。
-- [ ] 入群申请：有验证码 → `claim`（带 `group_id`），否则 → `check`；都按 `decision` 处理。
-- [ ] `events` 每 60 秒轮询，游标持久化，先处理后保存。
+- [ ] 入群申请：**一律**调用 `claim`（带 `group_id`，验证信息原文照传），只按 `result.decision` 处理。
+- [ ] `events` 每 60 秒轮询，游标持久化，先处理后保存；一页事件按群合并成一次 `check`，不要逐条调用。
+- [ ] 熔断（第 7.1 节）：一轮要移出的人数超过阈值时，这个群这一轮一个都不移出，只报告并等管理员确认；踢人有速率上限。
+- [ ] AA 装在子路径下时，签名用的路径带上前缀（按第 2.6 节从完整网址取路径）。
 - [ ] 名片只在 `allow` 且与当前不同时修改；所有外部文字写进消息前转义。
 - [ ] 白名单：机器人自己、群主、群管理员永不处置。
 - [ ] 机器人电脑开启 NTP 自动对时。

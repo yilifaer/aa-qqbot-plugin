@@ -2,11 +2,29 @@
 {% comment %}
 Services page card: status badge, masked QQ, one hint line and a button to
 the member page. `username` is the masked QQ when bound, "" otherwise.
+The badge replaces AA's generic Enabled/Disabled one, which only looks at
+`username` (it showed a green badge for conflicts and "失效了" for pending).
 {% endcomment %}
 
 {% block title %}
     <i class="fa-brands fa-qq fa-fw"></i> {{ service_name }}
 {% endblock title %}
+
+{% block active %}
+    {% if not has_main %}
+        <span class="badge text-bg-secondary">未启用</span>
+    {% elif status.state == "conflict" %}
+        <span class="badge text-bg-danger">冲突</span>
+    {% elif status.state == "taken" %}
+        <span class="badge text-bg-danger">已被占用</span>
+    {% elif status.binding %}
+        <span class="badge text-bg-success">已启用</span>
+    {% elif status.live_code %}
+        <span class="badge text-bg-primary">待验证</span>
+    {% else %}
+        <span class="badge text-bg-secondary">未启用</span>
+    {% endif %}
+{% endblock active %}
 
 {% block user %}
     {% if username %}

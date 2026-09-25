@@ -304,6 +304,54 @@ class SubmitOtherOutcomesTests(BaseTestCase):
         r = bindings.submit(self.user, "22345678", "凯拉", now=now + timedelta(minutes=5))
         self.assertEqual(r.outcome, "cooldown")
 
+    def test_cooldown_survives_own_unbind(self):
+        """Unbind + submit must not skip the cooldown (DESIGN 5.5)."""
+        put_in_roster(self.group, ["12345678", "22345678", "32345678"])
+        t0 = timezone.now()
+        self.assertEqual(bindings.submit(self.user, "12345678", "凯拉", now=t0).outcome, "trusted")
+        bindings.unbind(self.user, actor=self.user)
+        r = bindings.submit(self.user, "22345678", "凯拉", now=t0 + timedelta(minutes=5))
+        self.assertEqual(r.outcome, "cooldown")
+        self.assertFalse(Binding.objects.filter(user=self.user).exists())
+        # Also for the code path.
+        r = bindings.submit(self.user, "42345678", "凯拉", now=t0 + timedelta(minutes=5))
+        self.assertEqual(r.outcome, "cooldown")
+        self.assertFalse(BindCode.objects.exists())
+        # Undoing the unbind (same QQ) is not a change.
+        r = bindings.submit(self.user, "12345678", "凯拉", now=t0 + timedelta(minutes=6))
+        self.assertEqual(r.outcome, "trusted")
+        bindings.unbind(self.user, actor=self.user)
+        # After the cooldown the member can bind another QQ.
+        r = bindings.submit(self.user, "22345678", "凯拉", now=t0 + timedelta(hours=24, minutes=7))
+        self.assertEqual(r.outcome, "trusted")
+
+    def test_cooldown_not_carried_over_by_forced_unbind(self):
+        put_in_roster(self.group, ["12345678", "22345678"])
+        t0 = timezone.now()
+        bindings.submit(self.user, "12345678", "凯拉", now=t0)
+        bindings.unbind(self.user, actor=create_member("boss"), forced=True)
+        r = bindings.submit(self.user, "22345678", "凯拉", now=t0 + timedelta(minutes=5))
+        self.assertEqual(r.outcome, "trusted")
+
+    def test_unbind_after_cooldown_leaves_no_cooldown(self):
+        t0 = timezone.now() - timedelta(hours=30)
+        bind(self.user, "12345678", qq_changed_at=t0)
+        bindings.unbind(self.user, actor=self.user)
+        self.assertEqual(bindings.submit(self.user, "22345678", "凯拉").outcome, "pending")
+
+    def test_trusted_binds_are_rate_limited(self):
+        """Even with the cooldown off, the unbind/submit loop is limited."""
+        self.config.rebind_cooldown_hours = 0
+        self.config.save()
+        qqs = [str(52345670 + i) for i in range(bindings.TRUSTED_RATE_LIMIT + 1)]
+        put_in_roster(self.group, qqs)
+        for qq in qqs[:-1]:
+            self.assertEqual(bindings.submit(self.user, qq, "凯拉").outcome, "trusted")
+            bindings.unbind(self.user, actor=self.user)
+        r = bindings.submit(self.user, qqs[-1], "凯拉")
+        self.assertEqual((r.ok, r.outcome), (False, "rate_limited"))
+        self.assertFalse(Binding.objects.filter(user=self.user).exists())
+
     def test_taken_checked_before_cooldown(self):
         bind(create_member("bob"), "22345678")
         bind(self.user, "12345678", qq_changed_at=timezone.now())
@@ -524,6 +572,16 @@ class ConfirmTests(BaseTestCase):
         self.assertEqual((r.ok, r.outcome), (False, "taken"))
         self.assertEqual(self.fresh(b.pk).status, "trusted")
 
+    def test_expected_qq(self):
+        b = bind(self.user, "12345678", status="trusted")
+        r = bindings.confirm(b, self.manager, expected_qq="22345678")
+        self.assertEqual((r.ok, r.outcome), (False, "qq_changed"))
+        self.assertEqual(self.fresh(b.pk).status, "trusted")
+        r = bindings.confirm(b, self.manager, expected_qq="")
+        self.assertEqual(r.outcome, "qq_changed")
+        r = bindings.confirm(b, self.manager, expected_qq="12345678")
+        self.assertEqual(r.outcome, "confirmed")
+
     def test_already_verified(self):
         b = bind(self.user, "12345678", status="verified")
         r = bindings.confirm(b, self.manager)
@@ -551,6 +609,17 @@ class UnbindTests(BaseTestCase):
         u = audits(A.FORCE_UNBIND).get()
         self.assertEqual((u.actor_name, u.target_name), ("boss", "alice"))
         self.assertFalse(audits(A.UNBIND).exists())
+
+    def test_forced_expected_qq(self):
+        manager = create_member("boss")
+        bind(self.user, "12345678")
+        bindings.submit(self.user, "22345678", "凯拉")  # live code
+        r = bindings.unbind(self.user, actor=manager, forced=True, expected_qq="99999999")
+        self.assertEqual((r.ok, r.outcome), (False, "qq_changed"))
+        self.assertTrue(Binding.objects.filter(user=self.user).exists())
+        self.assertIsNotNone(bindings.live_code(self.user))
+        r = bindings.unbind(self.user, actor=manager, forced=True, expected_qq="12345678")
+        self.assertEqual(r.outcome, "unbound")
 
     def test_not_bound(self):
         r = bindings.submit(self.user, "22345678", "凯拉")

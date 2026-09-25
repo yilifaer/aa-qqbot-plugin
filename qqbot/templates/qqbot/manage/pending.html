@@ -6,8 +6,9 @@
     <h4>冲突的 QQ</h4>
     <p class="text-body-secondary">
         同一个 QQ 被两个或更多账号以「老成员免验证」认领。机器人对冲突的 QQ 不会踢人也不会拒绝，只等你来决定归谁。
-        点「确认归他」后，其他账号的认领会自动作废；如果都不对，可以把错误的一方强制解绑。
-        也可以让真正的号主在「我的 QQ」页重新提交，用验证码完成验证，验证成功的一方会自动胜出。
+        请先核实谁是真正的号主（例如在 QQ 上私聊确认），然后点他那一行的「确认归他」，其他账号的认领会自动作废；
+        如果都不对，可以把错误的一方强制解绑。
+        （号主还在群里时，这个 QQ 拿不到验证码，所以冲突只能在这里处理。）
     </p>
 
     {% for c in conflicts %}
@@ -33,6 +34,7 @@
                                         <form method="post" action="{% url 'qqbot:manage_binding_confirm' b.pk %}" class="d-inline">
                                             {% csrf_token %}
                                             <input type="hidden" name="back" value="pending">
+                                            <input type="hidden" name="qq" value="{{ b.qq }}">
                                             <button type="submit" class="btn btn-sm btn-success">
                                                 <i class="fa-solid fa-circle-check fa-fw"></i> 确认归他
                                             </button>

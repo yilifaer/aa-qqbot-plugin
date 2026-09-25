@@ -7,6 +7,7 @@ import hashlib
 import hmac
 import re
 import secrets
+import unicodedata
 
 from django.conf import settings
 
@@ -21,6 +22,23 @@ _STRICT_RE = re.compile(
 )
 # Fallback: the plain pattern from the spec, anywhere in the text.
 _LOOSE_RE = re.compile(rf"QQ-?({_BODY})", re.IGNORECASE | re.ASCII)
+
+
+# Dash look-alikes that IMEs and phones produce instead of "-". NFKC already
+# maps the full-width hyphen-minus (U+FF0D) and the small one (U+FE63).
+_DASHES = str.maketrans({
+    c: "-" for c in "\u2010\u2011\u2012\u2013\u2014\u2015\u2212\u30fc\uff70"
+})
+
+_DASH_RUN_RE = re.compile(r"-{2,}")
+
+
+def _normalize_text(text: str) -> str:
+    """Fold full-width letters/digits/hyphens (Chinese IME full-width mode)
+    and common dash look-alikes to ASCII before matching."""
+    text = unicodedata.normalize("NFKC", text).translate(_DASHES)
+    # A Chinese IME's "-" key often gives a double dash ("——").
+    return _DASH_RUN_RE.sub("-", text)
 
 
 def generate_code() -> str:
@@ -49,10 +67,12 @@ def extract_code(text) -> str | None:
     Case-insensitive, the hyphen is optional and other text may surround the
     code. A match that is not glued to other ASCII letters/digits is preferred
     (so ``qq23456789 QQ-7K3F9P`` yields the real code); otherwise the first
-    plain match is used.
+    plain match is used. Full-width input (``ＱＱ－７Ｋ３Ｆ９Ｐ``) and dash
+    look-alikes (``QQ—7K3F9P``) are accepted too.
     """
     if not text or not isinstance(text, str):
         return None
+    text = _normalize_text(text)
     match = _STRICT_RE.search(text) or _LOOSE_RE.search(text)
     if not match:
         return None

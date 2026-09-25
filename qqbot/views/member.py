@@ -18,7 +18,7 @@ from allianceauth.services.hooks import get_extension_logger
 
 from ..core import bindings, cards, codes, eligibility
 from ..core.access import has_main_character
-from ..core.util import mask_qq
+from ..core.util import NICKNAME_MAX_LENGTH, mask_qq
 from ..models import Binding, BindCode, Config, QQGroup, normalize_qq
 from .member_forms import NICKNAME_HELP, NicknameForm, SubmitForm, first_error
 
@@ -122,13 +122,26 @@ def _card_parts(user, config) -> tuple[str, str, bool]:
     """Split the card preview around the nickname: ``(before, after, found)``.
 
     ``found`` is False when the card format does not contain the nickname;
-    ``before`` is then the whole card.
+    ``before`` is then the whole card. The parts are *not* shortened; see
+    :func:`_nickname_room` for how much room the nickname really has.
     """
-    card = cards.preview_card(user, _NICK_MARK, config)
+    card = cards.full_card(user, _NICK_MARK, config)
     if card.count(_NICK_MARK) == 1:
         before, after = card.split(_NICK_MARK)
         return before, after, True
     return card.replace(_NICK_MARK, ""), "", False
+
+
+def _nickname_room(before: str, after: str, found: bool) -> int | None:
+    """Bytes left for the nickname before the character name gets shortened;
+    ``None`` when every allowed nickname fits (no hint needed)."""
+    if not found:
+        return None
+    room = cards.CARD_MAX_BYTES - cards.byte_length(before) - cards.byte_length(after)
+    # The longest allowed nickname: NICKNAME_MAX_LENGTH CJK characters.
+    if room >= 3 * NICKNAME_MAX_LENGTH:
+        return None
+    return max(room, 0)
 
 
 def _split_groups(groups: list[QQGroup]) -> dict:
@@ -185,6 +198,7 @@ def my_qq(request):
 
     groups = eligibility.groups_for_user(user, now)
     before, after, nick_in_card = _card_parts(user, config)
+    room = _nickname_room(before, after, nick_in_card)
 
     context.update(
         {
@@ -194,6 +208,10 @@ def my_qq(request):
             "card_before": before,
             "card_after": after,
             "nick_in_card": nick_in_card,
+            # Hint under the nickname input (DESIGN.md 6).
+            "nick_room_cjk": None if room is None else room // 3,
+            "nick_room_ascii": room,
+            "card_max_bytes": cards.CARD_MAX_BYTES,
             "groups": _split_groups(groups),
             "has_groups": bool(groups),
             "stale_code": stale_code,
@@ -211,6 +229,7 @@ def my_qq(request):
         )
     if binding is not None:
         context["card"] = cards.render_card(binding, config)
+        context["card_shortened"] = cards.is_shortened(binding, config)
 
     # Pre-fill the submit form: the last typed values, else the binding.
     initial_qq = ""
@@ -307,5 +326,10 @@ def unbind(request):
     return render(
         request,
         "qqbot/member/unbind_confirm.html",
-        {"qqbot_nav": "member", "status": status},
+        {
+            "qqbot_nav": "member",
+            "status": status,
+            # Unbinding does not reset the rebind cooldown (DESIGN.md 5.5).
+            "cooldown_ends": bindings.cooldown_ends(status.binding.qq_changed_at),
+        },
     )
