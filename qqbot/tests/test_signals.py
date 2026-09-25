@@ -237,7 +237,8 @@ class UserDeleteTests(TestCase):
     def test_delete_bound_user_writes_recheck_and_audit(self):
         user = create_member("alice")
         bind(user, QQ)
-        user.delete()
+        with self.captureOnCommitCallbacks(execute=True):
+            user.delete()
         self.assertTrue(Event.objects.filter(kind=Event.Kind.RECHECK, qq=QQ).exists())
         log = AuditLog.objects.get(action=AuditLog.Action.USER_DELETED)
         self.assertEqual((log.qq, log.target_name), (QQ, "alice"))
@@ -292,7 +293,8 @@ class AAProxyModelTests(ScheduleTestCase):
 
         user = create_member("alice")
         bind(user, QQ)
-        AAUser.objects.get(pk=user.pk).delete()
+        with self.captureOnCommitCallbacks(execute=True):
+            AAUser.objects.get(pk=user.pk).delete()
         self.assertEqual(AuditLog.objects.filter(action=AuditLog.Action.USER_DELETED).count(), 1)
         self.assertEqual(Event.objects.filter(kind=Event.Kind.RECHECK, qq=QQ).count(), 1)
 

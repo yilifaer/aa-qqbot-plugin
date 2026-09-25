@@ -150,7 +150,8 @@ class CsrfTests(Fixture, TestCase):
             "manage_binding_confirm": {},
             "manage_binding_unbind": {},
             "manage_settings": {"card_format": "{nickname}", "code_ttl_minutes": 10,
-                                "roster_max_age_days": 7, "rebind_cooldown_hours": 24},
+                                "roster_max_age_days": 7, "trusted_window_days": 30,
+                                "rebind_cooldown_hours": 24},
         }
         for name, data in posts.items():
             with self.subTest(name=name):
