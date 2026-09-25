@@ -16,6 +16,10 @@ E002 = "qqbot.E002"
 E003 = "qqbot.E003"
 E004 = "qqbot.E004"
 W001 = "qqbot.W001"
+W002 = "qqbot.W002"
+
+# The daily reconciliation task that local.py must schedule (README).
+RECONCILE_TASK = "qqbot.tasks.reconcile"
 
 # Cache backends that are not shared between processes (gunicorn workers),
 # so the API's replay protection (nonces) and rate limits would not work.
@@ -26,6 +30,17 @@ def _cache_backend() -> str:
     caches = getattr(settings, "CACHES", None) or {}
     default = caches.get("default") or {}
     return str(default.get("BACKEND", ""))
+
+
+def _reconcile_scheduled() -> bool:
+    """Whether ``CELERYBEAT_SCHEDULE`` has an entry for the daily reconcile."""
+    schedule = getattr(settings, "CELERYBEAT_SCHEDULE", None)
+    if not isinstance(schedule, dict):
+        return False
+    return any(
+        isinstance(entry, dict) and entry.get("task") == RECONCILE_TASK
+        for entry in schedule.values()
+    )
 
 
 def _usable_key_id(key_id) -> bool:
@@ -59,6 +74,8 @@ def problems() -> list[str]:
     backend = _cache_backend().lower()
     if not backend or any(marker in backend for marker in _UNSHARED_CACHE_MARKERS):
         found.append(W001)
+    if not _reconcile_scheduled():
+        found.append(W002)
     return found
 
 
@@ -98,6 +115,16 @@ def _messages() -> dict:
             "默认缓存不是 Redis 这类多进程共享的缓存，机器人接口的防重放和限速在多个进程之间不起作用。",
             hint="Alliance Auth 默认使用 Redis 缓存，请检查 local.py 里是否覆盖了 CACHES。",
             id=W001,
+        ),
+        W002: CheckWarning(
+            "CELERYBEAT_SCHEDULE 里没有每日对账任务 qqbot.tasks.reconcile，"
+            "资格和群名片的定期复查、旧数据清理都不会自动运行。",
+            hint=(
+                'local.py 里加上 CELERYBEAT_SCHEDULE["qqbot_reconcile"] = '
+                '{"task": "qqbot.tasks.reconcile", "schedule": crontab(minute="17", hour="4")}（见 README）。'
+                "如果是在后台「Periodic tasks」里手动添加的，可以忽略这条提示。"
+            ),
+            id=W002,
         ),
     }
 

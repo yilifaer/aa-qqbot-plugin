@@ -17,7 +17,7 @@
 
 | 文件 | 负责内容 |
 |---|---|
-| `qqbot/models.py`、`migrations/0001_initial.py`、`app_settings.py`、`apps.py`、`urls.py`、`auth_hooks.py`、`templates/qqbot/base.html`、`testauth/` | 地基（已写好）。改动须说明理由 |
+| `qqbot/models.py`、`migrations/0001_v1_initial.py`、`app_settings.py`、`apps.py`、`urls.py`、`auth_hooks.py`、`templates/qqbot/base.html`、`testauth/` | 地基（已写好）。改动须说明理由 |
 | `qqbot/core/` | 领域逻辑：判定、绑定操作、群名片、事件、审计、验证码。**页面和接口只能通过 core 修改数据** |
 | `qqbot/api/`、`API.md` | 机器人接口 |
 | `qqbot/views/member*.py`、`templates/qqbot/member/`（卡片用的片段）、`service_hook.py`、`templates/qqbot/service_ctrl.html` | 服务页的 QQ 绑定卡片（成员的全部界面）及其 POST 视图 |

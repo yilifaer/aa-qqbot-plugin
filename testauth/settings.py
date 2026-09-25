@@ -2,6 +2,8 @@
 
 import os
 
+from celery.schedules import crontab
+
 from allianceauth.project_template.project_name.settings.base import *  # noqa: F401,F403
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -16,6 +18,12 @@ INSTALLED_APPS += ["qqbot"]  # noqa: F405
 APPS_WITH_PUBLIC_VIEWS = ["qqbot"]
 
 QQBOT_API_KEYS = {"test": "test-secret-0123456789abcdefghijklmnopqrstuvwxyz"}
+
+# Same entry as README's local.py block (checked by qqbot.W002).
+CELERYBEAT_SCHEDULE["qqbot_reconcile"] = {  # noqa: F405
+    "task": "qqbot.tasks.reconcile",
+    "schedule": crontab(minute="17", hour="4"),
+}
 
 # Database: SQLite by default. CI also runs the suite on MariaDB and
 # PostgreSQL (QQBOT_TEST_DB=mysql|postgres) so that the row-locking tests in

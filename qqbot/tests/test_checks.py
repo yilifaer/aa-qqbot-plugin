@@ -88,6 +88,28 @@ class ProblemsTests(SimpleTestCase):
             ):
                 self.assertEqual(checks.problems(), [])
 
+    def test_w002_reconcile_not_scheduled(self):
+        other = {"task": "allianceauth.eveonline.tasks.run_model_update", "schedule": 60}
+        for value in ({}, {"other": other}, None, [], {"qqbot_reconcile": "qqbot.tasks.reconcile"}):
+            with self.subTest(value=value), override_settings(CELERYBEAT_SCHEDULE=value):
+                self.assertEqual(checks.problems(), ["qqbot.W002"])
+                [msg] = checks.qqbot_config_check()
+                self.assertEqual(msg.id, "qqbot.W002")
+                self.assertEqual(msg.level, django_checks.WARNING)
+                self.assertIn("qqbot.tasks.reconcile", msg.hint)
+
+    def test_w002_any_entry_name_ok(self):
+        entry = {"task": "qqbot.tasks.reconcile", "schedule": 3600}
+        with override_settings(CELERYBEAT_SCHEDULE={"other": {"task": "x"}, "my name": entry}):
+            self.assertEqual(checks.problems(), [])
+
+    def test_w002_setting_absent(self):
+        from django.conf import settings
+
+        with override_settings():
+            del settings.CELERYBEAT_SCHEDULE
+            self.assertEqual(checks.problems(), ["qqbot.W002"])
+
     def test_errors_are_errors(self):
         with override_settings(APPS_WITH_PUBLIC_VIEWS=[], QQBOT_API_KEYS={}):
             msgs = checks.qqbot_config_check()
