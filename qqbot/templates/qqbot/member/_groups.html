@@ -1,3 +1,4 @@
+{% load i18n %}
 {% comment %}
 Groups the member may join / apply to, for the services card: fixed groups
 and role groups, each labelled, with the group number to search for in QQ.
@@ -8,7 +9,7 @@ Context: groups = {"fixed": [...], "role": [...]}.
 上下文：groups = {"fixed": [...], "role": [...]}。
 {% endcomment %}
 {% if groups.fixed %}
-    <div class="small fw-bold text-body-secondary mt-2 mb-1">固定群</div>
+    <div class="small fw-bold text-body-secondary mt-2 mb-1">{% translate "Fixed groups" %}</div>
     <ul class="list-group mb-2">
         {% for g in groups.fixed %}
             <li class="list-group-item d-flex justify-content-between align-items-center gap-2 py-2">
@@ -16,13 +17,13 @@ Context: groups = {"fixed": [...], "role": [...]}.
                     {{ g.name }}
                     {% if g.description %}<div class="small text-body-secondary">{{ g.description }}</div>{% endif %}
                 </div>
-                <span class="font-monospace fs-5 fw-bold text-nowrap user-select-all" title="群号">{{ g.group_id }}</span>
+                <span class="font-monospace fs-5 fw-bold text-nowrap user-select-all" title="{% translate "Group number" %}">{{ g.group_id }}</span>
             </li>
         {% endfor %}
     </ul>
 {% endif %}
 {% if groups.role %}
-    <div class="small fw-bold text-body-secondary mt-2 mb-1">身份组小群</div>
+    <div class="small fw-bold text-body-secondary mt-2 mb-1">{% translate "Role groups" %}</div>
     <ul class="list-group mb-2">
         {% for g in groups.role %}
             <li class="list-group-item d-flex justify-content-between align-items-center gap-2 py-2">
@@ -30,7 +31,7 @@ Context: groups = {"fixed": [...], "role": [...]}.
                     {{ g.name }}
                     {% if g.description %}<div class="small text-body-secondary">{{ g.description }}</div>{% endif %}
                 </div>
-                <span class="font-monospace fs-5 fw-bold text-nowrap user-select-all" title="群号">{{ g.group_id }}</span>
+                <span class="font-monospace fs-5 fw-bold text-nowrap user-select-all" title="{% translate "Group number" %}">{{ g.group_id }}</span>
             </li>
         {% endfor %}
     </ul>

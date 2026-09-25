@@ -1,25 +1,33 @@
 {% extends "allianceauth/base-bs5.html" %}
+{% load i18n qqbot_i18n %}
 {% comment %}
 Layout of the QQ manager pages (the only qqbot pages: members use the
 "QQ 绑定" card on AA's services page, DECISIONS.md #18). Child templates fill
 `qqbot_title` and `qqbot_body`.
+qqbot's blocks are rendered in qqbot's UI language (English for English
+users, Simplified Chinese otherwise, see qqbot/i18n.py); AA's own menus
+around them stay in the user's language.
 
 QQ 管理员页面的布局（qqbot 只有这些独立页面：成员使用的是 AA 服务页上的
 “QQ 绑定”卡片，见 DECISIONS.md #18）。子模板需要填写 `qqbot_title` 和 `qqbot_body`。
+qqbot 的块用 qqbot 的界面语言渲染（英文用户是英文，其他人是简体中文，见
+qqbot/i18n.py）；外面 AA 自己的菜单仍然是用户的语言。
 {% endcomment %}
 
-{% block page_title %}{% block qqbot_title %}QQ 管理{% endblock qqbot_title %}{% endblock page_title %}
+{% block page_title %}{% qqbot_language as qqbot_lang %}{% language qqbot_lang %}{% block qqbot_title %}{% translate "QQ Admin" %}{% endblock qqbot_title %}{% endlanguage %}{% endblock page_title %}
 
-{% block header_nav_brand %}QQ 管理{% endblock header_nav_brand %}
+{% block header_nav_brand %}{% qqbot_language as qqbot_lang %}{% language qqbot_lang %}{% translate "QQ Admin" %}{% endlanguage %}{% endblock header_nav_brand %}
 
 {% block content %}
+{% qqbot_language as qqbot_lang %}{% language qqbot_lang %}
     {% if perms.qqbot.basic_access %}
         <p class="small text-end mb-2">
             <a href="{% url 'services:services' %}#qqbot" id="qqbot-services-link">
-                <i class="fa-solid fa-arrow-left fa-fw"></i> 我自己的 QQ 绑定在「服务」页
+                <i class="fa-solid fa-arrow-left fa-fw"></i> {% translate "My own QQ binding is on the Services page" %}
             </a>
         </p>
     {% endif %}
 
     {% block qqbot_body %}{% endblock qqbot_body %}
+{% endlanguage %}
 {% endblock content %}

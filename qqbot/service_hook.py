@@ -16,8 +16,11 @@ AA 的服务回调（``validate_user``、``delete_user`` 等）什么都不做�
 """
 
 from django.template.loader import render_to_string
+from django.utils.translation import gettext
 
 from allianceauth.services.hooks import ServicesHook, get_extension_logger
+
+from . import i18n
 
 logger = get_extension_logger(__name__)
 
@@ -31,7 +34,7 @@ class QQBotService(ServicesHook):
 
     @property
     def title(self):
-        return "QQ 绑定"
+        return gettext("QQ binding")
 
     def service_active_for_user(self, user):
         return user.has_perm(self.access_perm)
@@ -77,8 +80,13 @@ class QQBotService(ServicesHook):
     # 卡片
 
     def render_services_ctrl(self, request):
+        """The card, in qqbot's UI language (``qqbot.i18n``).
+
+        卡片，用 qqbot 的界面语言渲染（``qqbot.i18n``）。
+        """
         from .views.member import card_context
 
-        context = card_context(request)
-        context["service_name"] = self.title
-        return render_to_string(self.service_ctrl_template, context, request=request)
+        with i18n.override():
+            context = card_context(request)
+            context["service_name"] = self.title
+            return render_to_string(self.service_ctrl_template, context, request=request)

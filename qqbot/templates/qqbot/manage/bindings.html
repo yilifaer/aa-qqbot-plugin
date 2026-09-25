@@ -1,18 +1,19 @@
 {% extends "qqbot/manage/_base.html" %}
+{% load i18n %}
 
-{% block qqbot_title %}已绑定成员 - QQ 管理{% endblock qqbot_title %}
+{% block qqbot_title %}{% translate "Bindings" %} - {% translate "QQ Admin" %}{% endblock qqbot_title %}
 
 {% block manage_body %}
     {% include "qqbot/manage/_summary.html" %}
 
     <form method="get" class="row g-2 align-items-end mb-3" role="search">
         <div class="col-12 col-md-5">
-            <label class="form-label" for="id_q">搜索</label>
+            <label class="form-label" for="id_q">{% translate "Search" %}</label>
             <input type="search" name="q" id="id_q" class="form-control" value="{{ form.q.value|default_if_none:'' }}"
-                   placeholder="用户名、角色名、QQ 号或军团简称">
+                   placeholder="{% translate "Username, character, QQ number or corporation ticker" %}">
         </div>
         <div class="col-6 col-md-3">
-            <label class="form-label" for="id_status">状态</label>
+            <label class="form-label" for="id_status">{% translate "Status" %}</label>
             <select name="status" id="id_status" class="form-select">
                 {% for value, label in form.fields.status.choices %}
                     <option value="{{ value }}" {% if form.status.value == value %}selected{% endif %}>{{ label }}</option>
@@ -22,27 +23,27 @@
         <div class="col-6 col-md-2">
             <div class="form-check mb-2">
                 <input class="form-check-input" type="checkbox" name="conflict" value="1" id="id_conflict" {% if form.conflict.value %}checked{% endif %}>
-                <label class="form-check-label" for="id_conflict">只看冲突</label>
+                <label class="form-check-label" for="id_conflict">{% translate "Conflicts only" %}</label>
             </div>
         </div>
         <div class="col-12 col-md-2 d-flex gap-2">
-            <button type="submit" class="btn btn-primary flex-fill"><i class="fa-solid fa-magnifying-glass fa-fw"></i> 搜索</button>
-            <a class="btn btn-info" href="{% url 'qqbot:manage_bindings' %}" title="清除条件">清除</a>
+            <button type="submit" class="btn btn-primary flex-fill"><i class="fa-solid fa-magnifying-glass fa-fw"></i> {% translate "Search" %}</button>
+            <a class="btn btn-info" href="{% url 'qqbot:manage_bindings' %}" title="{% translate "Clear filters" %}">{% translate "Clear" %}</a>
         </div>
     </form>
 
-    <p class="text-body-secondary small">共找到 {{ page.paginator.count }} 条绑定。</p>
+    <p class="text-body-secondary small">{% blocktranslate count counter=page.paginator.count %}{{ counter }} binding found.{% plural %}{{ counter }} bindings found.{% endblocktranslate %}</p>
 
     {% if items %}
         <div class="table-responsive">
             <table class="table table-striped align-middle">
                 <thead>
                     <tr>
-                        <th>用户 / 主角色</th>
+                        <th>{% translate "User / main character" %}</th>
                         <th>QQ</th>
-                        <th>状态</th>
-                        <th>群名片</th>
-                        <th>可进的群</th>
+                        <th>{% translate "Status" %}</th>
+                        <th>{% translate "Group nickname" %}</th>
+                        <th>{% translate "Allowed groups" %}</th>
                         <th></th>
                     </tr>
                 </thead>
@@ -51,21 +52,21 @@
                         {% with b=item.binding %}
                             <tr>
                                 <td>
-                                    <div class="fw-bold">{% if item.main %}{{ item.main.character_name }}{% else %}<span class="text-danger">没有主角色</span>{% endif %}</div>
+                                    <div class="fw-bold">{% if item.main %}{{ item.main.character_name }}{% else %}<span class="text-danger">{% translate "No main character" %}</span>{% endif %}</div>
                                     <div class="small text-body-secondary">
                                         {{ b.user.username }}{% if item.main %} · [{{ item.main.corporation_ticker }}]{% endif %}
-                                        {% if not b.user.is_active %}<span class="badge text-bg-warning">已停用</span>{% endif %}
+                                        {% if not b.user.is_active %}<span class="badge text-bg-warning">{% translate "Inactive" %}</span>{% endif %}
                                     </div>
                                 </td>
                                 <td class="font-monospace">{{ b.qq }}</td>
                                 <td>{% include "qqbot/manage/_status_badge.html" with conflict=item.conflict shadowed=item.shadowed %}</td>
                                 <td>
                                     {{ item.card }}
-                                    {% if b.card_override %}<span class="badge text-bg-info">管理员指定</span>{% endif %}
+                                    {% if b.card_override %}<span class="badge text-bg-info">{% translate "Set by manager" %}</span>{% endif %}
                                 </td>
                                 <td>{{ item.allowed }} / {{ item.group_total }}</td>
                                 <td class="text-end">
-                                    <a class="btn btn-sm btn-primary text-nowrap" href="{% url 'qqbot:manage_binding' b.pk %}">详情</a>
+                                    <a class="btn btn-sm btn-primary text-nowrap" href="{% url 'qqbot:manage_binding' b.pk %}">{% translate "Details" context "qqbot" %}</a>
                                 </td>
                             </tr>
                         {% endwith %}
@@ -75,6 +76,6 @@
         </div>
         {% include "qqbot/manage/_pagination.html" %}
     {% else %}
-        <div class="alert alert-info">没有找到符合条件的绑定。</div>
+        <div class="alert alert-info">{% translate "No matching bindings found." %}</div>
     {% endif %}
 {% endblock manage_body %}

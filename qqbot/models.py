@@ -14,6 +14,7 @@ from django.core.exceptions import ValidationError
 from django.core.validators import MaxValueValidator, MinValueValidator
 from django.db import models
 from django.db.models import F, Q
+from django.utils.translation import gettext, gettext_lazy as _, pgettext_lazy
 
 QQ_RE = re.compile(r"^[1-9][0-9]{4,10}$")
 
@@ -46,7 +47,7 @@ def normalize_qq(value) -> str:
 
 def validate_qq(value):
     if not normalize_qq(value) or normalize_qq(value) != value:
-        raise ValidationError("请输入 5–11 位数字（不能以 0 开头）。")
+        raise ValidationError(gettext("Enter 5–11 digits (not starting with 0)."))
 
 
 class General(models.Model):
@@ -87,29 +88,32 @@ class Config(models.Model):
     )
     DEFAULT_CARD_FORMAT = "[{corp_ticker}] {character_name} - {nickname}"
 
-    rules_text = models.TextField("入群须知", default=DEFAULT_RULES, blank=True)
+    rules_text = models.TextField(_("Group rules"), default=DEFAULT_RULES, blank=True)
     card_format = models.CharField(
-        "群名片格式",
+        _("Group nickname format"),
         max_length=100,
         default=DEFAULT_CARD_FORMAT,
-        help_text=(
-            "可用占位符：{corp_ticker} 军团简称、{alliance_ticker} 联盟简称、"
-            "{character_name} 主角色名、{nickname} 昵称"
+        help_text=_(
+            "Placeholders: {corp_ticker} corporation ticker, {alliance_ticker} alliance ticker, "
+            "{character_name} main character name, {nickname} nickname"
         ),
     )
     code_ttl_minutes = models.PositiveSmallIntegerField(
-        "验证码有效期（分钟）",
+        _("Verification code lifetime (minutes)"),
         default=10,
         validators=[MinValueValidator(5), MaxValueValidator(60)],
     )
     roster_max_age_days = models.PositiveSmallIntegerField(
-        "群成员名单有效期（天）",
+        _("Member list max age (days)"),
         default=7,
         validators=[MinValueValidator(1), MaxValueValidator(30)],
-        help_text="机器人超过这么多天没有上报某个群的成员名单，该群就不能再用于「老成员免验证」。",
+        help_text=_(
+            "If the bot has not reported a group's member list for this many days, "
+            "that group no longer counts for \"Trusted (already in group)\"."
+        ),
     )
     rebind_cooldown_hours = models.PositiveSmallIntegerField(
-        "换绑冷却（小时）",
+        _("Change QQ cooldown (hours)"),
         default=24,
         validators=[MinValueValidator(0), MaxValueValidator(720)],
     )
@@ -117,8 +121,8 @@ class Config(models.Model):
 
     class Meta:
         default_permissions = ()
-        verbose_name = "设置"
-        verbose_name_plural = "设置"
+        verbose_name = _("Settings")
+        verbose_name_plural = _("Settings")
 
     def save(self, *args, **kwargs):
         self.pk = 1
@@ -130,7 +134,7 @@ class Config(models.Model):
         return obj
 
     def __str__(self):
-        return "QQ 绑定设置"
+        return gettext("QQ binding settings")
 
 
 class QQGroup(models.Model):
@@ -140,33 +144,33 @@ class QQGroup(models.Model):
     """
 
     class Kind(models.TextChoices):
-        FIXED = "fixed", "固定群"
-        ROLE = "role", "身份组小群"
+        FIXED = "fixed", _("Fixed group")
+        ROLE = "role", _("Role group")
 
-    name = models.CharField("群名称", max_length=64)
-    group_id = models.CharField("群号", max_length=11, unique=True, validators=[validate_qq])
-    kind = models.CharField("类型", max_length=8, choices=Kind.choices, default=Kind.FIXED)
+    name = models.CharField(_("Group name"), max_length=64)
+    group_id = models.CharField(_("Group number"), max_length=11, unique=True, validators=[validate_qq])
+    kind = models.CharField(_("Type"), max_length=8, choices=Kind.choices, default=Kind.FIXED)
     required_groups = models.ManyToManyField(
         Group,
         blank=True,
         related_name="+",
-        verbose_name="需要的 AA 组",
-        help_text="只对身份组小群有效：属于其中任意一个组即可。",
+        verbose_name=_("Required AA groups"),
+        help_text=_("Only for role groups: being in any one of these groups is enough."),
     )
-    description = models.CharField("说明", max_length=200, blank=True)
-    sort_order = models.PositiveIntegerField("排序", default=100)
-    is_active = models.BooleanField("启用", default=True)
+    description = models.CharField(pgettext_lazy("qqbot", "Description"), max_length=200, blank=True)
+    sort_order = models.PositiveIntegerField(_("Sort order"), default=100)
+    is_active = models.BooleanField(pgettext_lazy("qqbot", "Enabled"), default=True)
     # Set when the bot reports a complete member list for this group.
     # 机器人上报该群完整的群成员名单时更新。
-    last_roster_at = models.DateTimeField("最近一次名单上报", null=True, blank=True)
+    last_roster_at = models.DateTimeField(_("Last member list report"), null=True, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
     class Meta:
         default_permissions = ()
         ordering = ("kind", "sort_order", "name")
-        verbose_name = "QQ 群"
-        verbose_name_plural = "QQ 群"
+        verbose_name = _("QQ group")
+        verbose_name_plural = _("QQ groups")
 
     def __str__(self):
         return f"{self.name} ({self.group_id})"
@@ -195,24 +199,27 @@ class Binding(models.Model):
     """
 
     class Status(models.TextChoices):
-        VERIFIED = "verified", "已验证"
-        TRUSTED = "trusted", "老成员免验证"
+        VERIFIED = "verified", _("Verified")
+        TRUSTED = "trusted", _("Trusted (already in group)")
 
     class VerifiedVia(models.TextChoices):
         NONE = "", "—"
-        CODE = "code", "验证码"
-        MANAGER = "manager", "管理员确认"
+        CODE = "code", _("Verification code")
+        MANAGER = "manager", _("Confirmed by manager")
 
     user = models.OneToOneField(User, on_delete=models.CASCADE, related_name="qqbot_binding")
-    qq = models.CharField("QQ 号", max_length=11, db_index=True, validators=[validate_qq])
-    nickname = models.CharField("昵称", max_length=32)
-    status = models.CharField("状态", max_length=10, choices=Status.choices)
+    qq = models.CharField(_("QQ number"), max_length=11, db_index=True, validators=[validate_qq])
+    nickname = models.CharField(_("Nickname"), max_length=32)
+    status = models.CharField(_("Status"), max_length=10, choices=Status.choices)
     verified_via = models.CharField(
-        "验证方式", max_length=10, choices=VerifiedVia.choices, blank=True, default=""
+        _("Verified via"), max_length=10, choices=VerifiedVia.choices, blank=True, default=""
     )
-    verified_at = models.DateTimeField("验证时间", null=True, blank=True)
+    verified_at = models.DateTimeField(_("Verified at"), null=True, blank=True)
     card_override = models.CharField(
-        "管理员指定的群名片", max_length=60, blank=True, help_text="留空则按设置里的格式自动生成。"
+        _("Group nickname set by manager"),
+        max_length=60,
+        blank=True,
+        help_text=_("Leave empty to generate it from the format in Settings."),
     )
     # Last time the member changed their QQ (for the rebind cooldown).
     # 成员最近一次更换 QQ 的时间（用于换绑冷却）。
@@ -234,8 +241,8 @@ class Binding(models.Model):
 
     class Meta:
         default_permissions = ()
-        verbose_name = "QQ 绑定"
-        verbose_name_plural = "QQ 绑定"
+        verbose_name = _("QQ binding")
+        verbose_name_plural = _("QQ bindings")
         constraints = [
             models.CheckConstraint(
                 condition=(
@@ -297,8 +304,8 @@ class BindCode(models.Model):
 
     class Meta:
         default_permissions = ()
-        verbose_name = "验证码"
-        verbose_name_plural = "验证码"
+        verbose_name = _("Verification code")
+        verbose_name_plural = _("Verification codes")
 
     def __str__(self):
         return f"code for {self.user.username} / {self.qq}"
@@ -328,10 +335,10 @@ class Event(models.Model):
     """
 
     class Kind(models.TextChoices):
-        RECHECK = "recheck", "复查该 QQ"
-        CARD = "card", "群名片变化"
-        RECHECK_ALL = "recheck_all", "全部复查"
-        GROUPS = "groups", "群配置变化"
+        RECHECK = "recheck", _("Recheck QQ")
+        CARD = "card", _("Group nickname changed")
+        RECHECK_ALL = "recheck_all", _("Recheck all")
+        GROUPS = "groups", _("Group settings changed")
 
     kind = models.CharField(max_length=16, choices=Kind.choices)
     qq = models.CharField(max_length=11, blank=True, db_index=True)
@@ -349,21 +356,21 @@ class AuditLog(models.Model):
     """
 
     class Action(models.TextChoices):
-        BIND = "bind", "绑定"
-        VERIFY = "verify", "验证成功"
-        CLAIM_FAILED = "claim_failed", "验证失败"
-        CONFIRM = "confirm", "管理员确认"
-        CONFLICT = "conflict", "冲突"
-        CONFLICT_RESOLVED = "conflict_resolved", "冲突解决"
-        REBIND = "rebind", "换绑"
-        UNBIND = "unbind", "解绑"
-        FORCE_UNBIND = "force_unbind", "强制解绑"
-        NICKNAME = "nickname", "修改昵称"
-        CARD = "card", "修改群名片"
-        CODE = "code", "生成验证码"
-        GROUP = "group", "修改群配置"
-        CONFIG = "config", "修改设置"
-        USER_DELETED = "user_deleted", "账号删除"
+        BIND = "bind", _("Bind")
+        VERIFY = "verify", _("Verification succeeded")
+        CLAIM_FAILED = "claim_failed", _("Verification failed")
+        CONFIRM = "confirm", _("Confirmed by manager")
+        CONFLICT = "conflict", _("Conflict")
+        CONFLICT_RESOLVED = "conflict_resolved", _("Conflict resolved")
+        REBIND = "rebind", _("Change QQ")
+        UNBIND = "unbind", _("Unbind")
+        FORCE_UNBIND = "force_unbind", _("Force unbind")
+        NICKNAME = "nickname", _("Change nickname")
+        CARD = "card", _("Change group nickname")
+        CODE = "code", _("Generate verification code")
+        GROUP = "group", _("Change group settings")
+        CONFIG = "config", _("Change settings")
+        USER_DELETED = "user_deleted", _("Account deleted")
 
     created_at = models.DateTimeField(auto_now_add=True, db_index=True)
     actor = models.ForeignKey(
@@ -381,5 +388,5 @@ class AuditLog(models.Model):
     class Meta:
         default_permissions = ()
         ordering = ("-id",)
-        verbose_name = "操作记录"
-        verbose_name_plural = "操作记录"
+        verbose_name = _("Audit log entry")
+        verbose_name_plural = _("Audit log")

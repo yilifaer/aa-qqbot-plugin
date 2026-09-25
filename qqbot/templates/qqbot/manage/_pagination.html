@@ -3,25 +3,26 @@ Pagination links. Context: page (a Django Page), querystring (GET params without
 
 分页链接。上下文：page（Django 的 Page 对象）、querystring（去掉 "page" 之后的 GET 参数）。
 {% endcomment %}
+{% load i18n %}
 {% if page.paginator.num_pages > 1 %}
-    <nav aria-label="分页">
+    <nav aria-label="{% translate "Pagination" %}">
         <ul class="pagination flex-wrap">
             {% if page.has_previous %}
-                <li class="page-item"><a class="page-link" href="?{% if querystring %}{{ querystring }}&amp;{% endif %}page=1">第一页</a></li>
-                <li class="page-item"><a class="page-link" href="?{% if querystring %}{{ querystring }}&amp;{% endif %}page={{ page.previous_page_number }}">上一页</a></li>
+                <li class="page-item"><a class="page-link" href="?{% if querystring %}{{ querystring }}&amp;{% endif %}page=1">{% translate "First" %}</a></li>
+                <li class="page-item"><a class="page-link" href="?{% if querystring %}{{ querystring }}&amp;{% endif %}page={{ page.previous_page_number }}">{% translate "Previous" %}</a></li>
             {% else %}
-                <li class="page-item disabled"><span class="page-link">第一页</span></li>
-                <li class="page-item disabled"><span class="page-link">上一页</span></li>
+                <li class="page-item disabled"><span class="page-link">{% translate "First" %}</span></li>
+                <li class="page-item disabled"><span class="page-link">{% translate "Previous" %}</span></li>
             {% endif %}
             <li class="page-item active" aria-current="page">
-                <span class="page-link">第 {{ page.number }} / {{ page.paginator.num_pages }} 页</span>
+                <span class="page-link">{% blocktranslate with number=page.number num_pages=page.paginator.num_pages %}Page {{ number }} of {{ num_pages }}{% endblocktranslate %}</span>
             </li>
             {% if page.has_next %}
-                <li class="page-item"><a class="page-link" href="?{% if querystring %}{{ querystring }}&amp;{% endif %}page={{ page.next_page_number }}">下一页</a></li>
-                <li class="page-item"><a class="page-link" href="?{% if querystring %}{{ querystring }}&amp;{% endif %}page={{ page.paginator.num_pages }}">最后一页</a></li>
+                <li class="page-item"><a class="page-link" href="?{% if querystring %}{{ querystring }}&amp;{% endif %}page={{ page.next_page_number }}">{% translate "Next" %}</a></li>
+                <li class="page-item"><a class="page-link" href="?{% if querystring %}{{ querystring }}&amp;{% endif %}page={{ page.paginator.num_pages }}">{% translate "Last" %}</a></li>
             {% else %}
-                <li class="page-item disabled"><span class="page-link">下一页</span></li>
-                <li class="page-item disabled"><span class="page-link">最后一页</span></li>
+                <li class="page-item disabled"><span class="page-link">{% translate "Next" %}</span></li>
+                <li class="page-item disabled"><span class="page-link">{% translate "Last" %}</span></li>
             {% endif %}
         </ul>
     </nav>

@@ -64,9 +64,9 @@ python manage.py migrate
 sudo supervisorctl restart myauth:
 ```
 
-6. 在 Django 后台分配两个权限（在权限选择框里搜索 `QQ binding` 或 `QQ 绑定`）：
-   - `QQ binding: member ... / QQ 绑定 - 成员 ...`（`qqbot.basic_access`）→ 挂到 Member 状态
-   - `QQ binding: manager ... / QQ 绑定 - 管理员 ...`（`qqbot.manage`）→ 挂到 QQ 管理员所在的组
+6. 在 Django 后台分配两个权限（权限选择框比较窄，两个权限分开搜）：
+   - 搜索 `QQ 绑定 - 成员`（或 `QQ binding: member`），加到 Member 状态上（权限代码 `qqbot.basic_access`）。
+   - 新建一个 QQ 管理员组（例如「QQ 管理」），搜索 `QQ 绑定 - 管理员`（或 `QQ binding: manager`）加到这个组上（权限代码 `qqbot.manage`），再在「Users」里把管理员账号加进这个组。
 
 完成后，成员在「服务」页能看到「QQ 绑定」卡片，QQ 管理员的侧边栏会出现「QQ 管理」。然后由 QQ 管理员在「QQ 管理」→「QQ 群」里添加要管理的群。
 
@@ -111,6 +111,7 @@ python manage.py remove_stale_contenttypes --include-stale-apps
   pip install "django-sri<1"
   ```
 - 超级管理员不会自动获得入群资格，测试时请用普通成员账号。
+- 界面语言：「QQ 绑定」卡片和「QQ 管理」页面在用户的 AA 语言是中文时显示中文，其他语言都显示英文（卡片叫 "QQ binding"，菜单叫 "QQ Admin"）。没选过语言的成员按浏览器语言显示，浏览器是英文就会看到英文；让他在 AA 的语言菜单里选「简体中文」即可（AA 会记住）。改 `LANGUAGE_CODE` 没用，因为 Django 先看浏览器的语言。
 
 ## 许可证
 

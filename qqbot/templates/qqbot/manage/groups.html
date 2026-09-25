@@ -1,17 +1,20 @@
 {% extends "qqbot/manage/_base.html" %}
+{% load i18n %}
 
-{% block qqbot_title %}QQ 群 - QQ 管理{% endblock qqbot_title %}
+{% block qqbot_title %}{% translate "QQ groups" %} - {% translate "QQ Admin" %}{% endblock qqbot_title %}
 
 {% block manage_body %}
     <div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-3">
-        <h4 class="mb-0">受管的 QQ 群</h4>
+        <h4 class="mb-0">{% translate "Managed QQ groups" %}</h4>
         <a class="btn btn-success" href="{% url 'qqbot:manage_group_create' %}">
-            <i class="fa-solid fa-plus fa-fw"></i> 添加群
+            <i class="fa-solid fa-plus fa-fw"></i> {% translate "Add group" %}
         </a>
     </div>
 
     <p class="text-body-secondary">
-        机器人只管理这里列出并且「启用」的群。<strong>固定群</strong>所有成员都能加入；<strong>身份组小群</strong>只有所选 AA 组里的人能加入。
+        {% blocktranslate trimmed %}
+            The bot only manages groups listed here that are "Enabled". Any member can join a <strong>Fixed group</strong>; only people in the selected AA groups can join a <strong>Role group</strong>.
+        {% endblocktranslate %}
     </p>
 
     {% if rows %}
@@ -19,12 +22,12 @@
             <table class="table table-striped align-middle">
                 <thead>
                     <tr>
-                        <th>群名称</th>
-                        <th>群号</th>
-                        <th>类型</th>
-                        <th>需要的 AA 组</th>
-                        <th>名单</th>
-                        <th>状态</th>
+                        <th>{% translate "Group name" %}</th>
+                        <th>{% translate "Group number" %}</th>
+                        <th>{% translate "Type" %}</th>
+                        <th>{% translate "Required AA groups" %}</th>
+                        <th>{% translate "Member list" %}</th>
+                        <th>{% translate "Status" %}</th>
                         <th></th>
                     </tr>
                 </thead>
@@ -43,35 +46,35 @@
                                         {% for name in row.required %}
                                             <span class="badge text-bg-info">{{ name }}</span>
                                         {% empty %}
-                                            <span class="badge text-bg-danger">未选择（请编辑）</span>
+                                            <span class="badge text-bg-danger">{% translate "None selected (please edit)" %}</span>
                                         {% endfor %}
                                     {% else %}
-                                        <span class="text-body-secondary">所有成员</span>
+                                        <span class="text-body-secondary">{% translate "All members" %}</span>
                                     {% endif %}
                                 </td>
                                 <td class="small">
                                     {% if g.last_roster_at %}
-                                        {{ g.roster_count }} 人
+                                        {% blocktranslate count counter=g.roster_count %}{{ counter }} member{% plural %}{{ counter }} members{% endblocktranslate %}
                                         <div class="{% if row.roster_fresh %}text-body-secondary{% else %}text-danger fw-bold{% endif %}">
-                                            {{ g.last_roster_at|date:"Y-m-d H:i" }}{% if not row.roster_fresh %}（已过期）{% endif %}
+                                            {{ g.last_roster_at|date:"Y-m-d H:i" }}{% if not row.roster_fresh %}{% translate " (outdated)" %}{% endif %}
                                         </div>
                                     {% else %}
-                                        <span class="text-body-secondary">机器人还没上报</span>
+                                        <span class="text-body-secondary">{% translate "Not reported by the bot yet" %}</span>
                                     {% endif %}
                                 </td>
                                 <td>
                                     {% if g.is_active %}
-                                        <span class="badge text-bg-success">启用</span>
+                                        <span class="badge text-bg-success">{% translate "Enabled" %}</span>
                                     {% else %}
-                                        <span class="badge text-bg-warning">停用</span>
+                                        <span class="badge text-bg-warning">{% translate "Disabled" context "qqbot" %}</span>
                                     {% endif %}
                                 </td>
                                 <td class="text-end text-nowrap">
                                     <a class="btn btn-sm btn-primary" href="{% url 'qqbot:manage_group_edit' g.pk %}">
-                                        <i class="fa-solid fa-pen fa-fw"></i> 编辑
+                                        <i class="fa-solid fa-pen fa-fw"></i> {% translate "Edit" %}
                                     </a>
                                     <a class="btn btn-sm btn-outline-danger" href="{% url 'qqbot:manage_group_delete' g.pk %}">
-                                        <i class="fa-solid fa-trash fa-fw"></i> 删除
+                                        <i class="fa-solid fa-trash fa-fw"></i> {% translate "Delete" %}
                                     </a>
                                 </td>
                             </tr>
@@ -81,6 +84,6 @@
             </table>
         </div>
     {% else %}
-        <div class="alert alert-info">还没有添加任何群。点右上角的「添加群」开始。</div>
+        <div class="alert alert-info">{% translate 'No groups added yet. Click "Add group" at the top right to start.' %}</div>
     {% endif %}
 {% endblock manage_body %}

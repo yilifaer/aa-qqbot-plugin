@@ -1,4 +1,5 @@
 {% extends "qqbot/base.html" %}
+{% load i18n %}
 {% comment %}
 Layout for the QQ manager pages: secondary nav (pills) + body.
 Context: manage_tab, summary (from views.manage._summary).
@@ -11,28 +12,28 @@ QQ 管理员页面的布局：二级导航（pills 标签）+ 正文。
     <ul class="nav nav-pills flex-wrap gap-1 mb-3">
         <li class="nav-item">
             <a class="nav-link {% if manage_tab == 'bindings' %}active{% endif %}" href="{% url 'qqbot:manage_bindings' %}">
-                <i class="fa-solid fa-users fa-fw"></i> 已绑定成员
+                <i class="fa-solid fa-users fa-fw"></i> {% translate "Bindings" %}
             </a>
         </li>
         <li class="nav-item">
             <a class="nav-link {% if manage_tab == 'pending' %}active{% endif %}" href="{% url 'qqbot:manage_pending' %}">
-                <i class="fa-solid fa-inbox fa-fw"></i> 待处理
+                <i class="fa-solid fa-inbox fa-fw"></i> {% translate "Needs attention" %}
                 {% if summary.pending %}<span class="badge rounded-pill text-bg-danger ms-1">{{ summary.pending }}</span>{% endif %}
             </a>
         </li>
         <li class="nav-item">
             <a class="nav-link {% if manage_tab == 'groups' %}active{% endif %}" href="{% url 'qqbot:manage_groups' %}">
-                <i class="fa-brands fa-qq fa-fw"></i> QQ 群
+                <i class="fa-brands fa-qq fa-fw"></i> {% translate "QQ groups" %}
             </a>
         </li>
         <li class="nav-item">
             <a class="nav-link {% if manage_tab == 'settings' %}active{% endif %}" href="{% url 'qqbot:manage_settings' %}">
-                <i class="fa-solid fa-gear fa-fw"></i> 设置
+                <i class="fa-solid fa-gear fa-fw"></i> {% translate "Settings" %}
             </a>
         </li>
         <li class="nav-item">
             <a class="nav-link {% if manage_tab == 'audit' %}active{% endif %}" href="{% url 'qqbot:manage_audit' %}">
-                <i class="fa-solid fa-clock-rotate-left fa-fw"></i> 操作记录
+                <i class="fa-solid fa-clock-rotate-left fa-fw"></i> {% translate "Audit log" %}
             </a>
         </li>
     </ul>

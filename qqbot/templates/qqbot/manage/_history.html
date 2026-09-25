@@ -3,16 +3,17 @@ Audit rows table. Context: rows (list of dicts from views.manage._audit_row), sh
 
 审计记录表格。上下文：rows（由 views.manage._audit_row 生成的 dict 列表）、show_qq（bool）。
 {% endcomment %}
+{% load i18n %}
 <div class="table-responsive">
     <table class="table table-sm table-striped align-middle">
         <thead>
             <tr>
-                <th>时间</th>
-                <th>操作</th>
+                <th>{% translate "Time" %}</th>
+                <th>{% translate "Action" %}</th>
                 {% if show_qq %}<th>QQ</th>{% endif %}
-                <th>操作人</th>
-                <th>对象账号</th>
-                <th>详情</th>
+                <th>{% translate "By" %}</th>
+                <th>{% translate "Target account" %}</th>
+                <th>{% translate "Details" context "qqbot" %}</th>
             </tr>
         </thead>
         <tbody>

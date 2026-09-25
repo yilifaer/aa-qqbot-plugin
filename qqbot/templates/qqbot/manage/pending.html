@@ -1,33 +1,36 @@
 {% extends "qqbot/manage/_base.html" %}
+{% load i18n %}
 
-{% block qqbot_title %}待处理 - QQ 管理{% endblock qqbot_title %}
+{% block qqbot_title %}{% translate "Needs attention" %} - {% translate "QQ Admin" %}{% endblock qqbot_title %}
 
 {% block manage_body %}
-    <h4>冲突的 QQ</h4>
+    <h4>{% translate "Conflicting QQ numbers" %}</h4>
     <p class="text-body-secondary">
-        同一个 QQ 被两个或更多账号以「老成员免验证」认领。机器人对冲突的 QQ 不会踢人也不会拒绝，只等你来决定归谁。
-        请先核实谁是真正的号主（例如在 QQ 上私聊确认），然后点他那一行的「确认归他」，其他账号的认领会自动作废；
-        如果都不对，可以把错误的一方强制解绑。
-        （号主还在群里时，这个 QQ 拿不到验证码，所以冲突只能在这里处理。）
+        {% blocktranslate trimmed %}
+            Two or more accounts claim the same QQ as "Trusted (already in group)". The bot neither kicks nor rejects a conflicting QQ; it waits for you to decide who owns it.
+            First check who the real owner is (for example, by messaging them on QQ), then click "Confirm as owner" on their row; the other claims are cancelled automatically.
+            If none of them is right, force-unbind the wrong one.
+            (While the owner is still in the group, this QQ cannot get a verification code, so conflicts can only be resolved here.)
+        {% endblocktranslate %}
     </p>
 
     {% for c in conflicts %}
         <div class="card border-danger mb-3">
             <div class="card-header">
                 QQ <strong class="font-monospace fs-5">{{ c.qq }}</strong>
-                <span class="badge text-bg-danger">{{ c.bindings|length }} 个账号认领</span>
+                <span class="badge text-bg-danger">{% blocktranslate count counter=c.bindings|length %}{{ counter }} account claims it{% plural %}{{ counter }} accounts claim it{% endblocktranslate %}</span>
             </div>
             <div class="table-responsive">
                 <table class="table table-sm align-middle mb-0">
                     <thead>
-                        <tr><th>主角色</th><th>AA 用户名</th><th>昵称 / 群名片</th><th>认领时间</th><th></th></tr>
+                        <tr><th>{% translate "Main character" context "qqbot" %}</th><th>{% translate "AA username" %}</th><th>{% translate "Nickname / group nickname" %}</th><th>{% translate "Claimed at" %}</th><th></th></tr>
                     </thead>
                     <tbody>
                         {% for row in c.bindings %}
                             {% with b=row.binding %}
                                 <tr>
-                                    <td>{% if row.main %}{{ row.main.character_name }} [{{ row.main.corporation_ticker }}]{% else %}<span class="text-danger">没有主角色</span>{% endif %}</td>
-                                    <td><a href="{% url 'qqbot:manage_binding' b.pk %}">{{ b.user.username }}</a>{% if not b.user.is_active %} <span class="badge text-bg-warning">已停用</span>{% endif %}</td>
+                                    <td>{% if row.main %}{{ row.main.character_name }} [{{ row.main.corporation_ticker }}]{% else %}<span class="text-danger">{% translate "No main character" %}</span>{% endif %}</td>
+                                    <td><a href="{% url 'qqbot:manage_binding' b.pk %}">{{ b.user.username }}</a>{% if not b.user.is_active %} <span class="badge text-bg-warning">{% translate "Inactive" %}</span>{% endif %}</td>
                                     <td>{{ row.card }}</td>
                                     <td class="small text-nowrap">{{ b.created_at|date:"Y-m-d H:i" }}</td>
                                     <td class="text-end text-nowrap">
@@ -36,11 +39,11 @@
                                             <input type="hidden" name="back" value="pending">
                                             <input type="hidden" name="qq" value="{{ b.qq }}">
                                             <button type="submit" class="btn btn-sm btn-success">
-                                                <i class="fa-solid fa-circle-check fa-fw"></i> 确认归他
+                                                <i class="fa-solid fa-circle-check fa-fw"></i> {% translate "Confirm as owner" %}
                                             </button>
                                         </form>
                                         <a class="btn btn-sm btn-outline-danger" href="{% url 'qqbot:manage_binding_unbind' b.pk %}?back=pending">
-                                            <i class="fa-solid fa-link-slash fa-fw"></i> 强制解绑
+                                            <i class="fa-solid fa-link-slash fa-fw"></i> {% translate "Force unbind" %}
                                         </a>
                                     </td>
                                 </tr>
@@ -51,13 +54,18 @@
             </div>
         </div>
     {% empty %}
-        <div class="alert alert-success"><i class="fa-solid fa-circle-check fa-fw"></i> 现在没有冲突。</div>
+        <div class="alert alert-success"><i class="fa-solid fa-circle-check fa-fw"></i> {% translate "No conflicts right now." %}</div>
     {% endfor %}
 
-    <h4 class="mt-4" id="unbound">群里有、但没有绑定的 QQ</h4>
+    <h4 class="mt-4" id="unbound">{% translate "QQ numbers in a group but not bound" %}</h4>
     <p class="text-body-secondary">
-        来自机器人最近一次（{{ roster_max_age_days }} 天以内）上报的群成员名单。这些 QQ 在群里，但还没有任何 AA 账号绑定它们。
-        可以提醒他们到 AA「服务」页的 QQ 绑定卡片里绑定；老成员填写 QQ 后会直接生效，不需要验证码。
+        {% blocktranslate trimmed count days=roster_max_age_days %}
+            From the member lists the bot last reported (within {{ days }} day). These QQ numbers are in the group, but no AA account is bound to them yet.
+            You can remind them to bind in the QQ binding card on AA's Services page; for existing members the binding takes effect as soon as they enter their QQ, with no verification code.
+        {% plural %}
+            From the member lists the bot last reported (within {{ days }} days). These QQ numbers are in the group, but no AA account is bound to them yet.
+            You can remind them to bind in the QQ binding card on AA's Services page; for existing members the binding takes effect as soon as they enter their QQ, with no verification code.
+        {% endblocktranslate %}
     </p>
 
     {% for slot in unbound_groups %}
@@ -65,8 +73,8 @@
             <div class="card-header">
                 <strong>{{ slot.group.name }}</strong>
                 <span class="font-monospace text-body-secondary">{{ slot.group.group_id }}</span>
-                <span class="badge text-bg-warning">{{ slot.qqs|length }} 个</span>
-                <span class="small text-body-secondary ms-2">名单上报于 {{ slot.group.last_roster_at|date:"Y-m-d H:i" }}</span>
+                <span class="badge text-bg-warning">{% blocktranslate count counter=slot.qqs|length %}{{ counter }} QQ{% plural %}{{ counter }} QQs{% endblocktranslate %}</span>
+                <span class="small text-body-secondary ms-2">{% blocktranslate with reported_at=slot.group.last_roster_at|date:"Y-m-d H:i" %}List reported at {{ reported_at }}{% endblocktranslate %}</span>
             </div>
             <div class="card-body">
                 <div class="d-flex flex-wrap gap-2">
@@ -77,15 +85,15 @@
             </div>
         </div>
     {% empty %}
-        <div class="alert alert-success"><i class="fa-solid fa-circle-check fa-fw"></i> 没有发现未绑定的 QQ。</div>
+        <div class="alert alert-success"><i class="fa-solid fa-circle-check fa-fw"></i> {% translate "No unbound QQ numbers found." %}</div>
     {% endfor %}
 
     {% if stale_groups %}
         <div class="alert alert-warning">
-            下面这些群的成员名单超过 {{ roster_max_age_days }} 天没有更新（或机器人还没上报过），所以没有列出。请检查机器人是否在正常巡检：
+            {% blocktranslate count days=roster_max_age_days %}The member lists of these groups have not been updated for more than {{ days }} day (or the bot has never reported them), so they are not listed. Check that the bot is running its regular checks:{% plural %}The member lists of these groups have not been updated for more than {{ days }} days (or the bot has never reported them), so they are not listed. Check that the bot is running its regular checks:{% endblocktranslate %}
             <ul class="mb-0">
                 {% for g in stale_groups %}
-                    <li>{{ g.name }}（<span class="font-monospace">{{ g.group_id }}</span>）{% if g.last_roster_at %}：最近一次上报于 {{ g.last_roster_at|date:"Y-m-d H:i" }}{% else %}：还没有上报{% endif %}</li>
+                    <li>{% blocktranslate with name=g.name group_id=g.group_id %}{{ name }} (<span class="font-monospace">{{ group_id }}</span>){% endblocktranslate %}{% if g.last_roster_at %}{% blocktranslate with reported_at=g.last_roster_at|date:"Y-m-d H:i" %}: last reported at {{ reported_at }}{% endblocktranslate %}{% else %}{% translate ": not reported yet" %}{% endif %}</li>
                 {% endfor %}
             </ul>
         </div>

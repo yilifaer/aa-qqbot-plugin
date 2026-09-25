@@ -6,9 +6,9 @@ A QQ group membership plugin for Alliance Auth. Members bind their QQ number on 
 
 - Members already in a group: enter your QQ number, no code needed
 - New members: get a one-time code and put it in the QQ join request
-- QQ managers handle groups, bindings and conflicts on the "QQ 管理" (QQ admin) page in the sidebar
+- QQ managers handle groups, bindings and conflicts on the "QQ Admin" page in the sidebar
 
-<img src="docs/screenshots/cards/card-dark-manager-verified.png" width="320" alt="QQ binding card on the Services page">
+<img src="docs/screenshots/cards/card-en-manager-verified.png" width="320" alt="QQ binding card on the Services page">
 
 ## Requirements
 
@@ -64,11 +64,11 @@ The configuration is fine when `check` prints no messages starting with `qqbot.`
 sudo supervisorctl restart myauth:
 ```
 
-6. In the Django admin, give the two permissions. In the permission picker, search for `QQ binding`:
-   - `QQ binding: member ...` (`qqbot.basic_access`) → the Member state
-   - `QQ binding: manager ...` (`qqbot.manage`) → your QQ managers' group
+6. In the Django admin, give the two permissions. The picker box is narrow, so search for each one separately:
+   - Search `QQ binding: member` and add it to the Member state (codename `qqbot.basic_access`).
+   - Create a group for your QQ managers (e.g. "QQ Managers"), search `QQ binding: manager` and add it to that group (codename `qqbot.manage`), then add the manager accounts to the group under Users.
 
-The member-facing pages are in Chinese. After step 6, members see a card titled "QQ 绑定" (QQ binding) on the Services page. QQ managers get a "QQ 管理" (QQ admin) entry in the sidebar, where they add the QQ groups to manage.
+After step 6, members see a card titled "QQ binding" on the Services page. QQ managers get a "QQ Admin" entry in the sidebar, where they add the QQ groups to manage.
 
 ## Upgrade
 
@@ -111,6 +111,7 @@ Start AA.
   pip install "django-sri<1"
   ```
 - Superusers do not get group access automatically. Test with a normal member account.
+- Language: the QQ binding card and the QQ Admin pages are in Chinese for users whose AA language is Chinese, and in English for everyone else. Members who never picked a language get their browser's language; anyone can pick a language in AA's language menu (AA remembers it). The default group rules text is in Chinese; edit it under QQ Admin → Settings.
 
 ## License
 
