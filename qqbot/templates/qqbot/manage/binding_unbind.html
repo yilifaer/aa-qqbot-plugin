@@ -24,9 +24,9 @@
                 </button>
             </form>
             {% if back == 'pending' %}
-                <a class="btn btn-secondary ms-2" href="{% url 'qqbot:manage_pending' %}">返回，不解绑</a>
+                <a class="btn btn-info ms-2" href="{% url 'qqbot:manage_pending' %}">返回，不解绑</a>
             {% else %}
-                <a class="btn btn-secondary ms-2" href="{% url 'qqbot:manage_binding' binding.pk %}">返回，不解绑</a>
+                <a class="btn btn-info ms-2" href="{% url 'qqbot:manage_binding' binding.pk %}">返回，不解绑</a>
             {% endif %}
         </div>
     </div>

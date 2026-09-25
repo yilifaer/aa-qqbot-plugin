@@ -1,4 +1,9 @@
-"""Member page routes (included at ``/qqbot/`` in namespace ``qqbot``)."""
+"""Member routes (included at ``/qqbot/`` in namespace ``qqbot``).
+
+Members work in the "QQ 绑定" card on AA's services page; these are the
+card's POST targets. ``my_qq`` (the old "我的 QQ" page) and GET on
+``member_unbind`` only redirect back to the card, so old links keep working.
+"""
 
 from django.urls import path
 

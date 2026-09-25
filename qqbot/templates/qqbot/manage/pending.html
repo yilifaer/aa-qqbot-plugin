@@ -27,7 +27,7 @@
                             {% with b=row.binding %}
                                 <tr>
                                     <td>{% if row.main %}{{ row.main.character_name }} [{{ row.main.corporation_ticker }}]{% else %}<span class="text-danger">没有主角色</span>{% endif %}</td>
-                                    <td><a href="{% url 'qqbot:manage_binding' b.pk %}">{{ b.user.username }}</a>{% if not b.user.is_active %} <span class="badge text-bg-secondary">已停用</span>{% endif %}</td>
+                                    <td><a href="{% url 'qqbot:manage_binding' b.pk %}">{{ b.user.username }}</a>{% if not b.user.is_active %} <span class="badge text-bg-warning">已停用</span>{% endif %}</td>
                                     <td>{{ row.card }}</td>
                                     <td class="small text-nowrap">{{ b.created_at|date:"Y-m-d H:i" }}</td>
                                     <td class="text-end text-nowrap">
@@ -71,7 +71,7 @@
             <div class="card-body">
                 <div class="d-flex flex-wrap gap-2">
                     {% for qq in slot.qqs %}
-                        <span class="badge text-bg-light border font-monospace fs-6 user-select-all">{{ qq }}</span>
+                        <span class="badge text-bg-primary font-monospace fs-6 user-select-all">{{ qq }}</span>
                     {% endfor %}
                 </div>
             </div>

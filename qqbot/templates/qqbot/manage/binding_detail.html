@@ -19,7 +19,7 @@
                         <dt class="col-sm-4">AA 用户名</dt>
                         <dd class="col-sm-8">
                             {{ binding.user.username }}
-                            {% if not binding.user.is_active %}<span class="badge text-bg-secondary">账号已停用</span>{% endif %}
+                            {% if not binding.user.is_active %}<span class="badge text-bg-warning">账号已停用</span>{% endif %}
                         </dd>
                         <dt class="col-sm-4">QQ 号</dt>
                         <dd class="col-sm-8 font-monospace fs-5">{{ binding.qq }}</dd>
@@ -73,7 +73,7 @@
                                 <i class="fa-solid fa-floppy-disk fa-fw"></i> 保存群名片
                             </button>
                             {% if binding.card_override %}
-                                <button type="submit" name="action" value="clear" class="btn btn-outline-secondary">
+                                <button type="submit" name="action" value="clear" class="btn btn-info">
                                     <i class="fa-solid fa-rotate-left fa-fw"></i> 恢复自动群名片
                                 </button>
                             {% endif %}

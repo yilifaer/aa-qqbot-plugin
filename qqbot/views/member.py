@@ -3,16 +3,17 @@ docs/SPEC.md section 5, DESIGN.md 4.1 / 5).
 
 Members do everything inside that card; there is no separate member page.
 :func:`card_context` collects what the card shows, the POST views below
-change data (always through ``qqbot.core``), turn the core result into a
-Django message and go back to the card (``/services/#qqbot``), where AA's
-base template shows the message.
+change data (always through ``qqbot.core``), store the outcome in the session
+and go back to the card (``/services/#qqbot``). The card shows the outcome
+*inside itself* (not as a Django message: AA prints those above the whole row
+of service cards, which is off-screen once the page jumps to a card in a
+later row, e.g. on phones), with the member's input kept on failure.
 """
 
 import hmac
 import math
 from dataclasses import dataclass
 
-from django.contrib import messages
 from django.contrib.auth.decorators import login_required, permission_required
 from django.shortcuts import redirect
 from django.urls import reverse
@@ -32,6 +33,8 @@ logger = get_extension_logger(__name__)
 BASIC_ACCESS = "qqbot.basic_access"
 MANAGE = "qqbot.manage"
 SESSION_KEY = "qqbot_code"
+RESULT_KEY = "qqbot_result"  # outcome of the last card action, shown once
+RESULT_MAX_AGE = 300  # seconds; an outcome nobody saw in time is dropped
 CARD_ANCHOR = "qqbot"  # id of the card on the services page
 
 # Binding states shown to the member.
@@ -54,20 +57,36 @@ VIEW_UNBOUND = "unbound"
 VIEW_PENDING = "pending"
 VIEW_BOUND = "bound"
 
-# Message level per core outcome (submit / nickname / unbind / cancel).
-OUTCOME_LEVELS = {
-    "trusted": messages.SUCCESS,
-    "conflict": messages.WARNING,
-    "pending": messages.SUCCESS,
-    "nickname_updated": messages.SUCCESS,
-    "unchanged": messages.INFO,
-    "taken": messages.ERROR,
-    "cooldown": messages.WARNING,
-    "rate_limited": messages.WARNING,
-    "invalid": messages.ERROR,
-    "not_bound": messages.WARNING,
-    "unbound": messages.SUCCESS,
+# Outcome levels and how the card shows them.
+SUCCESS, INFO, WARNING, ERROR = "success", "info", "warning", "error"
+LEVEL_STYLES = {  # level -> (alert class, Font Awesome icon)
+    SUCCESS: ("alert-success", "fa-circle-check"),
+    INFO: ("alert-info", "fa-circle-info"),
+    WARNING: ("alert-warning", "fa-triangle-exclamation"),
+    ERROR: ("alert-danger", "fa-circle-xmark"),
 }
+
+# Level per core outcome (submit / nickname / unbind / cancel).
+OUTCOME_LEVELS = {
+    "trusted": SUCCESS,
+    "conflict": WARNING,
+    "pending": SUCCESS,
+    "nickname_updated": SUCCESS,
+    "unchanged": INFO,
+    "taken": ERROR,
+    "cooldown": WARNING,
+    "rate_limited": WARNING,
+    "invalid": ERROR,
+    "not_bound": WARNING,
+    "unbound": SUCCESS,
+}
+
+# Which form the member used, so a failed action re-opens it pre-filled.
+PANEL_BIND = "bind"  # the bind form of an unbound member
+PANEL_REBIND = "rebind"
+PANEL_NICKNAME = "nickname"
+PANEL_UNBIND = "unbind"
+BOUND_PANELS = {PANEL_REBIND, PANEL_NICKNAME, PANEL_UNBIND}
 
 # Placeholder nickname used to split the card preview around the input box.
 _NICK_MARK = ""
@@ -121,11 +140,55 @@ def _back():
     return redirect(services_url())
 
 
-def _message(request, result) -> None:
-    level = OUTCOME_LEVELS.get(result.outcome)
-    if level is None:
-        level = messages.INFO if result.ok else messages.ERROR
-    messages.add_message(request, level, result.message or ("操作完成。" if result.ok else "操作失败。"))
+def _flash(request, level: str, text: str, *, ok: bool, panel: str = "", qq: str = "", nickname: str = "") -> None:
+    """Remember an outcome for the card (shown once, by :func:`_pop_result`).
+
+    ``panel``, ``qq`` and ``nickname`` say which form was used and what was
+    typed, so a failed action comes back with that form open and filled in.
+    """
+    request.session[RESULT_KEY] = {
+        "level": level,
+        "text": text,
+        "ok": ok,
+        "panel": panel,
+        # Only ever shown (escaped) in the member's own card; cut to the
+        # form's max_length so a crafted POST cannot bloat the session.
+        "qq": (qq or "")[:32],
+        "nickname": (nickname or "")[:64],
+        "at": timezone.now().timestamp(),
+    }
+
+
+def _flash_result(request, result, *, panel: str = "", qq: str = "", nickname: str = "") -> None:
+    level = OUTCOME_LEVELS.get(result.outcome) or (INFO if result.ok else ERROR)
+    text = result.message or ("操作完成。" if result.ok else "操作失败。")
+    _flash(request, level, text, ok=result.ok, panel=panel, qq=qq, nickname=nickname)
+
+
+def _pop_result(request, now) -> dict | None:
+    """The outcome of the member's last card action, once; ``None`` when there
+    is none (or it is malformed or too old to still be meant for this page)."""
+    session = getattr(request, "session", None)
+    if session is None:
+        return None
+    data = session.pop(RESULT_KEY, None)
+    if not isinstance(data, dict):
+        return None
+    level, text, at = data.get("level"), data.get("text"), data.get("at")
+    if level not in LEVEL_STYLES or not isinstance(text, str) or not text:
+        return None
+    if not isinstance(at, (int, float)) or not 0 <= now.timestamp() - at <= RESULT_MAX_AGE:
+        return None
+    alert_class, icon = LEVEL_STYLES[level]
+    return {
+        "text": text,
+        "ok": bool(data.get("ok")),
+        "alert_class": alert_class,
+        "icon": icon,
+        "panel": data.get("panel") if isinstance(data.get("panel"), str) else "",
+        "qq": data.get("qq") if isinstance(data.get("qq"), str) else "",
+        "nickname": data.get("nickname") if isinstance(data.get("nickname"), str) else "",
+    }
 
 
 def _session_code(request) -> dict:
@@ -178,7 +241,13 @@ def _minutes_left(expires_at, now) -> int:
 
 
 def _badge(view: str, status: MemberStatus) -> tuple[str, str]:
-    """``(label, bootstrap class)`` of the status badge in the card header."""
+    """``(label, bootstrap class)`` of the status badge in the card header.
+
+    The badge shows the *current binding* when there is one, also while a
+    re-bind code is pending (the current QQ keeps working until the new one
+    is verified; DESIGN.md 4.2 ③). A problem badge always comes with the
+    red explanation in the card (``#qqbot-problem``, bound and pending view).
+    """
     if status.state == STATE_CONFLICT:
         return "冲突", "text-bg-danger"
     if status.state == STATE_TAKEN:
@@ -187,19 +256,24 @@ def _badge(view: str, status: MemberStatus) -> tuple[str, str]:
         return "已启用", "text-bg-success"
     if view == VIEW_PENDING:
         return "待验证", "text-bg-primary"
-    return "未启用", "text-bg-secondary"
+    return "未启用", "text-bg-warning"  # like AA's own "Disabled" badge
 
 
 def card_context(request, now=None) -> dict:
     """Everything ``qqbot/service_ctrl.html`` needs for ``request.user``.
 
     Runs on every services page load, so it only does the queries the
-    current state needs. It may drop a stale verification code from the
-    session (and then says so once, pre-filling the form).
+    current state needs. It shows (and forgets) the outcome of the member's
+    last card action; a failed action re-opens the form that was used,
+    filled in with what was typed. It may drop a stale verification code
+    from the session (and then says so once, pre-filling the form: the bind
+    form, or the opened 换绑 panel for a re-bind).
     """
     user = request.user
     now = now or timezone.now()
+    result = _pop_result(request, now)
     context = {
+        "result": result,
         "is_manager": user.has_perm(MANAGE),
         "has_main": has_main_character(user),
         "nickname_help": NICKNAME_HELP,
@@ -259,7 +333,9 @@ def card_context(request, now=None) -> dict:
 
     # The nickname input with the card prefix: bind form and "改昵称".
     if view in (VIEW_UNBOUND, VIEW_BOUND):
-        before, after, nick_in_card = _card_parts(user, config)
+        # binding.user comes with its main character (select_related).
+        owner = binding.user if binding is not None else user
+        before, after, nick_in_card = _card_parts(owner, config)
         room = _nickname_room(before, after, nick_in_card)
         context.update(
             {
@@ -285,21 +361,41 @@ def card_context(request, now=None) -> dict:
         context["card"] = cards.render_card(binding, config)
         context["card_shortened"] = cards.is_shortened(binding, config)
         # Unbinding does not reset the rebind cooldown (DESIGN.md 5.5).
-        context["cooldown_ends"] = bindings.cooldown_ends(binding.qq_changed_at, now, config)
+        # Shown as time left, not a clock time: AA renders times in
+        # settings.TIME_ZONE (usually UTC), members read Beijing time.
+        ends = bindings.cooldown_ends(binding.qq_changed_at, now, config)
+        context["cooldown_ends"] = ends
+        context["cooldown_left"] = bindings.format_remaining(ends - now) if ends else ""
 
-    # Pre-fill the bind form: the last typed values, else the binding.
+    # Pre-fill the forms and pick the open panel (bound view): a failed
+    # action's input wins over a stale code's, which wins over the binding.
     initial_qq = ""
     initial_nickname = binding.nickname if binding else ""
+    open_panel = ""
     if stale_code:
         initial_qq = session.get("qq") or ""
-        initial_nickname = session.get("nickname") or initial_nickname
+        if binding is None:
+            initial_nickname = session.get("nickname") or initial_nickname
+        else:
+            open_panel = PANEL_REBIND
+    if result is not None and not result["ok"]:
+        panel = result["panel"]
+        if view == VIEW_UNBOUND and panel in (PANEL_BIND, PANEL_REBIND):
+            initial_qq, initial_nickname = result["qq"], result["nickname"]
+        elif view == VIEW_BOUND and panel in BOUND_PANELS:
+            open_panel = panel
+            if panel == PANEL_REBIND:
+                initial_qq = result["qq"]
+            elif panel == PANEL_NICKNAME:
+                initial_nickname = result["nickname"]
     context["initial_qq"] = initial_qq
     context["initial_nickname"] = initial_nickname
+    context["open_panel"] = open_panel if view == VIEW_BOUND else ""
     return context
 
 
 def _no_main_redirect(request):
-    messages.warning(request, "请先在 AA 首页设置主角色，然后再来绑定 QQ。")
+    # The card itself explains this (view "no_main").
     return _back()
 
 
@@ -322,9 +418,14 @@ def submit(request):
     user = request.user
     if not has_main_character(user):
         return _no_main_redirect(request)
+    typed_qq = request.POST.get("qq", "")
+    typed_nickname = request.POST.get("nickname", "")
+    # Which form this came from: the bind form, or 换绑 of a bound member
+    # ("重新生成" in the pending view needs no panel).
+    panel = PANEL_REBIND if Binding.objects.filter(user_id=user.pk).exists() else PANEL_BIND
     form = SubmitForm(request.POST)
     if not form.is_valid():
-        messages.error(request, first_error(form))
+        _flash(request, ERROR, first_error(form), ok=False, panel=panel, qq=typed_qq, nickname=typed_nickname)
         return _back()
 
     qq = form.cleaned_data["qq"]
@@ -337,11 +438,12 @@ def submit(request):
         elif session.get("qq") and session.get("nickname"):
             qq, nickname = session["qq"], session["nickname"]
         else:
-            messages.warning(request, "验证码已经失效，请重新填写 QQ 号和昵称后提交。")
+            _flash(request, WARNING, "验证码已经失效，请重新填写 QQ 号和昵称后提交。", ok=False)
             return _back()
+        panel = ""
 
     result = bindings.submit(user, qq, nickname)
-    _message(request, result)
+    _flash_result(request, result, panel=panel, qq=typed_qq, nickname=typed_nickname)
     if result.outcome == "pending" and result.code:
         request.session[SESSION_KEY] = {
             "code": result.code,
@@ -361,9 +463,9 @@ def code_cancel(request):
     n = bindings.cancel_code(request.user)
     request.session.pop(SESSION_KEY, None)
     if n:
-        messages.success(request, "验证码已取消。")
+        _flash(request, SUCCESS, "验证码已取消。", ok=True)
     else:
-        messages.info(request, "没有需要取消的验证码。")
+        _flash(request, INFO, "没有需要取消的验证码。", ok=True)
     return _back()
 
 
@@ -373,12 +475,13 @@ def code_cancel(request):
 def nickname(request):
     if not has_main_character(request.user):
         return _no_main_redirect(request)
+    typed = request.POST.get("nickname", "")
     form = NicknameForm(request.POST)
     if not form.is_valid():
-        messages.error(request, first_error(form))
+        _flash(request, ERROR, first_error(form), ok=False, panel=PANEL_NICKNAME, nickname=typed)
         return _back()
     result = bindings.set_nickname(request.user, form.cleaned_data["nickname"])
-    _message(request, result)
+    _flash_result(request, result, panel=PANEL_NICKNAME, nickname=typed)
     return _back()
 
 
@@ -392,9 +495,9 @@ def unbind(request):
         return _back()
     form = UnbindForm(request.POST)
     if not form.is_valid():
-        messages.warning(request, first_error(form))
+        _flash(request, WARNING, first_error(form), ok=False, panel=PANEL_UNBIND)
         return _back()
     result = bindings.unbind(request.user, actor=request.user)
     request.session.pop(SESSION_KEY, None)
-    _message(request, result)
+    _flash_result(request, result, panel=PANEL_UNBIND)
     return _back()

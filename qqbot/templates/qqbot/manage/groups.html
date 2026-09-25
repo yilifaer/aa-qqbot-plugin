@@ -41,7 +41,7 @@
                                 <td>
                                     {% if g.kind == 'role' %}
                                         {% for name in row.required %}
-                                            <span class="badge text-bg-secondary">{{ name }}</span>
+                                            <span class="badge text-bg-info">{{ name }}</span>
                                         {% empty %}
                                             <span class="badge text-bg-danger">未选择（请编辑）</span>
                                         {% endfor %}
@@ -52,7 +52,7 @@
                                 <td class="small">
                                     {% if g.last_roster_at %}
                                         {{ g.roster_count }} 人
-                                        <div class="{% if row.roster_fresh %}text-body-secondary{% else %}text-warning-emphasis{% endif %}">
+                                        <div class="{% if row.roster_fresh %}text-body-secondary{% else %}text-danger fw-bold{% endif %}">
                                             {{ g.last_roster_at|date:"Y-m-d H:i" }}{% if not row.roster_fresh %}（已过期）{% endif %}
                                         </div>
                                     {% else %}
@@ -63,7 +63,7 @@
                                     {% if g.is_active %}
                                         <span class="badge text-bg-success">启用</span>
                                     {% else %}
-                                        <span class="badge text-bg-secondary">停用</span>
+                                        <span class="badge text-bg-warning">停用</span>
                                     {% endif %}
                                 </td>
                                 <td class="text-end text-nowrap">

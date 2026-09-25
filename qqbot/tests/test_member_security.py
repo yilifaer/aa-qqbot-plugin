@@ -1,4 +1,5 @@
-"""Member pages: permissions, POST-only, CSRF and escaping."""
+"""Member side (the services card and its POST targets): permissions,
+POST-only, CSRF and escaping."""
 
 from django.conf import settings
 from django.core.cache import cache
@@ -8,6 +9,8 @@ from django.urls import reverse
 from ..models import Binding, BindCode, Config, QQGroup
 from .utils import bind, create_group, create_member
 
+SERVICES = reverse("services:services")
+BACK = SERVICES + "#qqbot"
 MY_QQ = reverse("qqbot:my_qq")
 SUBMIT = reverse("qqbot:member_submit")
 CANCEL = reverse("qqbot:member_code_cancel")
@@ -48,7 +51,10 @@ class PermissionTests(TestCase):
 
     def test_member_allowed(self):
         self.client.force_login(create_member("member"))
-        self.assertEqual(self.client.get(MY_QQ).status_code, 200)
+        r = self.client.get(MY_QQ)
+        self.assertEqual(r.status_code, 302)
+        self.assertEqual(r["Location"], BACK)
+        self.assertContains(self.client.get(SERVICES), 'id="qqbot"')
 
     def test_post_only(self):
         self.client.force_login(create_member("member"))
@@ -60,7 +66,9 @@ class PermissionTests(TestCase):
         user = create_member("member")
         bind(user, QQ)
         self.client.force_login(user)
-        self.assertEqual(self.client.get(UNBIND).status_code, 200)
+        r = self.client.get(UNBIND)
+        self.assertEqual(r.status_code, 302)
+        self.assertEqual(r["Location"], BACK)
         self.assertTrue(Binding.objects.filter(user=user).exists())
         self.assertEqual(self.client.put(UNBIND).status_code, 405)
         self.assertTrue(Binding.objects.filter(user=user).exists())
@@ -79,7 +87,7 @@ class CsrfTests(TestCase):
             (SUBMIT, {"qq": "87654321", "nickname": "凯拉"}),
             (CANCEL, {}),
             (NICKNAME, {"nickname": "小凯"}),
-            (UNBIND, {}),
+            (UNBIND, {"confirm": "1"}),
         ):
             with self.subTest(url=url):
                 self.assertEqual(self.client.post(url, data).status_code, 403)
@@ -88,12 +96,25 @@ class CsrfTests(TestCase):
         self.assertFalse(BindCode.objects.filter(user=self.user).exists())
 
     def test_post_with_token_accepted(self):
-        page = self.client.get(MY_QQ)
+        page = self.client.get(SERVICES)
         self.assertContains(page, "csrfmiddlewaretoken")
         token = self.client.cookies[settings.CSRF_COOKIE_NAME].value
         r = self.client.post(NICKNAME, {"nickname": "小凯", "csrfmiddlewaretoken": token})
         self.assertEqual(r.status_code, 302)
+        self.assertEqual(r["Location"], BACK)
         self.assertEqual(Binding.objects.get(user=self.user).nickname, "小凯")
+        r = self.client.post(UNBIND, {"confirm": "1", "csrfmiddlewaretoken": token})
+        self.assertEqual(r.status_code, 302)
+        self.assertFalse(Binding.objects.filter(user=self.user).exists())
+
+    def test_every_card_form_has_a_token(self):
+        html = self.client.get(SERVICES).content.decode()
+        card = html[html.index('id="qqbot"'):]
+        forms = card.split("<form")[1:]
+        self.assertGreaterEqual(len(forms), 3)  # nickname, rebind, unbind
+        for form in forms:
+            self.assertIn('method="post"', form[:80])
+            self.assertIn("csrfmiddlewaretoken", form[: form.index("</form>")])
 
 
 class EscapingTests(TestCase):
@@ -110,7 +131,7 @@ class EscapingTests(TestCase):
         # Nickname validation would reject this; bypass it to test escaping.
         bind(user, QQ, nickname=XSS)
         self.client.force_login(user)
-        r = self.client.get(MY_QQ)
+        r = self.client.get(SERVICES)
         self.assertEqual(r.status_code, 200)
         content = r.content.decode()
         self.assertNotIn(XSS, content)
@@ -123,7 +144,7 @@ class EscapingTests(TestCase):
     def test_unbound_card_prefix_escaped(self):
         user = create_member("member", character_name=f"P{XSS}")
         self.client.force_login(user)
-        content = self.client.get(MY_QQ).content.decode()
+        content = self.client.get(SERVICES).content.decode()
         self.assertNotIn(XSS, content)
         self.assertIn("&lt;script&gt;", content)
 
@@ -133,7 +154,7 @@ class EscapingTests(TestCase):
         self.client.force_login(user)
         self.client.post(SUBMIT, {"qq": QQ, "nickname": "凯拉"})
         BindCode.objects.filter(user=user).update(nickname=XSS)
-        content = self.client.get(MY_QQ).content.decode()
-        self.assertIn("等待验证", content)
+        content = self.client.get(SERVICES).content.decode()
+        self.assertIn("正在验证的 QQ", content)
         self.assertNotIn(XSS, content)
         self.assertIn(XSS_ESCAPED, content)

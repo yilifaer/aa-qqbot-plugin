@@ -240,8 +240,8 @@ export async function callApi({ baseUrl, keyId, secret }, name, payload = {}) {
 | reason | decision | 含义 | 建议给管理员 / 申请人的说明 |
 |---|---|---|---|
 | `OK` | allow | 有资格 | — |
-| `NOT_BOUND` | deny | 这个 QQ 没有绑定任何 AA 账号 | 请先登录 AA，在「QQ 绑定」页面绑定 QQ |
-| `PENDING_VERIFY` | deny | 已在 AA 提交，但还没用验证码验证 | 请把 AA 上显示的验证码填进入群申请的「验证信息」 |
+| `NOT_BOUND` | deny | 这个 QQ 没有绑定任何 AA 账号 | 请先登录 AA，在「服务」页的 QQ 绑定卡片里绑定 QQ |
+| `PENDING_VERIFY` | deny | 已在 AA 提交，但还没用验证码验证 | 请把 AA「服务」页 QQ 绑定卡片上显示的验证码填进入群申请的「验证信息」 |
 | `USER_INACTIVE` | deny | 绑定的 AA 账号已停用 | 请联系 QQ 管理员 |
 | `NO_MAIN` | deny | AA 账号没有设置主角色 | 请在 AA 设置主角色 |
 | `NO_ACCESS` | deny | AA 账号没有成员资格（例如不是联盟成员） | 请联系 QQ 管理员 |

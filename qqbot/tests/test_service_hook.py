@@ -1,13 +1,18 @@
 """The "QQ 绑定" card on AA's services page."""
 
+import re
+from pathlib import Path
 from unittest import mock
 
 from django.core.cache import cache
+from django.db import connection
 from django.db.models.signals import post_save
 from django.test import RequestFactory, TestCase
+from django.test.utils import CaptureQueriesContext
 from django.urls import reverse
 
 from allianceauth.eveonline.models import EveCharacter
+from allianceauth.tests.auth_utils import AuthUtils
 
 from .. import signals
 from ..core import bindings, cards, events
@@ -15,7 +20,7 @@ from ..models import Binding, Event
 from ..service_hook import QQBotService
 from ..service_hook import logger as service_logger
 from .test_signals import discard_pending
-from .utils import bind, create_group, create_member, create_user, put_in_roster
+from .utils import MANAGE, bind, create_group, create_member, create_user, put_in_roster
 
 SERVICES = reverse("services:services")
 MY_QQ = reverse("qqbot:my_qq")
@@ -34,8 +39,11 @@ class ServicesPageTests(TestCase):
         r = self.client.get(SERVICES)
         self.assertEqual(r.status_code, 200)
         self.assertContains(r, CARD_MARK)
-        self.assertContains(r, "还没有绑定 QQ。")
-        self.assertContains(r, f'href="{MY_QQ}"')
+        self.assertContains(r, "绑定后可以加入联盟 QQ 群")
+        # Everything happens in the card: no link to a member page.
+        self.assertNotContains(r, f'href="{MY_QQ}"')
+        # Same outer classes as AA's cards, so it sits in AA's flex row.
+        self.assertContains(r, '<div class="card mx-2 mb-3 ', count=1)
 
     def test_member_sees_masked_qq(self):
         user = create_member("member")
@@ -76,7 +84,7 @@ class ServicesPageTests(TestCase):
 
     def test_badges(self):
         unbound = create_member("unbound")
-        self.assertIn('text-bg-secondary">未启用', self.badge(unbound))
+        self.assertIn('text-bg-warning">未启用', self.badge(unbound))
 
         pending = create_member("pending")
         bindings.submit(pending, "22345678", "凯拉")
@@ -106,7 +114,7 @@ class ServicesPageTests(TestCase):
         r = self.client.get(SERVICES)
         self.assertEqual(r.status_code, 200)
         self.assertNotContains(r, CARD_MARK)
-        self.assertNotContains(r, "还没有绑定 QQ。")
+        self.assertNotContains(r, 'id="qqbot"')
 
 
 class HookTests(TestCase):
@@ -197,5 +205,131 @@ class HookTests(TestCase):
         request = RequestFactory().get(SERVICES)
         request.user = user
         html = self.hook.render_services_ctrl(request)
-        self.assertIn("请先设置主角色", html)
-        self.assertIn(MY_QQ, html)
+        self.assertIn("你还没有设置主角色", html)
+        self.assertIn('text-bg-warning">未启用', html)
+        self.assertNotIn('name="qq"', html)
+        self.assertNotIn(MY_QQ, html)
+
+    def test_render_needs_few_queries(self):
+        """The card renders on every services page load: a constant, small
+        number of queries (no per-group queries)."""
+        user = create_member("m")
+        create_group("100001")
+        create_group("100002")
+        bind(user, QQ)
+        request = RequestFactory().get(SERVICES)
+        request.user = type(user).objects.get(pk=user.pk)
+        request.session = {}
+        self.hook.render_services_ctrl(request)  # fills AA's permission / profile caches
+        with CaptureQueriesContext(connection) as queries:
+            html = self.hook.render_services_ctrl(request)
+        self.assertIn("100001", html)
+        self.assertLessEqual(len(queries), 10, [q["sql"][:120] for q in queries])
+        for i in range(3, 9):
+            create_group(f"10000{i}")
+        with CaptureQueriesContext(connection) as more:
+            html = self.hook.render_services_ctrl(request)
+        self.assertIn("100008", html)
+        self.assertEqual(len(more), len(queries))
+
+
+TEMPLATES = Path(__file__).resolve().parent.parent / "templates" / "qqbot"
+CARD_TEMPLATES = [
+    TEMPLATES / "service_ctrl.html",
+    *sorted((TEMPLATES / "member").glob("*.html")),
+]
+# Every qqbot template: the card, base.html and the manager pages (managers
+# use the same AA theme as everyone else, e.g. darkly).
+ALL_TEMPLATES = sorted(TEMPLATES.rglob("*.html"))
+# Light-only classes: wrong in AA's dark themes (darkly).
+BANNED_CLASSES = {"bg-light", "bg-white", "table-light", "alert-light", "text-dark", "btn-light",
+                  "text-black", "bg-dark", "border-light", "border-dark", "text-bg-light",
+                  "btn-outline-light", "btn-outline-dark", "list-group-item-light",
+                  # AA's darkly keeps Bootstrap's light root variables, so these
+                  # come out light / dark-brown on its dark cards.
+                  "bg-body-tertiary", "bg-body-secondary", "bg-body", "text-body-emphasis",
+                  # darkly's "secondary" is #444: the colour of the card header
+                  # and footer, and unreadable as text on the #303030 card.
+                  "btn-secondary", "btn-outline-secondary", "text-bg-secondary", "bg-secondary",
+                  "text-secondary", "border-secondary"}
+
+
+class CardThemeTests(TestCase):
+    """Theme rules for all qqbot templates (docs/SPEC.md 5)."""
+
+    def classes(self, text):
+        # Also the classes inside {% if %} branches of a class attribute.
+        text = re.sub(r"\{%.*?%\}", " ", text)
+        for attr in re.findall(r'class="([^"]*)"', text):
+            yield from attr.split()
+
+    def test_templates_exist(self):
+        self.assertTrue(CARD_TEMPLATES[0].is_file())
+        self.assertGreaterEqual(len(CARD_TEMPLATES), 3)
+        names = {p.relative_to(TEMPLATES).as_posix() for p in ALL_TEMPLATES}
+        self.assertLessEqual({"base.html", "manage/groups.html", "manage/binding_detail.html",
+                              "manage/bindings.html", "manage/pending.html", "manage/audit.html"}, names)
+
+    def test_class_scan_sees_conditional_classes(self):
+        text = '<div class="{% if a %}text-body-secondary{% else %}text-warning-emphasis{% endif %}">'
+        self.assertIn("text-warning-emphasis", set(self.classes(text)))
+
+    def test_no_light_only_classes(self):
+        for path in ALL_TEMPLATES:
+            text = path.read_text(encoding="utf-8")
+            with self.subTest(template=path.name):
+                used = set(self.classes(text))
+                self.assertEqual(used & BANNED_CLASSES, set())
+                self.assertEqual({c for c in used if c.endswith("-emphasis")}, set())
+
+    def test_no_fixed_colours(self):
+        for path in ALL_TEMPLATES:
+            text = path.read_text(encoding="utf-8")
+            with self.subTest(template=path.name):
+                self.assertNotRegex(text, r"#[0-9a-fA-F]{3,8}\b")
+                self.assertNotRegex(text, r"\b(rgb|rgba|hsl)\(")
+                for style in re.findall(r'style="([^"]*)"', text):
+                    self.assertNotIn("color", style)
+                    self.assertNotIn("background", style)
+
+    def test_no_safe_filter(self):
+        for path in ALL_TEMPLATES:
+            text = path.read_text(encoding="utf-8")
+            with self.subTest(template=path.name):
+                self.assertNotIn("|safe", text)
+                self.assertNotIn("autoescape off", text)
+
+
+class CardIdTests(TestCase):
+    """DOM ids in the card are unique and prefixed with "qqbot"."""
+
+    def setUp(self):
+        cache.clear()
+
+    def assert_ids(self, user):
+        self.client.force_login(user)
+        html = self.client.get(SERVICES).content.decode()
+        start = html.index('id="qqbot"')
+        end = html.index('<h4 class="border-bottom">', start)  # AA's legend
+        ids = re.findall(r'\bid="([^"]*)"', html[start:end])
+        self.assertEqual(len(ids), len(set(ids)), ids)
+        self.assertTrue(all(i == "qqbot" or i.startswith("qqbot-") for i in ids), ids)
+        return ids
+
+    def test_every_state(self):
+        create_group("100001")
+        unbound = create_member("unbound")
+        self.assert_ids(unbound)
+
+        pending = create_member("pending")
+        self.client.force_login(pending)
+        self.client.post(reverse("qqbot:member_submit"), {"qq": "22345678", "nickname": "凯拉"})
+        self.assertIn("qqbot-code", self.assert_ids(pending))
+
+        bound = create_member("bound")
+        bind(bound, QQ)
+        AuthUtils.add_permission_to_user_by_name(MANAGE, bound, disconnect_signals=True)
+        ids = self.assert_ids(type(bound).objects.get(pk=bound.pk))
+        for i in ("qqbot-nickname-panel", "qqbot-rebind-panel", "qqbot-unbind-panel",
+                  "qqbot-unbind-confirm", "qqbot-manage-link"):
+            self.assertIn(i, ids)

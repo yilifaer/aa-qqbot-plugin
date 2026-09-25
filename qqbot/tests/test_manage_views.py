@@ -62,6 +62,20 @@ class GroupCrudTests(ManagerTestCase):
         self.assertContains(r, "Cap")
         self.assertContains(r, "未选择（请编辑）")
 
+    def test_stale_roster_readable_in_dark_theme(self):
+        """The "roster expired" warning uses a colour that is readable in
+        AA's darkly too (not text-warning-emphasis: dark brown there)."""
+        fresh = create_group("123456", name="新名单群")
+        stale = create_group("223456", name="旧名单群")
+        put_in_roster(fresh, ["12345678"])
+        put_in_roster(stale, ["22345678"])
+        QQGroup.objects.filter(pk=stale.pk).update(last_roster_at=timezone.now() - timedelta(days=10))
+        html = self.client.get(GROUPS).content.decode()
+        self.assertEqual(html.count("（已过期）"), 1)
+        cell = html[: html.index("（已过期）")]
+        self.assertIn('<div class="text-danger fw-bold">', cell[cell.rindex("<div"):])
+        self.assertNotIn("-emphasis", html)
+
     def test_create_fixed(self):
         r = self.client.post(GROUP_CREATE, group_data(group_id=" １２３ 456 "))
         self.assertRedirects(r, GROUPS)

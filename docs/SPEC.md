@@ -20,7 +20,7 @@
 | `qqbot/models.py`、`migrations/0001_initial.py`、`app_settings.py`、`apps.py`、`urls.py`、`auth_hooks.py`、`templates/qqbot/base.html`、`testauth/` | 地基（已写好）。改动须说明理由 |
 | `qqbot/core/` | 领域逻辑：判定、绑定操作、群名片、事件、审计、验证码。**页面和接口只能通过 core 修改数据** |
 | `qqbot/api/`、`API.md` | 机器人接口 |
-| `qqbot/views/member*.py`、`templates/qqbot/member/`、`service_hook.py`、`templates/qqbot/service_ctrl.html` | 成员页面与服务卡片 |
+| `qqbot/views/member*.py`、`templates/qqbot/member/`（卡片用的片段）、`service_hook.py`、`templates/qqbot/service_ctrl.html` | 服务页的 QQ 绑定卡片（成员的全部界面）及其 POST 视图 |
 | `qqbot/views/manage*.py`、`templates/qqbot/manage/` | 管理页面 |
 | `qqbot/signals.py`、`tasks.py`、`checks.py`、`admin.py`、`management/`、`README.md` | 集成、后台任务、系统检查、安装文档 |
 | `qqbot/tests/test_<领域>_*.py` | 各部分自己的测试；公共测试工具放 `qqbot/tests/utils.py`（core 负责创建） |
@@ -72,7 +72,7 @@ class Decision:
 
 def evaluate(group: QQGroup, qqs: Iterable[str], now=None) -> dict[str, Decision]
 def evaluate_binding(binding: Binding, groups=None) -> dict[int, Decision]   # 按 group.pk
-def groups_for_user(user) -> list[QQGroup]   # 该用户当前有资格进的有效群（给页面用）
+def groups_for_user(user) -> list[QQGroup]   # 该用户当前有资格进的有效群（给服务卡片用）
 # 有有效验证码（待验证）时，按用户层面的规则列出可申请的群；否则按绑定判定；冲突时返回 []
 def evaluate_many(groups, qqs, now=None, config=None) -> dict[str, dict[int, Decision]]
 ```
@@ -93,7 +93,7 @@ def evaluate_many(groups, qqs, now=None, config=None) -> dict[str, dict[int, Dec
 - `preview_card(user, nickname, config=None) -> str`：给页面预览用，不需要已有绑定。
 - 结果按 **UTF-8 60 字节**截断：先缩短角色名，仍然超长再截断整串，不能切断多字节字符。常量 `CARD_MAX_BYTES = 60`。
 - 结果去掉首尾空白，并压缩连续空白。
-- `full_card(user, nickname, config=None)`：截断前的自动名片；`is_shortened(binding, config=None)`：自动名片是否被缩短过（管理员指定的名片不算）。成员页用它们按 DESIGN §6 提示「角色名已自动缩短」。
+- `full_card(user, nickname, config=None)`：截断前的自动名片；`is_shortened(binding, config=None)`：自动名片是否被缩短过（管理员指定的名片不算）。服务卡片用它们按 DESIGN §6 提示「角色名已自动缩短」。
 
 ### 3.7 `core/roster.py`
 - `update_roster(group, qqs, now=None)`：在一个事务里整体替换该群的名单：删除不在列表里的，新增列表里有的（`bulk_create(ignore_conflicts=True)`），更新 `seen_at`，设置 `group.last_roster_at=now`。无效 QQ 静默丢弃。
@@ -130,7 +130,7 @@ def evaluate_many(groups, qqs, now=None, config=None) -> dict[str, dict[int, Dec
   - 成功：删除该 QQ 的其他所有绑定（其他用户的 `verified` 表示被接管，`trusted` 表示冲突解决），每条都写审计并记录 `detail`。然后把本用户的绑定设为 `verified`，`verified_via=code`，`verified_at=now`，昵称取验证码上的，换号时设置 `qq_changed_at`。对旧 QQ 写 `recheck`，写审计 `VERIFY`，并调用 `refresh_binding`。
 - `confirm(binding, actor, expected_qq=None)`：管理员确认。`expected_qq` 是管理员页面上显示的 QQ；加锁后绑定的 QQ 已经不是它（成员换绑时绑定行的 pk 不变）→ `outcome="qq_changed"`，什么都不改。管理页的确认表单必须带上隐藏字段 `qq`。同号已有别人的 `verified` 时拒绝。否则设为 `verified`（`via=manager`），删除同号其他 `trusted` 绑定（审计 `CONFLICT_RESOLVED`），写审计 `CONFIRM`，并刷新。
 - `unbind(user, actor=None, forced=False, expected_qq=None)`：删除绑定，作废验证码，写 `recheck` 事件，写审计 `UNBIND` 或 `FORCE_UNBIND`（`detail` 含 `status` 和 `qq_changed_at`）。`expected_qq` 同 `confirm`（管理员强制解绑时使用），不一致时返回 `qq_changed`。
-- `cooldown_ends(qq_changed_at, now=None, config=None)`：冷却结束时间（已结束为 `None`），给解绑确认页提示用。
+- `cooldown_ends(qq_changed_at, now=None, config=None)`：冷却结束时间（已结束为 `None`），给服务卡片的换绑、解绑提示用。
 - 已知限制：号主还在群里时，冲突的 QQ 在新鲜名单里，任何一方提交都只会得到 `trusted`/`conflict`，拿不到验证码；因此这类冲突只能由管理员确认或强制解绑来解决，管理页不能引导成员「用验证码胜出」。
 - `set_nickname(user, nickname)`、`set_card_override(binding, card, actor)`（空串表示清除；按 60 字节校验）：写审计并刷新。
 - `conflicts() -> list[tuple[qq, list[Binding]]]`：没有 `verified`、且 `trusted` 绑定数 ≥ 2 的 QQ。
@@ -157,17 +157,22 @@ def evaluate_many(groups, qqs, now=None, config=None) -> dict[str, dict[int, Dec
   - `events {after: int ≥ 0, limit?: 1..500 默认 200}` → `{events: [{id, kind, qq, created_at}], last_id, has_more}`，调用 `core.events.poll`；事件最多延迟约 10 秒可见（`API.md` 要写明）。
 - `API.md`（中文 + 字段表）：完整契约、错误码表、**签名测试向量**（固定 secret、时间戳、nonce、请求体，给出预期签名，并写一个测试确保向量与实现一致），以及给 Koishi 端的实现要点：`redirect: 'manual'`、只接受 200、三态处理、`review` 永不处置、昵称和名片要转义、入群申请一律走 `claim` 并只看 `result.decision`、事件按群合并成批量 `check`、大规模 `deny` 的熔断（一轮移出人数超过阈值时不处置、等人工确认）、子路径部署时签名路径带前缀。
 
-## 5. 成员页面
+## 5. 成员界面：服务页的「QQ 绑定」卡片（决定 #18）
 
-- `member_urls.urlpatterns`：`""` → `my_qq`（名字 `my_qq`），`submit/`、`code/cancel/`、`nickname/`、`unbind/`（GET 显示确认页，POST 执行）。
-- 所有视图：`@login_required` + `@permission_required("qqbot.basic_access", raise_exception=True)`，修改操作只接受 POST（`require_POST`）。
-- 页面内容按 `DESIGN.md` §4.2：
-  - 表单：群名片前缀预览（`[ticker] 角色名 - `）、昵称输入、QQ 输入、入群须知（`Config.rules_text`，**转义后**把换行转成 `<br>`）。
-  - 待验证：显示验证码（如果会话里有且对应的验证码仍有效）、过期时间、把验证码填进入群申请「验证信息」的指引、可加入的群、「重新生成」「取消」按钮。
-  - 已绑定：打码的 QQ、状态（已验证 / 老成员免验证 / 冲突）、群名片预览、`groups_for_user` 按固定群和身份组小群分组列出（冲突时隐藏群号）、修改昵称、换绑（同一个提交表单）、解绑（确认页）。
-- `service_hook.QQBotService`：`name="qq"`，`title` 为「QQ 绑定」，`access_perm="qqbot.basic_access"`，`service_active_for_user = has_perm`，`render_services_ctrl` 渲染 `qqbot/service_ctrl.html`（继承 `services/services_ctrl_base.html`：标题、状态徽章、打码的 QQ、按钮链接到 `my_qq`）。`validate_user`、`delete_user` 等回调**什么都不做**（真正的正确性由 signals 和每日对账保证）；`update_groups`、`update_all_groups` **不要覆盖**（AA 的用户后台会为覆盖了它们的服务加一个无用的「Sync groups」操作）。`sync_nickname(user)` 调用 `signals.schedule_refresh_user(user.pk)`（AA 在 pre_save 里、自己的事务中调用它，此时新数据还没写入），外层包 try/except。卡片覆盖 `{% block active %}`，状态徽章为：已启用（绿）、待验证（蓝）、冲突 / 已被占用（红）、未启用（灰）。
-- 菜单项（`auth_hooks.QQBotMenuItem`）：有 `basic_access` → 链接 `my_qq`；只有 `qqbot.manage` → 链接 `manage_index`；都没有 → 不显示。`base.html` 的「我的 QQ」标签只对有 `basic_access` 的人显示。
-- 成员页的 QQ 输入框不能设比 `SubmitForm` 更短的 `maxlength`（浏览器会静默截掉粘贴内容的末位，变成另一个合法 QQ）。
+- 成员**没有单独的页面**，所有操作都在 AA 服务页（`/services/`，URL 名 `services:services`）的卡片里完成，样子见 `DESIGN.md` §4.1、§4.2。
+- `service_hook.QQBotService`：`name="qq"`，`title` 为「QQ 绑定」，`access_perm="qqbot.basic_access"`，`service_active_for_user = has_perm`。`render_services_ctrl(request)` 用 `views.member.card_context(request)` 的结果（加上 `service_name`）渲染 `qqbot/service_ctrl.html`。`validate_user`、`delete_user` 等回调**什么都不做**（真正的正确性由 signals 和每日对账保证）；`update_groups`、`update_all_groups` **不要覆盖**（AA 的用户后台会为覆盖了它们的服务加一个无用的「Sync groups」操作）。`sync_nickname(user)` 调用 `signals.schedule_refresh_user(user.pk)`（AA 在 pre_save 里、自己的事务中调用它，此时新数据还没写入），外层包 try/except。
+- `card_context(request, now=None)`：所有规则仍在 core，这里只取数据。`view` 取 `no_main` / `unbound` / `pending`（有有效验证码，包括换绑中）/ `bound`；另有 `status`（`member_status`）、`badge_label`/`badge_class`（未启用 `text-bg-warning`，同 AA 自己的 Disabled；待验证蓝；已启用绿；冲突 / 已被占用红。有绑定时标签显示现在绑定的状态，换绑中也一样；冲突 / 已被占用的红标签在已绑定和待验证两种视图里都配有 `#qqbot-problem` 红色说明）、`groups`（`groups_for_user` 按固定群、身份组小群分组；只在待验证、或已绑定且没有冲突时查询）、`rules_text`、群名片前缀拆分与长度提示、会话里的验证码（与有效验证码的哈希一致才显示）、`minutes_left`、`card`/`card_shortened`、`cooldown_ends`/`cooldown_left`（还要等多久，`core.bindings.format_remaining`；卡片只显示剩余时间，不显示钟点：AA 按 `TIME_ZONE`（通常 UTC）显示时间，成员看的是北京时间）/`cooldown_hours`、`is_manager`（`has_perm("qqbot.manage")`）。每次打开服务页都会执行：查询次数固定，不随群数量增长（有测试）。会话里的验证码已失效时从会话删除，并在卡片里提示一次（`#qqbot-stale`）、把上次填的内容预填回表单：未绑定时预填绑定表单，换绑时展开「换绑」小表单（`open_panel="rebind"`）并预填新 QQ。
+- 操作结果（`result`）：POST 视图把 `{level, text, ok, panel, qq, nickname, at}` 存在会话 `qqbot_result` 里，`card_context` 取出后删除（只显示一次；超过 `RESULT_MAX_AGE` 秒、或格式不对的丢弃），卡片在正文最上面用 alert 显示（`#qqbot-result`，success / info / warning / danger）。**不用 Django messages**：AA 把它们显示在整排服务卡片的上方，卡片不在第一排时（手机、较窄的笔记本），跳到 `#qqbot` 后提示条在屏幕外。操作失败（`ok` 为假）时，`panel` 指明刚才用的表单：未绑定视图预填绑定表单的 QQ 和昵称；已绑定视图展开对应的小表单（`open_panel` 为 `nickname` / `rebind` / `unbind`，加 `show` 类，切换按钮 `aria-expanded="true"`），并预填刚才填的昵称或新 QQ。填过的内容只显示在本人的卡片里，照常转义。
+- 卡片模板 `qqbot/service_ctrl.html`：独立的 `<div class="card mx-2 mb-3 …" id="qqbot">`（不继承 `services_ctrl_base.html`，那个模板把文字居中、宽度也放不下表单），宽 `26rem`、`max-width: calc(100% - 1rem)`；标题栏（QQ 图标 + 标题 + 状态徽章）、正文、页脚按钮。卡片内所有 DOM id 以 `qqbot-` 开头且唯一。
+  - 未绑定：一句说明；表单 POST 到 `member_submit`：群名片前缀（`[ticker] 角色名 - `，只读）+ 昵称输入框的 input-group、QQ 输入框、「绑定」按钮、小字提示；下面用小字显示入群须知（`Config.rules_text`，**转义后**把换行转成 `<br>`）。
+  - 待验证：验证码（大号等宽字体）或「验证码只在生成它的浏览器里显示，请点重新生成」、剩余分钟数、3 步说明、可申请的群；页脚「重新生成」（POST `member_submit`，`regenerate=1`）和「取消」（POST `member_code_cancel`）。
+  - 已绑定：打码的 QQ 与状态、群名片、可加入的群（冲突 / 已被占用时不显示群号，改为红色提示「请联系 QQ 管理员」）、入群须知；页脚「改昵称」「换绑」「解绑」用 Bootstrap collapse 在卡片里展开小表单（`data-bs-parent`，一次只开一个）；没有 JavaScript 时 `<noscript>` 样式把三个小表单全部显示、隐藏切换按钮。解绑表单必须勾选 `confirm` 复选框（`required`）。
+  - 管理员（`qqbot.manage`）在页脚多一个「QQ 管理」按钮，链接 `manage_index`。
+  - 主题（卡片和管理页、`base.html` 都适用）：只用 Bootstrap 组件类（alert、badge、btn、list-group、form）和 `text-body-secondary`。AA 的 darkly 主题没有设置 `data-bs-theme="dark"`，Bootstrap 根变量仍是浅色值：`bg-body-tertiary`、`bg-body-secondary`、`text-*-emphasis` 会变成浅底或深褐色字；它的 secondary 色 `#444` 与卡片标题栏、页脚同色。所以禁止这些类以及 `bg-light`、`bg-white`、`table-light`、`alert-light`、`text-dark`、`btn-light`、`*-secondary`（`text-body-secondary` 除外）、`btn-outline-secondary`、`text-bg-light` 和固定颜色；有测试检查 `qqbot/templates/qqbot/` 下的所有模板（包括 `{% if %}` 里写的类）。管理页的中性按钮（「清除」「返回」「恢复自动群名片」）用 `btn-info`，提示用 `text-danger` / `text-bg-warning` / `text-bg-info` / `text-bg-primary`。
+- `member_urls.urlpatterns`（URL 名不变，旧链接继续可用）：`""` → `my_qq`（登录 + 权限保护，只重定向到服务页卡片）、`submit/`、`code/cancel/`、`nickname/`（只接受 POST）、`unbind/`（POST 且勾选 `confirm` 才解绑；没勾选时提示「请先勾选「我确认要解除绑定」……」；GET 重定向回卡片）。
+- 所有视图：`@login_required` + `@permission_required("qqbot.basic_access", raise_exception=True)`，修改操作只接受 POST。操作完成后一律重定向到 `reverse("services:services") + "#qqbot"`，结果显示在卡片里（见上面的 `result`），不写 Django messages。卡片设 `scroll-margin-top: 1rem`（AA 的内容栏本身在顶栏下面，不需要更多）。没有主角色时 POST 只重定向，卡片本身会说明。
+- 菜单项（`auth_hooks.QQBotMenuItem`）：文字「QQ 管理」，链接 `manage_index`，**只对有 `qqbot.manage` 的人显示**；普通成员没有菜单项（用 AA 自带的「服务」菜单）。`base.html` 只给管理页用：没有「我的 QQ」标签；有 `basic_access` 的管理员在顶部看到回到服务页卡片的小链接。
+- QQ 输入框不能设比 `SubmitForm` 更短的 `maxlength`（浏览器会静默截掉粘贴内容的末位，变成另一个合法 QQ）。
 
 ## 6. 管理页面
 
@@ -205,5 +210,5 @@ def evaluate_many(groups, qqs, now=None, config=None) -> dict[str, dict[int, Dec
 2. API 视图匿名、无签名请求得到 **401 JSON**，不是 302。
 3. 模板里不对外部数据使用 `|safe`（昵称、名片、角色名、群名、说明、入群须知都是外部数据）。
 4. 修改操作只接受 POST 并校验 CSRF（API 除外）。
-5. 不向成员页面泄露别人的 QQ 或角色信息。
+5. 不向成员（服务页卡片）泄露别人的 QQ 或角色信息。
 6. API 响应中不包含 AA 用户 id、角色 id 等内部标识。

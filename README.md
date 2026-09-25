@@ -29,14 +29,14 @@
 
 **成员**（有「QQ 绑定 - 成员」权限的人）：
 
-- 在 AA 的「服务」页和左侧菜单里看到「QQ 绑定」；
+- 所有操作都在 AA「服务」页（左侧菜单「服务」）的「QQ 绑定」卡片里完成，不用去别的页面；
 - 填写自己的 QQ 号和昵称：
   - **已经在群里的老成员**：填完马上生效，不用验证；
   - **新成员**：会拿到一个验证码（例如 `QQ-7KXM2P`），申请入群时把验证码填在「验证信息」里，机器人看到后自动通过；
 - 看到自己有资格加入的群；
-- 修改昵称、换绑、解绑。
+- 在卡片里修改昵称、换绑、解绑（点卡片底部的按钮，就地展开小表单）。
 
-**QQ 管理员**（有「QQ 绑定 - 管理员」权限的人），全部在网页前台完成，不用进 Django 后台：
+**QQ 管理员**（有「QQ 绑定 - 管理员」权限的人）在左侧菜单多一个「QQ 管理」，全部在网页前台完成，不用进 Django 后台：
 
 - 添加、修改、停用 QQ 群，分「固定群」（所有成员都能进）和「身份组小群」（只有指定 AA 组的人能进）；
 - 查看所有绑定，修改某人的群名片，确认绑定，强制解绑；
@@ -49,17 +49,23 @@
 
 ### 截图（演示数据）
 
-| 服务页卡片 | 绑定前 | 新成员：等待验证 |
+| 服务页里的 QQ 绑定卡片 | 卡片：绑定前 | 卡片：新成员等待验证 |
 |---|---|---|
 | ![服务页卡片](docs/screenshots/01-services-card.png) | ![绑定前](docs/screenshots/02-member-unbound.png) | ![等待验证](docs/screenshots/03-member-pending.png) |
 
-| 已绑定 | 冲突 | 管理：已绑定成员 |
+| 卡片：已绑定 | 卡片：冲突 | 管理：已绑定成员 |
 |---|---|---|
 | ![已绑定](docs/screenshots/04-member-bound.png) | ![冲突](docs/screenshots/06-member-conflict.png) | ![已绑定成员](docs/screenshots/07-manage-bindings.png) |
 
 | 管理：QQ 群 | 管理：待处理 | 管理：设置 |
 |---|---|---|
 | ![QQ 群](docs/screenshots/08-manage-groups.png) | ![待处理](docs/screenshots/10-manage-pending.png) | ![设置](docs/screenshots/11-manage-settings.png) |
+
+深色主题（Darkly）下的卡片：
+
+| 未绑定 | 等待验证 | 已绑定（管理员） | 冲突 |
+|---|---|---|---|
+| ![深色-未绑定](docs/screenshots/cards/card-dark-unbound.png) | ![深色-等待验证](docs/screenshots/cards/card-dark-pending.png) | ![深色-已绑定](docs/screenshots/cards/card-dark-manager-verified.png) | ![深色-冲突](docs/screenshots/cards/card-dark-conflict.png) |
 
 截图里的群号、QQ 号和角色都是虚构的演示数据。
 
@@ -208,8 +214,8 @@ python -c "import secrets; print(secrets.token_urlsafe(48))"
 
 | 页面 | 地址 | 谁能看 |
 |---|---|---|
-| 我的 QQ（绑定、换绑、解绑） | 左侧菜单「QQ 绑定」，或「服务」页里的 QQ 卡片，地址 `/qqbot/` | 成员 |
-| QQ 管理（群、已绑定成员、待处理、设置、操作记录） | 在「QQ 绑定」页顶部点「QQ 管理」标签，地址 `/qqbot/manage/`。只有管理员权限、没有成员权限的人（例如不在 Member 状态的管理员），点左侧菜单「QQ 绑定」会直接进入这里 | QQ 管理员 |
+| QQ 绑定卡片（绑定、验证码、群号、改昵称、换绑、解绑） | 左侧菜单「服务」→「QQ 绑定」卡片，地址 `/services/`。成员没有单独的页面，也没有单独的菜单项；旧地址 `/qqbot/` 会自动跳到这张卡片 | 成员 |
+| QQ 管理（群、已绑定成员、待处理、设置、操作记录） | 左侧菜单「QQ 管理」（只有管理员看得到），或 QQ 绑定卡片底部的「QQ 管理」按钮，地址 `/qqbot/manage/` | QQ 管理员 |
 | Django 后台 | `/admin/` 里的「QQ 绑定」 | 超级管理员（绑定和操作记录在后台只能看不能改，改动请走前台） |
 
 装好之后的第一件事：QQ 管理员打开「QQ 管理」→「QQ 群」，把要管理的群一个个加进去。

@@ -79,7 +79,8 @@ def _invalidate_codes(user, now) -> int:
     ).update(invalidated_at=now)
 
 
-def _format_remaining(delta: timedelta) -> str:
+def format_remaining(delta: timedelta) -> str:
+    """``delta`` for members, rounded up: "7 小时 54 分钟", "3 小时", "5 分钟"."""
     minutes = max(1, int((delta.total_seconds() + 59) // 60))
     hours, minutes = divmod(minutes, 60)
     if hours and minutes:
@@ -223,7 +224,7 @@ def submit(user, qq, nickname, now=None) -> SubmitResult:
                 return SubmitResult(
                     False,
                     "cooldown",
-                    f"换绑太频繁，请在 {_format_remaining(remaining)}后再试。",
+                    f"换绑太频繁，请在 {format_remaining(remaining)}后再试。",
                     retry_after=remaining,
                 )
 
