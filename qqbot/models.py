@@ -1,6 +1,10 @@
 """Data model for aa-qqbot.
 
 See DESIGN.md (Chinese, owner-facing) and docs/SPEC.md (implementation spec).
+
+aa-qqbot 的数据模型。
+
+详见 DESIGN.md（中文，写给站长看的）和 docs/SPEC.md（实现规格）。
 """
 
 import re
@@ -14,6 +18,7 @@ from django.db.models import F, Q
 QQ_RE = re.compile(r"^[1-9][0-9]{4,10}$")
 
 # Full-width digits -> ASCII digits, used when normalizing user input.
+# 全角数字 -> 半角 ASCII 数字，规范化用户输入时使用。
 _FULLWIDTH_DIGITS = str.maketrans("０１２３４５６７８９", "0123456789")
 
 
@@ -23,6 +28,11 @@ def normalize_qq(value) -> str:
     Accepts ints and strings; strips whitespace and converts full-width
     digits. Returns ``""`` when the value is not a valid 5-11 digit number
     (leading zero not allowed).
+
+    把 QQ 号 / 群号规范成标准的 ASCII 数字字符串。
+
+    接受整数和字符串；会去掉空白，并把全角数字转成半角。如果不是合法的
+    5–11 位数字（不能以 0 开头），返回 ``""``。
     """
     if value is None or isinstance(value, bool):
         return ""
@@ -40,7 +50,10 @@ def validate_qq(value):
 
 
 class General(models.Model):
-    """Unmanaged model that only carries this app's permissions."""
+    """Unmanaged model that only carries this app's permissions.
+
+    不建表的模型（managed = False），只用来挂本插件的权限。
+    """
 
     class Meta:
         managed = False
@@ -52,7 +65,10 @@ class General(models.Model):
 
 
 class Config(models.Model):
-    """Singleton with settings editable by QQ managers on the front end."""
+    """Singleton with settings editable by QQ managers on the front end.
+
+    单例设置（只有一行），QQ 管理员可以在前台修改。
+    """
 
     DEFAULT_RULES = (
         "加入联盟 QQ 群即表示你同意遵守群规，入群后请认真阅读群公告。\n"
@@ -110,7 +126,10 @@ class Config(models.Model):
 
 
 class QQGroup(models.Model):
-    """A QQ group managed by the bot and shown to eligible members."""
+    """A QQ group managed by the bot and shown to eligible members.
+
+    由机器人管理、展示给符合条件的成员的 QQ 群。
+    """
 
     class Kind(models.TextChoices):
         FIXED = "fixed", "固定群"
@@ -130,6 +149,7 @@ class QQGroup(models.Model):
     sort_order = models.PositiveIntegerField("排序", default=100)
     is_active = models.BooleanField("启用", default=True)
     # Set when the bot reports a complete member list for this group.
+    # 机器人上报该群完整的群成员名单时更新。
     last_roster_at = models.DateTimeField("最近一次名单上报", null=True, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
@@ -155,6 +175,15 @@ class Binding(models.Model):
     trusted binding for the same QQ, which is a conflict for managers to
     resolve. Pending (not yet verified) submissions live in :class:`BindCode`,
     not here.
+
+    AA 用户绑定的那一个 QQ 号（DECISIONS.md #6：每个账号只能绑一个）。
+
+    ``verified``（已验证）的绑定独占这个 QQ：已验证时 ``verified_qq`` 与
+    ``qq`` 相同，否则为 NULL，并且这一列带普通的唯一索引。（带条件的
+    ``UniqueConstraint`` 需要部分索引，而 AllianceAuth 常用的 MySQL/MariaDB
+    不支持部分索引，Django 在那里会悄悄跳过它。）``trusted``（老成员免验证）
+    的绑定可能和另一个同 QQ 的 trusted 绑定撞在一起，这算冲突，由管理员处理。
+    还没验证的提交放在 :class:`BindCode` 里，不在这里。
     """
 
     class Status(models.TextChoices):
@@ -178,12 +207,17 @@ class Binding(models.Model):
         "管理员指定的群名片", max_length=60, blank=True, help_text="留空则按设置里的格式自动生成。"
     )
     # Last time the member changed their QQ (for the rebind cooldown).
+    # 成员最近一次更换 QQ 的时间（用于换绑冷却）。
     qq_changed_at = models.DateTimeField(null=True, blank=True)
     # Hash of the last computed per-group decisions + card; used by
     # reconciliation to emit events only when something actually changed.
+    # 上次算出的各群判断结果 + 群名片的哈希；对账时用它来判断，
+    # 只有真的有变化才发事件。
     fingerprint = models.CharField(max_length=64, blank=True, default="")
     # == qq while status is verified, NULL otherwise (kept in sync by save()).
     # Unique, so a verified QQ has one owner on every database backend.
+    # 状态为已验证时等于 qq，否则为 NULL（由 save() 保持同步）。
+    # 这一列唯一，所以不管用哪种数据库，一个已验证的 QQ 只会属于一个人。
     verified_qq = models.CharField(
         max_length=11, null=True, blank=True, unique=True, editable=False
     )
@@ -221,6 +255,11 @@ class Lock(models.Model):
     Users and QQ numbers are hashed onto a fixed set of rows that the
     migration creates, so taking a lock never inserts anything. See
     ``core/locks.py`` for the lock order.
+
+    ``qqbot.core.locks`` 当作互斥锁用的行（``SELECT ... FOR UPDATE``）。
+
+    用户和 QQ 号会被哈希到迁移预先建好的一组固定行上，所以加锁时不会插入
+    任何数据。加锁顺序见 ``core/locks.py``。
     """
 
     id = models.PositiveIntegerField(primary_key=True)
@@ -233,6 +272,10 @@ class BindCode(models.Model):
     """One-time verification code for binding ``qq`` to ``user``.
 
     Only an HMAC of the code is stored. A user has at most one live code.
+
+    把 ``qq`` 绑定到 ``user`` 用的一次性验证码。
+
+    数据库里只存验证码的 HMAC。每个用户最多只有一个有效的验证码。
     """
 
     user = models.ForeignKey(User, on_delete=models.CASCADE, related_name="qqbot_codes")
@@ -254,7 +297,10 @@ class BindCode(models.Model):
 
 
 class RosterEntry(models.Model):
-    """A QQ number seen in the latest complete member list of a group."""
+    """A QQ number seen in the latest complete member list of a group.
+
+    在某个群最新一份完整的群成员名单里出现过的 QQ 号。
+    """
 
     group = models.ForeignKey(QQGroup, on_delete=models.CASCADE, related_name="roster")
     qq = models.CharField(max_length=11, db_index=True)
@@ -268,7 +314,10 @@ class RosterEntry(models.Model):
 
 
 class Event(models.Model):
-    """Outbox of changes the bot polls (``events`` API, cursor = id)."""
+    """Outbox of changes the bot polls (``events`` API, cursor = id).
+
+    变更发件箱，机器人会来轮询（``events`` 接口，游标 = id）。
+    """
 
     class Kind(models.TextChoices):
         RECHECK = "recheck", "复查该 QQ"
@@ -286,7 +335,10 @@ class Event(models.Model):
 
 
 class AuditLog(models.Model):
-    """Who did what to which QQ, and when."""
+    """Who did what to which QQ, and when.
+
+    操作记录：谁在什么时候对哪个 QQ 做了什么。
+    """
 
     class Action(models.TextChoices):
         BIND = "bind", "绑定"

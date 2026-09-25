@@ -1,3 +1,6 @@
-"""QQ group membership gate for Alliance Auth."""
+"""QQ group membership gate for Alliance Auth.
 
-__version__ = "1.0.0b1"
+Alliance Auth 的 QQ 群入群资格把关插件。
+"""
+
+__version__ = "1.0.0b2"

@@ -1,4 +1,7 @@
-"""``python manage.py qqbot_reconcile``: run the daily reconciliation now."""
+"""``python manage.py qqbot_reconcile``: run the daily reconciliation now.
+
+``python manage.py qqbot_reconcile``：立即执行一次每日对账。
+"""
 
 from django.core.management.base import BaseCommand
 

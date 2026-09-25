@@ -3,9 +3,16 @@ The "QQ 绑定" card on AA's services page: the whole member UI lives here
 (DECISIONS.md #18; DESIGN.md 4.1). Context: views.member.card_context plus
 service_name. `view` is one of no_main / unbound / pending / bound.
 
+AA 服务页上的“QQ 绑定”卡片：成员用到的全部界面都在这里
+（DECISIONS.md #18；DESIGN.md 4.1）。上下文：views.member.card_context 再加上
+service_name。`view` 取值为 no_main / unbound / pending / bound 之一。
+
 A standalone card instead of services/services_ctrl_base.html (which centres
 everything and is too narrow for forms), with the same outer classes so it
 sits in AA's flex row.
+
+这里没有套用 services/services_ctrl_base.html（它把所有内容居中，宽度也放不下表单），
+而是一张独立的卡片；外层 class 和它一样，所以仍然能排进 AA 的 flex 行。
 
 Theme rules (AA 5 flatly and darkly): Bootstrap components (alert, badge,
 btn, list-group, card, form) and text-body-secondary only. AA's darkly keeps
@@ -15,14 +22,31 @@ text-*-emphasis would come out light-on-dark, and its "secondary" colour
 vanish there). Do not use them, nor bg-light / bg-white / text-dark /
 *-light classes or fixed colours (checked by test_service_hook).
 
+主题规则（AA 5 的 flatly 和 darkly 主题）：只用 Bootstrap 组件（alert、badge、
+btn、list-group、card、form）和 text-body-secondary。AA 的 darkly 保留了
+Bootstrap *浅色* 的根变量，所以 bg-body-tertiary / bg-body-secondary /
+text-*-emphasis 在深色页面上会显示成浅色；而且它的 "secondary" 颜色（深灰）
+和卡片页头 / 页脚的颜色一样（btn-secondary、text-bg-secondary 在那里会看不见）。
+不要用它们，也不要用 bg-light / bg-white / text-dark / *-light 这类 class
+或固定颜色（由 test_service_hook 检查）。
+
 The action panels (改昵称 / 换绑 / 解绑) are Bootstrap collapses toggled
 from the footer; without JavaScript the <noscript> rule shows them all and
 hides the toggles. `open_panel` names the one to show open (a failed action
 or a stale re-bind code). All ids are prefixed "qqbot-".
 
+操作面板（改昵称 / 换绑 / 解绑）是 Bootstrap 的折叠面板（collapse），由页脚的按钮展开；
+没有 JavaScript 时，<noscript> 里的样式规则会把它们全部显示出来，并隐藏展开按钮。
+`open_panel` 指定哪一个默认展开（上次操作失败，或换绑验证码已失效时）。
+所有 id 都以 "qqbot-" 开头。
+
 The outcome of the last action (`result`) is shown at the top of the card
 body, not as an AA message: those sit above the whole row of cards and are
 off-screen after the jump to #qqbot when this card is not in the first row.
+
+上一次操作的结果（`result`）显示在卡片正文顶部，而不是用 AA 的消息提示：
+AA 的消息显示在整排卡片的上方，如果这张卡片不在第一排，跳转到 #qqbot
+之后就看不到了。
 {% endcomment %}
 <div class="card mx-2 mb-3 text-start align-self-start" id="qqbot"
      style="width: 26rem; max-width: calc(100% - 1rem); min-height: 18rem; scroll-margin-top: 1rem;">
@@ -51,14 +75,14 @@ off-screen after the jump to #qqbot when this card is not in the first row.
         {% endif %}
 
         {% if view == "no_main" %}
-            {# ---------------- no main character ---------------- #}
+            {# ---------------- no main character / 没有主角色 ---------------- #}
             <div class="alert alert-warning mb-0">
                 <i class="fa-solid fa-circle-info fa-fw"></i>
                 你还没有设置主角色。请先在 AA 首页添加角色并设为主角色，然后再来绑定 QQ。
             </div>
 
         {% elif view == "unbound" %}
-            {# ---------------- not bound: bind form ---------------- #}
+            {# ---------------- not bound: bind form / 未绑定：绑定表单 ---------------- #}
             <p class="card-text">绑定后可以加入联盟 QQ 群。</p>
             <form method="post" action="{% url 'qqbot:member_submit' %}" id="qqbot-bind-form">
                 {% csrf_token %}
@@ -80,13 +104,13 @@ off-screen after the jump to #qqbot when this card is not in the first row.
             {% include "qqbot/member/_rules.html" %}
 
         {% elif view == "pending" %}
-            {# ---------------- pending: verification code ---------------- #}
+            {# ---------------- pending: verification code / 待验证：验证码 ---------------- #}
             {% if binding %}
                 <p class="card-text small text-body-secondary mb-2">
                     现在绑定的 QQ：<span class="font-monospace">{{ status.masked_qq }}</span>。新的 QQ 验证通过之前，现在的绑定保持不变。
                 </p>
                 {% if status.has_problem %}
-                    {# The red header badge is about the current QQ: explain it here too. #}
+                    {# The red header badge is about the current QQ: explain it here too. / 页头的红色徽章说的是当前 QQ，这里也解释一下。 #}
                     <div class="alert alert-danger py-2" id="qqbot-problem">
                         <div class="fw-bold">现在的 QQ：{{ status.state_label }}</div>
                         {% if status.state == "conflict" %}
@@ -132,7 +156,7 @@ off-screen after the jump to #qqbot when this card is not in the first row.
             {% include "qqbot/member/_rules.html" %}
 
         {% else %}
-            {# ---------------- bound ---------------- #}
+            {# ---------------- bound / 已绑定 ---------------- #}
             <p class="card-text mb-2">
                 已绑定 QQ：<strong class="font-monospace">{{ status.masked_qq }}</strong>
                 {% if not status.has_problem %}<span class="text-body-secondary">（{{ status.state_label }}）</span>{% endif %}

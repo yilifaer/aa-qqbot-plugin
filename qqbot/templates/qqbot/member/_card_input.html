@@ -6,6 +6,13 @@ nick_room_cjk / nick_room_ascii (None: every nickname fits), card_max_bytes;
 plus input_id (unique on the services page).
 The prefix wraps (text-wrap) and the input keeps a minimum width, so long
 character names still fit in the narrow card.
+
+带群名片前缀的昵称输入框，用在服务页的 QQ 绑定卡片里（绑定表单和“改昵称”）。
+上下文（views.member.card_context）：card_before、card_after、nick_in_card、
+initial_nickname、nickname_help、nickname_max_length、
+nick_room_cjk / nick_room_ascii（None 表示任何昵称都放得下）、card_max_bytes；
+另外还有 input_id（在服务页上必须唯一）。
+前缀可以折行（text-wrap），输入框保持一个最小宽度，所以角色名很长时也能放进窄卡片。
 {% endcomment %}
 <label for="{{ input_id }}" class="form-label mb-1">群名片（前面自动生成，只填昵称）</label>
 {% if nick_in_card %}

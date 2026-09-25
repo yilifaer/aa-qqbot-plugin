@@ -1,5 +1,7 @@
 {% comment %}
 Pagination links. Context: page (a Django Page), querystring (GET params without "page").
+
+分页链接。上下文：page（Django 的 Page 对象）、querystring（去掉 "page" 之后的 GET 参数）。
 {% endcomment %}
 {% if page.paginator.num_pages > 1 %}
     <nav aria-label="分页">
