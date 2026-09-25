@@ -1,0 +1,121 @@
+name: tests
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  sqlite:
+    name: py${{ matrix.python }} / AA ${{ matrix.aa-label }} / SQLite
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python: ["3.10", "3.11", "3.12", "3.13"]
+        aa: ["aa52", "aa5"]
+        include:
+          - aa: aa52
+            aa-label: "5.2.*"
+          - aa: aa5
+            aa-label: "latest 5.x"
+    services:
+      redis:
+        image: redis:7
+        ports: ["6379:6379"]
+        options: >-
+          --health-cmd "redis-cli ping" --health-interval 5s
+          --health-timeout 3s --health-retries 10
+    env:
+      QQBOT_TEST_REDIS: redis://127.0.0.1:6379/15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python }}
+      - name: Install MySQL client headers (needed to build mysqlclient)
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y default-libmysqlclient-dev build-essential pkg-config
+      - run: python -m pip install --upgrade pip tox
+      - run: tox -e py-${{ matrix.aa }}
+
+  mariadb:
+    name: py3.12 / AA latest 5.x / MariaDB
+    runs-on: ubuntu-latest
+    services:
+      redis:
+        image: redis:7
+        ports: ["6379:6379"]
+        options: >-
+          --health-cmd "redis-cli ping" --health-interval 5s
+          --health-timeout 3s --health-retries 10
+      mariadb:
+        image: mariadb:10.11
+        env:
+          MARIADB_ROOT_PASSWORD: root
+          # manage.py makemigrations runs AA's system checks, which connect
+          # to the configured database (QQBOT_DB_NAME, default "qqbot").
+          MARIADB_DATABASE: qqbot
+        ports: ["3306:3306"]
+        options: >-
+          --health-cmd "healthcheck.sh --connect --innodb_initialized"
+          --health-interval 5s --health-timeout 5s --health-retries 20
+    env:
+      QQBOT_TEST_REDIS: redis://127.0.0.1:6379/15
+      QQBOT_DB_HOST: 127.0.0.1
+      QQBOT_DB_PORT: "3306"
+      QQBOT_DB_USER: root
+      QQBOT_DB_PASSWORD: root
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install MySQL client headers (needed to build mysqlclient)
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y default-libmysqlclient-dev build-essential pkg-config
+      - run: python -m pip install --upgrade pip tox
+      # Includes qqbot/tests/test_core_concurrency.py (skipped on SQLite).
+      - run: tox -e py-aa5-mysql
+
+  postgres:
+    name: py3.12 / AA latest 5.x / PostgreSQL
+    runs-on: ubuntu-latest
+    services:
+      redis:
+        image: redis:7
+        ports: ["6379:6379"]
+        options: >-
+          --health-cmd "redis-cli ping" --health-interval 5s
+          --health-timeout 3s --health-retries 10
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: qqbot
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd pg_isready --health-interval 5s
+          --health-timeout 5s --health-retries 20
+    env:
+      QQBOT_TEST_REDIS: redis://127.0.0.1:6379/15
+      QQBOT_DB_HOST: 127.0.0.1
+      QQBOT_DB_PORT: "5432"
+      QQBOT_DB_USER: postgres
+      QQBOT_DB_PASSWORD: postgres
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install MySQL client headers (needed to build mysqlclient)
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y default-libmysqlclient-dev build-essential pkg-config
+      - run: python -m pip install --upgrade pip tox
+      # Includes qqbot/tests/test_core_concurrency.py (skipped on SQLite).
+      - run: tox -e py-aa5-postgres

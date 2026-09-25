@@ -1,0 +1,32 @@
+{% comment %}
+Nickname input with the group card prefix, used by the services card
+(bind form and "改昵称"). Context (views.member.card_context): card_before,
+card_after, nick_in_card, initial_nickname, nickname_help, nickname_max_length,
+nick_room_cjk / nick_room_ascii (None: every nickname fits), card_max_bytes;
+plus input_id (unique on the services page).
+The prefix wraps (text-wrap) and the input keeps a minimum width, so long
+character names still fit in the narrow card.
+{% endcomment %}
+<label for="{{ input_id }}" class="form-label mb-1">群名片（前面自动生成，只填昵称）</label>
+{% if nick_in_card %}
+    <div class="input-group">
+        {% if card_before %}<span class="input-group-text text-wrap text-break text-start">{{ card_before }}</span>{% endif %}
+        <input type="text" name="nickname" id="{{ input_id }}" class="form-control" style="min-width: 7rem;"
+               maxlength="{{ nickname_max_length }}" required placeholder="你的昵称" value="{{ initial_nickname }}">
+        {% if card_after %}<span class="input-group-text text-wrap text-break text-start">{{ card_after }}</span>{% endif %}
+    </div>
+{% else %}
+    <p class="mb-1 text-break">{{ card_before }}</p>
+    <input type="text" name="nickname" id="{{ input_id }}" class="form-control"
+           maxlength="{{ nickname_max_length }}" required placeholder="你的昵称" value="{{ initial_nickname }}">
+{% endif %}
+<div class="form-text">
+    军团简称和角色名来自你的主角色。昵称{{ nickname_help }}
+</div>
+{% if nick_room_cjk is not None %}
+    <div class="form-text">
+        <i class="fa-solid fa-circle-info fa-fw text-warning"></i>
+        你的角色名比较长。QQ 群名片最长 {{ card_max_bytes }} 个字节（一个汉字算 3 个字节），
+        {% if nick_room_cjk %}昵称最多写 {{ nick_room_cjk }} 个汉字（或 {{ nick_room_ascii }} 个英文字母、数字）才能完整显示角色名；{% endif %}再长的话，角色名会被自动缩短。
+    </div>
+{% endif %}

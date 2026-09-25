@@ -1,0 +1,37 @@
+{% extends "qqbot/manage/_base.html" %}
+{% load django_bootstrap5 %}
+
+{% block qqbot_title %}设置 - QQ 管理{% endblock qqbot_title %}
+
+{% block manage_body %}
+    <div class="card mb-3">
+        <div class="card-header fw-bold">设置</div>
+        <div class="card-body">
+            {% if form.errors %}
+                <div class="alert alert-danger">没有保存：请按照下面红色的提示修改后再保存。</div>
+            {% endif %}
+
+            <div class="border rounded p-3 mb-3" id="qqbot-settings-help">
+                <p class="mb-1">群名片格式可以使用这些占位符（照原样写，包括大括号）：</p>
+                <ul class="mb-2">
+                    <li><code>{corp_ticker}</code> 军团简称</li>
+                    <li><code>{alliance_ticker}</code> 联盟简称</li>
+                    <li><code>{character_name}</code> 主角色名</li>
+                    <li><code>{nickname}</code> 成员填写的昵称</li>
+                </ul>
+                <p class="mb-0">
+                    按现在的格式，你自己的群名片会是：<strong id="qqbot-example-card">{{ example_card }}</strong>。
+                    群名片最长 60 字节，超长时会先缩短角色名。修改格式后，所有人的群名片会在后台重新计算，机器人随后会自动改名片。
+                </p>
+            </div>
+
+            <form method="post" novalidate>
+                {% csrf_token %}
+                {% bootstrap_form form %}
+                <button type="submit" class="btn btn-success">
+                    <i class="fa-solid fa-floppy-disk fa-fw"></i> 保存设置
+                </button>
+            </form>
+        </div>
+    </div>
+{% endblock manage_body %}

@@ -1,0 +1,86 @@
+{% extends "qqbot/manage/_base.html" %}
+
+{% block qqbot_title %}QQ 群 - QQ 管理{% endblock qqbot_title %}
+
+{% block manage_body %}
+    <div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-3">
+        <h4 class="mb-0">受管的 QQ 群</h4>
+        <a class="btn btn-success" href="{% url 'qqbot:manage_group_create' %}">
+            <i class="fa-solid fa-plus fa-fw"></i> 添加群
+        </a>
+    </div>
+
+    <p class="text-body-secondary">
+        机器人只管理这里列出并且「启用」的群。<strong>固定群</strong>所有成员都能加入；<strong>身份组小群</strong>只有所选 AA 组里的人能加入。
+    </p>
+
+    {% if rows %}
+        <div class="table-responsive">
+            <table class="table table-striped align-middle">
+                <thead>
+                    <tr>
+                        <th>群名称</th>
+                        <th>群号</th>
+                        <th>类型</th>
+                        <th>需要的 AA 组</th>
+                        <th>名单</th>
+                        <th>状态</th>
+                        <th></th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for row in rows %}
+                        {% with g=row.group %}
+                            <tr class="{% if not g.is_active %}text-body-secondary{% endif %}">
+                                <td>
+                                    <div class="fw-bold">{{ g.name }}</div>
+                                    {% if g.description %}<div class="small text-body-secondary">{{ g.description }}</div>{% endif %}
+                                </td>
+                                <td class="font-monospace">{{ g.group_id }}</td>
+                                <td>{{ g.get_kind_display }}</td>
+                                <td>
+                                    {% if g.kind == 'role' %}
+                                        {% for name in row.required %}
+                                            <span class="badge text-bg-info">{{ name }}</span>
+                                        {% empty %}
+                                            <span class="badge text-bg-danger">未选择（请编辑）</span>
+                                        {% endfor %}
+                                    {% else %}
+                                        <span class="text-body-secondary">所有成员</span>
+                                    {% endif %}
+                                </td>
+                                <td class="small">
+                                    {% if g.last_roster_at %}
+                                        {{ g.roster_count }} 人
+                                        <div class="{% if row.roster_fresh %}text-body-secondary{% else %}text-danger fw-bold{% endif %}">
+                                            {{ g.last_roster_at|date:"Y-m-d H:i" }}{% if not row.roster_fresh %}（已过期）{% endif %}
+                                        </div>
+                                    {% else %}
+                                        <span class="text-body-secondary">机器人还没上报</span>
+                                    {% endif %}
+                                </td>
+                                <td>
+                                    {% if g.is_active %}
+                                        <span class="badge text-bg-success">启用</span>
+                                    {% else %}
+                                        <span class="badge text-bg-warning">停用</span>
+                                    {% endif %}
+                                </td>
+                                <td class="text-end text-nowrap">
+                                    <a class="btn btn-sm btn-primary" href="{% url 'qqbot:manage_group_edit' g.pk %}">
+                                        <i class="fa-solid fa-pen fa-fw"></i> 编辑
+                                    </a>
+                                    <a class="btn btn-sm btn-outline-danger" href="{% url 'qqbot:manage_group_delete' g.pk %}">
+                                        <i class="fa-solid fa-trash fa-fw"></i> 删除
+                                    </a>
+                                </td>
+                            </tr>
+                        {% endwith %}
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    {% else %}
+        <div class="alert alert-info">还没有添加任何群。点右上角的「添加群」开始。</div>
+    {% endif %}
+{% endblock manage_body %}

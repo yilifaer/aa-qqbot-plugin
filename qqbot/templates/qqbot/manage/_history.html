@@ -1,0 +1,33 @@
+{% comment %}
+Audit rows table. Context: rows (list of dicts from views.manage._audit_row), show_qq (bool).
+{% endcomment %}
+<div class="table-responsive">
+    <table class="table table-sm table-striped align-middle">
+        <thead>
+            <tr>
+                <th>时间</th>
+                <th>操作</th>
+                {% if show_qq %}<th>QQ</th>{% endif %}
+                <th>操作人</th>
+                <th>对象账号</th>
+                <th>详情</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for row in rows %}
+                <tr>
+                    <td class="text-nowrap small">{{ row.entry.created_at|date:"Y-m-d H:i:s" }}</td>
+                    <td class="text-nowrap">{{ row.entry.get_action_display }}</td>
+                    {% if show_qq %}<td class="font-monospace">{{ row.entry.qq|default:"—" }}</td>{% endif %}
+                    <td>{{ row.actor }}</td>
+                    <td>{{ row.entry.target_name|default:"—" }}</td>
+                    <td class="small">
+                        {% for key, value in row.details %}
+                            <div><span class="text-body-secondary">{{ key }}:</span> {{ value }}</div>
+                        {% endfor %}
+                    </td>
+                </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</div>
