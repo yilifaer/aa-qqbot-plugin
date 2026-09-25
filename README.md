@@ -47,6 +47,22 @@
 **机器人**（Koishi）通过带签名的接口来问 AA，接口说明见 [`API.md`](API.md)。
 「真的把人踢出群」这个开关只在机器人那边，AA 网页上开不了，防止误操作。
 
+### 截图（演示数据）
+
+| 服务页卡片 | 绑定前 | 新成员：等待验证 |
+|---|---|---|
+| ![服务页卡片](docs/screenshots/01-services-card.png) | ![绑定前](docs/screenshots/02-member-unbound.png) | ![等待验证](docs/screenshots/03-member-pending.png) |
+
+| 已绑定 | 冲突 | 管理：已绑定成员 |
+|---|---|---|
+| ![已绑定](docs/screenshots/04-member-bound.png) | ![冲突](docs/screenshots/06-member-conflict.png) | ![已绑定成员](docs/screenshots/07-manage-bindings.png) |
+
+| 管理：QQ 群 | 管理：待处理 | 管理：设置 |
+|---|---|---|
+| ![QQ 群](docs/screenshots/08-manage-groups.png) | ![待处理](docs/screenshots/10-manage-pending.png) | ![设置](docs/screenshots/11-manage-settings.png) |
+
+截图里的群号、QQ 号和角色都是虚构的演示数据。
+
 ---
 
 ## 2. 安装（给 IT）
