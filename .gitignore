@@ -1,0 +1,17 @@
+__pycache__/
+*.py[cod]
+*.egg-info/
+build/
+dist/
+.tox/
+.venv/
+venv/
+.coverage
+htmlcov/
+testauth/*.sqlite3
+testauth/log/
+*.env
+local.py*
+koishi.yml*
+HANDOFF/
+v1-legacy-fix/

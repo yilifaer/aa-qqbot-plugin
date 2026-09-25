@@ -1,11 +1,21 @@
-from django.urls import path
-from . import views
+"""URL layout.
+
+The bot API lives in its own *nested* include. AA's ``decorate_url_patterns``
+stops (``return``) at the first excluded view of a pattern list, which would
+silently leave every later route in a flat list without login protection.
+Keeping the public views in a nested include confines that to the API list.
+Every non-public view is additionally protected by its own decorators.
+"""
+
+from django.urls import include, path
+
+from .api import urls as api_urls
+from .views import manage_urls, member_urls
 
 app_name = "qqbot"
 
 urlpatterns = [
-    path("", views.bind, name="qqbot_bind"),
-    path("ping/", views.ping, name="qqbot_ping"),
-    path("api/bind/", views.bind_api, name="qqbot_bind_api"),
-    path("manage/", views.binding_list, name="qqbot_manage"),
+    path("", include(member_urls.urlpatterns)),
+    path("manage/", include(manage_urls.urlpatterns)),
+    path("api/v1/", include(api_urls.urlpatterns)),
 ]

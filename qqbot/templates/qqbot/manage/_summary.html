@@ -1,0 +1,30 @@
+{% comment %}
+Counts shown at the top of the bindings page. Context: summary.
+{% endcomment %}
+<div class="row g-2 mb-3" id="qqbot-summary">
+    <div class="col-6 col-md">
+        <div class="card text-center h-100"><div class="card-body py-2">
+            <div class="small text-body-secondary">已绑定</div>
+            <div class="fs-4 fw-bold">{{ summary.bound }}</div>
+            <div class="small text-body-secondary">已验证 {{ summary.verified }} · 免验证 {{ summary.trusted }}</div>
+        </div></div>
+    </div>
+    <div class="col-6 col-md">
+        <a class="card text-center h-100 text-decoration-none {% if summary.conflicts %}border-danger{% endif %}" href="{% url 'qqbot:manage_pending' %}">
+            <div class="card-body py-2">
+                <div class="small text-body-secondary">冲突的 QQ</div>
+                <div class="fs-4 fw-bold {% if summary.conflicts %}text-danger{% endif %}">{{ summary.conflicts }}</div>
+                <div class="small text-body-secondary">两个账号认领同一个 QQ</div>
+            </div>
+        </a>
+    </div>
+    <div class="col-12 col-md">
+        <a class="card text-center h-100 text-decoration-none {% if summary.unbound %}border-warning{% endif %}" href="{% url 'qqbot:manage_pending' %}#unbound">
+            <div class="card-body py-2">
+                <div class="small text-body-secondary">群里有、但没绑定的 QQ</div>
+                <div class="fs-4 fw-bold">{{ summary.unbound }}</div>
+                <div class="small text-body-secondary">来自机器人最近的巡检</div>
+            </div>
+        </a>
+    </div>
+</div>
