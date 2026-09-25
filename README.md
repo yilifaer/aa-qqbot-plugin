@@ -4,7 +4,7 @@ English | [简体中文](README.zh-CN.md)
 
 A QQ group membership plugin for Alliance Auth. Members bind their QQ number on AA's Services page. A QQ bot (Koishi, a separate project) asks AA's API who may join and stay in each group.
 
-- Members already in a group: enter your QQ number, no code needed
+- Members already in a group: enter your QQ number, no code needed (during the first 30 days after the group is added; configurable)
 - New members: get a one-time code and put it in the QQ join request
 - QQ managers handle groups, bindings and conflicts on the "QQ Admin" page in the sidebar
 

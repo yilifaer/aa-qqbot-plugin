@@ -530,7 +530,7 @@ def pending(request):
 
 
 _CONFIG_SHORT_FIELDS = ("card_format", "code_ttl_minutes", "roster_max_age_days",
-                        "rebind_cooldown_hours")
+                        "trusted_window_days", "rebind_cooldown_hours")
 
 
 @login_required
@@ -616,6 +616,7 @@ DETAIL_KEY_LABELS = {
     "card_format": _("Group nickname format"),
     "code_ttl_minutes": _("Verification code lifetime (minutes)"),
     "roster_max_age_days": _("Member list max age (days)"),
+    "trusted_window_days": _("Trusted binding window (days)"),
     "rebind_cooldown_hours": _("Change QQ cooldown (hours)"),
 }
 DETAIL_VALUE_LABELS = {

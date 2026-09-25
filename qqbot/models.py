@@ -112,6 +112,16 @@ class Config(models.Model):
             "that group no longer counts for \"Trusted (already in group)\"."
         ),
     )
+    trusted_window_days = models.PositiveSmallIntegerField(
+        _("Trusted binding window (days)"),
+        default=30,
+        validators=[MinValueValidator(0), MaxValueValidator(365)],
+        help_text=_(
+            "Members already in a group can bind without a verification code only during "
+            "this many days after the group was added here. After that, everyone uses a "
+            "code. 0 turns this off."
+        ),
+    )
     rebind_cooldown_hours = models.PositiveSmallIntegerField(
         _("Change QQ cooldown (hours)"),
         default=24,

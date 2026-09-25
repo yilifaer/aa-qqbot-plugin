@@ -150,6 +150,7 @@ class AdminTests(TestCase):
             "card_format": self.config.card_format,
             "code_ttl_minutes": self.config.code_ttl_minutes,
             "roster_max_age_days": self.config.roster_max_age_days,
+            "trusted_window_days": self.config.trusted_window_days,
             "rebind_cooldown_hours": self.config.rebind_cooldown_hours,
         }
         data.update(changes)

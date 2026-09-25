@@ -113,6 +113,46 @@ class InFreshRosterTests(TestCase):
         self.assertTrue(in_fresh_roster("11111111", now=now))
 
 
+class TrustedWindowTests(TestCase):
+    """Binding without a code only works while the group is new (decision #21)."""
+
+    def setUp(self):
+        self.group = create_group(100001)
+        put_in_roster(self.group, ["11111111"])
+
+    def _age_group(self, days):
+        QQGroup.objects.filter(pk=self.group.pk).update(created_at=timezone.now() - timedelta(days=days))
+
+    def test_within_window(self):
+        self._age_group(29)
+        self.assertTrue(in_fresh_roster("11111111"))
+
+    def test_after_window(self):
+        self._age_group(31)
+        self.assertFalse(in_fresh_roster("11111111"))
+
+    def test_window_from_config(self):
+        self._age_group(31)
+        config = Config.get_solo()
+        config.trusted_window_days = 60
+        config.save()
+        self.assertTrue(in_fresh_roster("11111111"))
+
+    def test_zero_turns_it_off(self):
+        config = Config.get_solo()
+        config.trusted_window_days = 0
+        config.save()
+        self.assertFalse(in_fresh_roster("11111111"))
+
+    def test_submit_after_window_needs_code(self):
+        from ..core import bindings
+
+        self._age_group(31)
+        user = create_member("late")
+        result = bindings.submit(user, "11111111", "Late")
+        self.assertEqual(result.outcome, "pending")
+
+
 class UnboundRosterTests(TestCase):
     def test_unbound(self):
         g1 = create_group(100001)
