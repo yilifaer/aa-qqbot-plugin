@@ -1,0 +1,20 @@
+{% comment %}
+Nickname input shown inside the group card preview.
+Context: card_before, card_after, nick_in_card, initial_nickname, nickname_help, input_id.
+{% endcomment %}
+<label for="{{ input_id }}" class="form-label fw-bold">群名片</label>
+{% if nick_in_card %}
+    <div class="input-group">
+        {% if card_before %}<span class="input-group-text">{{ card_before }}</span>{% endif %}
+        <input type="text" name="nickname" id="{{ input_id }}" class="form-control"
+               maxlength="12" required placeholder="你的昵称" value="{{ initial_nickname }}">
+        {% if card_after %}<span class="input-group-text">{{ card_after }}</span>{% endif %}
+    </div>
+{% else %}
+    <p class="mb-1">{{ card_before }}</p>
+    <input type="text" name="nickname" id="{{ input_id }}" class="form-control"
+           maxlength="12" required placeholder="你的昵称" value="{{ initial_nickname }}">
+{% endif %}
+<div class="form-text">
+    前面的军团简称和角色名自动取自你的主角色，不能修改。昵称{{ nickname_help }}
+</div>

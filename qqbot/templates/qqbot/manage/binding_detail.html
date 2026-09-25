@@ -1,0 +1,139 @@
+{% extends "qqbot/manage/_base.html" %}
+{% load django_bootstrap5 %}
+
+{% block qqbot_title %}绑定详情 - QQ 管理{% endblock qqbot_title %}
+
+{% block manage_body %}
+    <p><a href="{% url 'qqbot:manage_bindings' %}"><i class="fa-solid fa-arrow-left fa-fw"></i> 返回已绑定成员</a></p>
+
+    <div class="row g-3">
+        <div class="col-lg-6">
+            <div class="card h-100">
+                <div class="card-header fw-bold">绑定信息</div>
+                <div class="card-body">
+                    <dl class="row mb-0">
+                        <dt class="col-sm-4">主角色</dt>
+                        <dd class="col-sm-8">
+                            {% if main %}{{ main.character_name }} [{{ main.corporation_ticker }}]{% if main.alliance_ticker %} &lt;{{ main.alliance_ticker }}&gt;{% endif %}{% else %}<span class="text-danger">没有主角色</span>{% endif %}
+                        </dd>
+                        <dt class="col-sm-4">AA 用户名</dt>
+                        <dd class="col-sm-8">
+                            {{ binding.user.username }}
+                            {% if not binding.user.is_active %}<span class="badge text-bg-secondary">账号已停用</span>{% endif %}
+                        </dd>
+                        <dt class="col-sm-4">QQ 号</dt>
+                        <dd class="col-sm-8 font-monospace fs-5">{{ binding.qq }}</dd>
+                        <dt class="col-sm-4">状态</dt>
+                        <dd class="col-sm-8">
+                            {% include "qqbot/manage/_status_badge.html" with b=binding conflict=conflict shadowed=other_verified %}
+                            {% if binding.status == 'verified' %}
+                                <div class="small text-body-secondary">
+                                    {{ binding.get_verified_via_display }}{% if binding.verified_at %}，{{ binding.verified_at|date:"Y-m-d H:i" }}{% endif %}
+                                </div>
+                            {% endif %}
+                        </dd>
+                        <dt class="col-sm-4">昵称</dt>
+                        <dd class="col-sm-8">{{ binding.nickname }}</dd>
+                        <dt class="col-sm-4">绑定时间</dt>
+                        <dd class="col-sm-8">{{ binding.created_at|date:"Y-m-d H:i" }}</dd>
+                    </dl>
+                </div>
+                <div class="card-footer d-flex flex-wrap gap-2">
+                    {% if binding.status != 'verified' %}
+                        <form method="post" action="{% url 'qqbot:manage_binding_confirm' binding.pk %}">
+                            {% csrf_token %}
+                            <button type="submit" class="btn btn-success" {% if other_verified %}disabled{% endif %}>
+                                <i class="fa-solid fa-circle-check fa-fw"></i> 确认绑定（设为已验证）
+                            </button>
+                        </form>
+                    {% endif %}
+                    <a class="btn btn-outline-danger" href="{% url 'qqbot:manage_binding_unbind' binding.pk %}">
+                        <i class="fa-solid fa-link-slash fa-fw"></i> 强制解绑
+                    </a>
+                </div>
+            </div>
+        </div>
+
+        <div class="col-lg-6">
+            <div class="card h-100">
+                <div class="card-header fw-bold">群名片</div>
+                <div class="card-body">
+                    <p class="mb-1">现在的群名片：</p>
+                    <p class="fs-5 fw-bold mb-1" id="qqbot-card">{{ card }}</p>
+                    <p class="small text-body-secondary">
+                        {{ card_bytes }} / {{ card_max }} 字节
+                        {% if binding.card_override %}· 管理员指定（自动生成的是：{{ auto_card }}）{% else %}· 按设置里的格式自动生成{% endif %}
+                    </p>
+                    <form method="post" action="{% url 'qqbot:manage_binding_card' binding.pk %}">
+                        {% csrf_token %}
+                        {% bootstrap_field card_form.card %}
+                        <div class="d-flex flex-wrap gap-2">
+                            <button type="submit" class="btn btn-primary">
+                                <i class="fa-solid fa-floppy-disk fa-fw"></i> 保存群名片
+                            </button>
+                            {% if binding.card_override %}
+                                <button type="submit" name="action" value="clear" class="btn btn-outline-secondary">
+                                    <i class="fa-solid fa-rotate-left fa-fw"></i> 恢复自动群名片
+                                </button>
+                            {% endif %}
+                        </div>
+                    </form>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    {% if others %}
+        <div class="alert alert-warning mt-3">
+            <p class="fw-bold mb-1">同一个 QQ 还被这些账号认领：</p>
+            <ul class="mb-0">
+                {% for o in others %}
+                    <li>
+                        <a href="{% url 'qqbot:manage_binding' o.pk %}">{{ o.user.username }}</a>
+                        {% if o.user.profile.main_character %}（{{ o.user.profile.main_character.character_name }}）{% endif %}
+                        —— {{ o.get_status_display }}
+                    </li>
+                {% endfor %}
+            </ul>
+        </div>
+    {% endif %}
+
+    <div class="card mt-3">
+        <div class="card-header fw-bold">各群的判定</div>
+        <div class="card-body">
+            {% if table %}
+                <div class="table-responsive">
+                    <table class="table table-sm align-middle mb-0" id="qqbot-decisions">
+                        <thead>
+                            <tr><th>群</th><th>群号</th><th>类型</th><th>结果</th><th>原因</th></tr>
+                        </thead>
+                        <tbody>
+                            {% for row in table %}
+                                <tr>
+                                    <td>{{ row.group.name }}</td>
+                                    <td class="font-monospace">{{ row.group.group_id }}</td>
+                                    <td>{{ row.group.get_kind_display }}</td>
+                                    <td><span class="badge {{ row.badge }}">{{ row.decision_label }}</span></td>
+                                    <td>{{ row.reason_label }}</td>
+                                </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            {% else %}
+                <p class="text-body-secondary mb-0">还没有启用的群。</p>
+            {% endif %}
+        </div>
+    </div>
+
+    <div class="card mt-3">
+        <div class="card-header fw-bold">最近的操作记录</div>
+        <div class="card-body">
+            {% if history %}
+                {% include "qqbot/manage/_history.html" with rows=history show_qq=True %}
+            {% else %}
+                <p class="text-body-secondary mb-0">没有记录。</p>
+            {% endif %}
+        </div>
+    </div>
+{% endblock manage_body %}

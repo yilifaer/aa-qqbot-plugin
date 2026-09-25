@@ -167,7 +167,7 @@ def submit(user, qq, nickname, now=None) -> SubmitResult:
         # Pending: the current binding stays untouched until the code is used.
         if _rate_limited(user):
             return SubmitResult(
-                False, "rate_limited", "生成验证码太频繁（每小时最多 5 次），请稍后再试。"
+                False, "rate_limited", f"生成验证码太频繁（每小时最多 {CODE_RATE_LIMIT} 次），请稍后再试。"
             )
         _invalidate_codes(user, now)
         expires_at = now + timedelta(minutes=config.code_ttl_minutes)
@@ -501,6 +501,33 @@ def conflicts() -> list[tuple[str, list[Binding]]]:
     ):
         grouped[b.qq].append(b)
     return [(qq, grouped[qq]) for qq in qqs]
+
+
+# Display states of one binding (member pages, services card).
+STATE_VERIFIED = "verified"
+STATE_TRUSTED = "trusted"
+STATE_CONFLICT = "conflict"  # other accounts claim the same QQ, none verified
+STATE_TAKEN = "taken"  # another account verified the same QQ (it wins)
+
+
+def binding_state(binding: Binding | None) -> str:
+    """Display state of ``binding``; ``""`` for no binding. Read only.
+
+    Mirrors the eligibility rules: a verified binding always wins, and two
+    or more trusted bindings of one QQ without a verified one are a conflict.
+    """
+    if binding is None:
+        return ""
+    if binding.status == Binding.Status.VERIFIED:
+        return STATE_VERIFIED
+    others = set(
+        Binding.objects.filter(qq=binding.qq).exclude(pk=binding.pk).values_list("status", flat=True)
+    )
+    if Binding.Status.VERIFIED in others:
+        return STATE_TAKEN
+    if others:
+        return STATE_CONFLICT
+    return STATE_TRUSTED
 
 
 def on_user_deleted(user) -> None:

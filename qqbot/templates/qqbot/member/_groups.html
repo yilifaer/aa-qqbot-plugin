@@ -1,0 +1,42 @@
+{% comment %}
+Eligible groups, split into fixed groups and role groups.
+Context: groups = {"fixed": [...], "role": [...]}.
+{% endcomment %}
+{% if groups.fixed %}
+    <h6 class="mt-3">固定群</h6>
+    <div class="table-responsive">
+        <table class="table table-sm align-middle mb-2">
+            <thead>
+                <tr><th>群名称</th><th>群号</th><th>说明</th></tr>
+            </thead>
+            <tbody>
+                {% for g in groups.fixed %}
+                    <tr>
+                        <td>{{ g.name }}</td>
+                        <td><span class="font-monospace fs-5 user-select-all">{{ g.group_id }}</span></td>
+                        <td class="text-body-secondary">{{ g.description }}</td>
+                    </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+{% endif %}
+{% if groups.role %}
+    <h6 class="mt-3">身份组小群</h6>
+    <div class="table-responsive">
+        <table class="table table-sm align-middle mb-2">
+            <thead>
+                <tr><th>群名称</th><th>群号</th><th>说明</th></tr>
+            </thead>
+            <tbody>
+                {% for g in groups.role %}
+                    <tr>
+                        <td>{{ g.name }}</td>
+                        <td><span class="font-monospace fs-5 user-select-all">{{ g.group_id }}</span></td>
+                        <td class="text-body-secondary">{{ g.description }}</td>
+                    </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+{% endif %}

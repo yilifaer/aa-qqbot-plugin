@@ -1,0 +1,25 @@
+{% extends "qqbot/manage/_base.html" %}
+{% load django_bootstrap5 %}
+
+{% block qqbot_title %}{% if group %}编辑群{% else %}添加群{% endif %} - QQ 管理{% endblock qqbot_title %}
+
+{% block manage_body %}
+    <div class="card mb-3">
+        <div class="card-header fw-bold">
+            {% if group %}编辑群：{{ group.name }}{% else %}添加群{% endif %}
+        </div>
+        <div class="card-body">
+            {% if form.errors %}
+                <div class="alert alert-danger">没有保存：请按照下面红色的提示修改后再保存。</div>
+            {% endif %}
+            <form method="post" novalidate>
+                {% csrf_token %}
+                {% bootstrap_form form %}
+                <button type="submit" class="btn btn-success">
+                    <i class="fa-solid fa-floppy-disk fa-fw"></i> 保存
+                </button>
+                <a class="btn btn-secondary ms-2" href="{% url 'qqbot:manage_groups' %}">返回，不保存</a>
+            </form>
+        </div>
+    </div>
+{% endblock manage_body %}

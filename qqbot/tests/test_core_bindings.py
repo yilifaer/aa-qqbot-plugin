@@ -622,6 +622,28 @@ class ConflictsTests(BaseTestCase):
         self.assertEqual({b.user.username for b in result[0][1]}, {"alice", "b"})
 
 
+class BindingStateTests(BaseTestCase):
+    def test_states(self):
+        self.assertEqual(bindings.binding_state(None), "")
+        mine = bind(self.user, "11111111", status="trusted")
+        self.assertEqual(bindings.binding_state(mine), bindings.STATE_TRUSTED)
+
+        bob = create_member("bob")
+        other = bind(bob, "11111111", status="trusted")
+        self.assertEqual(bindings.binding_state(mine), bindings.STATE_CONFLICT)
+        self.assertEqual(bindings.binding_state(other), bindings.STATE_CONFLICT)
+
+        other.status = Binding.Status.VERIFIED
+        other.save()
+        self.assertEqual(bindings.binding_state(mine), bindings.STATE_TAKEN)
+        self.assertEqual(bindings.binding_state(other), bindings.STATE_VERIFIED)
+
+    def test_one_query(self):
+        mine = bind(self.user, "11111111", status="trusted")
+        with self.assertNumQueries(1):
+            bindings.binding_state(mine)
+
+
 class UserDeletedTests(BaseTestCase):
     def test_on_user_deleted(self):
         bind(self.user, "12345678")

@@ -1,0 +1,34 @@
+{% extends "services/services_ctrl_base.html" %}
+{% comment %}
+Services page card: status badge, masked QQ, one hint line and a button to
+the member page. `username` is the masked QQ when bound, "" otherwise.
+{% endcomment %}
+
+{% block title %}
+    <i class="fa-brands fa-qq fa-fw"></i> {{ service_name }}
+{% endblock title %}
+
+{% block user %}
+    {% if username %}
+        QQ：<span class="font-monospace">{{ username }}</span>
+        {% if status.state_label %}<br><small class="text-body-secondary">{{ status.state_label }}</small>{% endif %}
+    {% endif %}
+{% endblock user %}
+
+{% block extra %}
+    {% if not has_main %}
+        <p class="card-text text-warning">请先设置主角色。</p>
+    {% elif status.has_problem %}
+        <p class="card-text text-danger">这个 QQ 有冲突，请联系 QQ 管理员。</p>
+    {% elif status.live_code %}
+        <p class="card-text text-primary">待验证：请点「管理」查看验证码。</p>
+    {% elif not status.binding %}
+        <p class="card-text text-body-secondary">还没有绑定 QQ。</p>
+    {% endif %}
+{% endblock extra %}
+
+{% block controls %}
+    <a class="btn btn-primary" href="{% url 'qqbot:my_qq' %}" title="管理">
+        <i class="fa-solid fa-gear fa-fw"></i> 管理
+    </a>
+{% endblock controls %}

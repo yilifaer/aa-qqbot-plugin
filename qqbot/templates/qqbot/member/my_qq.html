@@ -1,0 +1,216 @@
+{% extends "qqbot/base.html" %}
+{% load tz %}
+
+{% block qqbot_title %}我的 QQ{% endblock qqbot_title %}
+
+{% block qqbot_body %}
+{% if not has_main %}
+    <div class="alert alert-warning">
+        <i class="fa-solid fa-circle-info fa-fw"></i>
+        你还没有设置主角色。请先回到 AA 首页添加角色并设为主角色，然后再来绑定 QQ。
+    </div>
+{% else %}
+
+    {% if stale_code %}
+        <div class="alert alert-info">
+            你上次获取的验证码已经失效（过期或已作废）。需要的话，请在下面重新提交，获取新的验证码。
+        </div>
+    {% endif %}
+
+    {# ---------------- bound ---------------- #}
+    {% if binding %}
+        <div class="card mb-3">
+            <div class="card-header fw-bold">我的绑定</div>
+            <div class="card-body">
+                <p class="fs-5 mb-2">
+                    {% if status.has_problem %}
+                        <i class="fa-solid fa-triangle-exclamation text-warning fa-fw"></i>
+                    {% else %}
+                        <i class="fa-solid fa-circle-check text-success fa-fw"></i>
+                    {% endif %}
+                    已绑定 QQ：<strong class="font-monospace">{{ status.masked_qq }}</strong>
+                    <span class="badge {% if status.state == 'verified' %}text-bg-success{% elif status.state == 'trusted' %}text-bg-info{% else %}text-bg-danger{% endif %}">{{ status.state_label }}</span>
+                </p>
+
+                {% if status.state == 'conflict' %}
+                    <div class="alert alert-warning mb-2">
+                        这个 QQ 同时被其他账号认领了，请联系 QQ 管理员处理。处理好之前，这里暂时不显示群号。
+                    </div>
+                {% elif status.state == 'taken' %}
+                    <div class="alert alert-danger mb-2">
+                        这个 QQ 已经被其他账号验证。如果这是你的 QQ，请联系 QQ 管理员。
+                    </div>
+                {% endif %}
+
+                <p class="mb-2">我的群名片：<strong>{{ card }}</strong></p>
+
+                {% if not live and not status.has_problem %}
+                    <h5 class="mt-3">你可以加入的群</h5>
+                    {% if has_groups %}
+                        {% include "qqbot/member/_groups.html" %}
+                        <p class="form-text mb-0">在 QQ 里搜索群号，申请加入即可，机器人会自动审核。</p>
+                    {% else %}
+                        <p class="text-body-secondary mb-0">目前没有你可以加入的群。如有疑问，请联系 QQ 管理员。</p>
+                    {% endif %}
+                {% endif %}
+            </div>
+        </div>
+    {% endif %}
+
+    {# ---------------- pending (live code) ---------------- #}
+    {% if live %}
+        <div class="card border-primary mb-3">
+            <div class="card-header text-bg-primary fw-bold">等待验证</div>
+            <div class="card-body">
+                <p class="mb-2">
+                    正在验证的 QQ：<strong class="font-monospace">{{ code_qq }}</strong>，昵称：<strong>{{ code_nickname }}</strong>
+                </p>
+
+                {% if code %}
+                    <p class="mb-1">你的验证码：</p>
+                    <p class="display-6 font-monospace fw-bold user-select-all mb-2" id="qqbot-code">{{ code }}</p>
+                {% else %}
+                    <div class="alert alert-info">
+                        为了安全，验证码只在生成它的那个浏览器里显示。现在看不到验证码，请点下面的「重新生成」获取一个新的（旧的会自动作废）。
+                    </div>
+                {% endif %}
+
+                <p>
+                    有效期到 <strong id="qqbot-expires" data-expires="{{ expires_at|date:'c' }}">{{ expires_at|date:"H:i" }}</strong>（<span id="qqbot-expires-tz">{% get_current_timezone as current_tz %}{{ current_tz }} 时间</span>），还有大约 <strong>{{ minutes_left }}</strong> 分钟。
+                </p>
+                <script>
+                    // Show the expiry in the viewer's local time when the browser can.
+                    (function () {
+                        const el = document.getElementById("qqbot-expires");
+                        const d = new Date(el && el.dataset.expires);
+                        if (!el || isNaN(d.getTime())) { return; }
+                        el.textContent = d.toLocaleTimeString("zh-CN", {hour: "2-digit", minute: "2-digit"});
+                        document.getElementById("qqbot-expires-tz").textContent = "你设备上的时间";
+                    })();
+                </script>
+
+                <h5>怎么做</h5>
+                <ol class="mb-3">
+                    <li>打开 QQ，搜索下面列出的群号，点「申请加入」。</li>
+                    {% if code %}
+                        <li>在申请的「验证信息」一栏里填写验证码 <strong class="font-monospace">{{ code }}</strong>（大小写都可以）。</li>
+                    {% else %}
+                        <li>先点「重新生成」拿到验证码，再把它填在申请的「验证信息」一栏里。</li>
+                    {% endif %}
+                    <li>发送申请。机器人会自动审核，通过后你就进群了，这个页面也会显示「已验证」。</li>
+                    <li>验证码只能用一次。过期了或者看不到时，点「重新生成」。</li>
+                </ol>
+
+                <h5>可以申请的群</h5>
+                {% if has_groups %}
+                    {% include "qqbot/member/_groups.html" %}
+                {% else %}
+                    <p class="text-body-secondary">目前没有你可以申请的群。如有疑问，请联系 QQ 管理员。</p>
+                {% endif %}
+
+                <div class="mt-3">
+                    <form method="post" action="{% url 'qqbot:member_submit' %}" class="d-inline">
+                        {% csrf_token %}
+                        <input type="hidden" name="regenerate" value="1">
+                        <button type="submit" class="btn btn-primary">
+                            <i class="fa-solid fa-rotate fa-fw"></i> 重新生成
+                        </button>
+                    </form>
+                    <form method="post" action="{% url 'qqbot:member_code_cancel' %}" class="d-inline ms-2">
+                        {% csrf_token %}
+                        <button type="submit" class="btn btn-outline-secondary">
+                            <i class="fa-solid fa-xmark fa-fw"></i> 取消
+                        </button>
+                    </form>
+                </div>
+            </div>
+        </div>
+    {% endif %}
+
+    {# ---------------- not bound: bind form ---------------- #}
+    {% if not binding and not live %}
+        <div class="card mb-3">
+            <div class="card-header fw-bold">绑定 QQ</div>
+            <div class="card-body">
+                <form method="post" action="{% url 'qqbot:member_submit' %}">
+                    {% csrf_token %}
+                    <div class="mb-3">
+                        {% include "qqbot/member/_card_input.html" with input_id="id_nickname" %}
+                    </div>
+                    <div class="mb-3">
+                        <label for="id_qq" class="form-label fw-bold">QQ 号</label>
+                        <input type="text" name="qq" id="id_qq" class="form-control" inputmode="numeric"
+                               autocomplete="off" maxlength="11" required placeholder="你的 QQ 号" value="{{ initial_qq }}">
+                    </div>
+                    <button type="submit" class="btn btn-primary">
+                        <i class="fa-solid fa-check fa-fw"></i> 提交
+                    </button>
+                    <p class="form-text mt-2 mb-0">
+                        如果这个 QQ 已经在联盟的群里，提交后马上生效；如果还不在群里，页面会给你一个验证码，用它申请入群即可。
+                    </p>
+                </form>
+            </div>
+        </div>
+    {% endif %}
+
+    {# ---------------- bound: change nickname / rebind / unbind ---------------- #}
+    {% if binding %}
+        <div class="row">
+            <div class="col-lg-6">
+                <div class="card mb-3">
+                    <div class="card-header fw-bold">修改昵称</div>
+                    <div class="card-body">
+                        <form method="post" action="{% url 'qqbot:member_nickname' %}">
+                            {% csrf_token %}
+                            <div class="mb-3">
+                                {% include "qqbot/member/_card_input.html" with input_id="id_nickname_change" initial_nickname=binding.nickname %}
+                            </div>
+                            <button type="submit" class="btn btn-primary">
+                                <i class="fa-solid fa-pen fa-fw"></i> 保存昵称
+                            </button>
+                        </form>
+                    </div>
+                </div>
+            </div>
+            <div class="col-lg-6">
+                <div class="card mb-3">
+                    <div class="card-header fw-bold">换绑 QQ</div>
+                    <div class="card-body">
+                        <form method="post" action="{% url 'qqbot:member_submit' %}">
+                            {% csrf_token %}
+                            <input type="hidden" name="nickname" value="{{ initial_nickname }}">
+                            <div class="mb-3">
+                                <label for="id_qq" class="form-label fw-bold">新的 QQ 号</label>
+                                <input type="text" name="qq" id="id_qq" class="form-control" inputmode="numeric"
+                                       autocomplete="off" maxlength="11" required placeholder="新的 QQ 号" value="{{ initial_qq }}">
+                            </div>
+                            <button type="submit" class="btn btn-primary">
+                                <i class="fa-solid fa-right-left fa-fw"></i> 换绑
+                            </button>
+                            <p class="form-text mt-2 mb-0">
+                                新的 QQ 验证通过之前，现在的绑定保持不变。换绑之后一段时间内不能再换。
+                            </p>
+                        </form>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <p>
+            <a class="btn btn-outline-danger" href="{% url 'qqbot:member_unbind' %}">
+                <i class="fa-solid fa-link-slash fa-fw"></i> 解除绑定
+            </a>
+        </p>
+    {% endif %}
+
+    {# ---------------- rules ---------------- #}
+    {% if rules_text %}
+        <div class="card mb-3">
+            <div class="card-header fw-bold">入群须知</div>
+            <div class="card-body">
+                {{ rules_text|linebreaksbr }}
+            </div>
+        </div>
+    {% endif %}
+{% endif %}
+{% endblock qqbot_body %}

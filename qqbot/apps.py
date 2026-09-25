@@ -1,3 +1,5 @@
+from importlib import import_module
+
 from django.apps import AppConfig
 
 
@@ -8,4 +10,7 @@ class QqbotConfig(AppConfig):
     default_auto_field = "django.db.models.BigAutoField"
 
     def ready(self):
-        from . import checks, signals  # noqa: F401
+        # Imported for their side effects: registering the system checks
+        # and connecting the signal receivers.
+        import_module(f"{self.name}.checks")
+        import_module(f"{self.name}.signals")
