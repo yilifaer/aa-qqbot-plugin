@@ -1,27 +1,22 @@
 {% extends "allianceauth/base-bs5.html" %}
 {% comment %}
-Shared layout for all qqbot pages. Child templates fill `qqbot_title` and
-`qqbot_body`. The tab bar shows each tab only to users who may open it:
-"我的 QQ" needs basic_access, "QQ 管理" needs qqbot.manage.
+Layout of the QQ manager pages (the only qqbot pages: members use the
+"QQ 绑定" card on AA's services page, DECISIONS.md #18). Child templates fill
+`qqbot_title` and `qqbot_body`.
 {% endcomment %}
 
-{% block page_title %}{% block qqbot_title %}QQ 绑定{% endblock qqbot_title %}{% endblock page_title %}
+{% block page_title %}{% block qqbot_title %}QQ 管理{% endblock qqbot_title %}{% endblock page_title %}
 
-{% block header_nav_brand %}QQ 绑定{% endblock header_nav_brand %}
+{% block header_nav_brand %}QQ 管理{% endblock header_nav_brand %}
 
 {% block content %}
-    <ul class="nav nav-tabs mb-3">
-        {% if perms.qqbot.basic_access %}
-            <li class="nav-item">
-                <a class="nav-link {% if qqbot_nav == 'member' %}active{% endif %}" href="{% url 'qqbot:my_qq' %}">我的 QQ</a>
-            </li>
-        {% endif %}
-        {% if perms.qqbot.manage %}
-            <li class="nav-item">
-                <a class="nav-link {% if qqbot_nav == 'manage' %}active{% endif %}" href="{% url 'qqbot:manage_index' %}">QQ 管理</a>
-            </li>
-        {% endif %}
-    </ul>
+    {% if perms.qqbot.basic_access %}
+        <p class="small text-end mb-2">
+            <a href="{% url 'services:services' %}#qqbot" id="qqbot-services-link">
+                <i class="fa-solid fa-arrow-left fa-fw"></i> 我自己的 QQ 绑定在「服务」页
+            </a>
+        </p>
+    {% endif %}
 
     {% block qqbot_body %}{% endblock qqbot_body %}
 {% endblock content %}

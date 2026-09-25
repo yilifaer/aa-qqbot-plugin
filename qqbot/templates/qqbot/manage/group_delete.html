@@ -10,7 +10,7 @@
                 你确定要删除群 <strong>{{ group.name }}</strong>（<span class="font-monospace">{{ group.group_id }}</span>）吗？
             </p>
             <ul>
-                <li>删除后，机器人不再管理这个群，成员页面上也不再显示它。</li>
+                <li>删除后，机器人不再管理这个群，成员在「服务」页的 QQ 绑定卡片里也看不到它了。</li>
                 <li>机器人上报的这个群的成员名单（{{ roster_count }} 人）也会一起删除。</li>
                 <li>如果只是暂时不用，建议改为<a href="{% url 'qqbot:manage_group_edit' group.pk %}">编辑</a>并取消「启用」，以后还能恢复。</li>
             </ul>

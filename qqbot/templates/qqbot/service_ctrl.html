@@ -1,52 +1,246 @@
-{% extends "services/services_ctrl_base.html" %}
 {% comment %}
-Services page card: status badge, masked QQ, one hint line and a button to
-the member page. `username` is the masked QQ when bound, "" otherwise.
-The badge replaces AA's generic Enabled/Disabled one, which only looks at
-`username` (it showed a green badge for conflicts and "失效了" for pending).
+The "QQ 绑定" card on AA's services page: the whole member UI lives here
+(DECISIONS.md #18; DESIGN.md 4.1). Context: views.member.card_context plus
+service_name. `view` is one of no_main / unbound / pending / bound.
+
+A standalone card instead of services/services_ctrl_base.html (which centres
+everything and is too narrow for forms), with the same outer classes so it
+sits in AA's flex row.
+
+Theme rules (AA 5 flatly and darkly): Bootstrap components (alert, badge,
+btn, list-group, card, form) and text-body-secondary only. AA's darkly keeps
+Bootstrap's *light* root variables, so bg-body-tertiary / bg-body-secondary /
+text-*-emphasis would come out light-on-dark; do not use them, nor
+bg-light / bg-white / text-dark / *-light classes or fixed colours.
+
+The action panels (改昵称 / 换绑 / 解绑) are Bootstrap collapses toggled
+from the footer; without JavaScript the <noscript> rule shows them all and
+hides the toggles. All ids are prefixed "qqbot-".
 {% endcomment %}
+<div class="card mx-2 mb-3 text-start align-self-start" id="qqbot"
+     style="width: 26rem; max-width: calc(100% - 1rem); min-height: 18rem; scroll-margin-top: 10rem;">
+    <noscript><style>#qqbot .qqbot-panel.collapse { display: block; } #qqbot .qqbot-toggle { display: none; }</style></noscript>
 
-{% block title %}
-    <i class="fa-brands fa-qq fa-fw"></i> {{ service_name }}
-{% endblock title %}
+    <div class="card-header d-flex align-items-center gap-2">
+        <h5 class="card-title mb-0 me-auto"><i class="fa-brands fa-qq fa-fw"></i> {{ service_name }}</h5>
+        <span class="badge {{ badge_class }}" id="qqbot-badge">{{ badge_label }}</span>
+    </div>
 
-{% block active %}
-    {% if not has_main %}
-        <span class="badge text-bg-secondary">未启用</span>
-    {% elif status.state == "conflict" %}
-        <span class="badge text-bg-danger">冲突</span>
-    {% elif status.state == "taken" %}
-        <span class="badge text-bg-danger">已被占用</span>
-    {% elif status.binding %}
-        <span class="badge text-bg-success">已启用</span>
-    {% elif status.live_code %}
-        <span class="badge text-bg-primary">待验证</span>
-    {% else %}
-        <span class="badge text-bg-secondary">未启用</span>
+    <div class="card-body">
+        {% if view == "no_main" %}
+            {# ---------------- no main character ---------------- #}
+            <div class="alert alert-warning mb-0">
+                <i class="fa-solid fa-circle-info fa-fw"></i>
+                你还没有设置主角色。请先在 AA 首页添加角色并设为主角色，然后再来绑定 QQ。
+            </div>
+
+        {% elif view == "unbound" %}
+            {# ---------------- not bound: bind form ---------------- #}
+            {% if stale_code %}
+                <div class="alert alert-info py-2">
+                    你上次拿到的验证码已经失效了（过期或已作废）。需要的话，请在下面重新提交。
+                </div>
+            {% endif %}
+            <p class="card-text">绑定后可以加入联盟 QQ 群。</p>
+            <form method="post" action="{% url 'qqbot:member_submit' %}" id="qqbot-bind-form">
+                {% csrf_token %}
+                <div class="mb-2">
+                    {% include "qqbot/member/_card_input.html" with input_id="qqbot-bind-nickname" %}
+                </div>
+                <div class="mb-2">
+                    <label for="qqbot-bind-qq" class="form-label mb-1">QQ 号</label>
+                    <input type="text" name="qq" id="qqbot-bind-qq" class="form-control" inputmode="numeric"
+                           autocomplete="off" maxlength="32" required placeholder="你的 QQ 号" value="{{ initial_qq }}">
+                </div>
+                <button type="submit" class="btn btn-primary w-100">
+                    <i class="fa-solid fa-link fa-fw"></i> 绑定
+                </button>
+                <div class="form-text">
+                    老成员（已经在联盟 QQ 群里）填完马上生效；新成员会拿到一个验证码，用它申请入群。
+                </div>
+            </form>
+            {% include "qqbot/member/_rules.html" %}
+
+        {% elif view == "pending" %}
+            {# ---------------- pending: verification code ---------------- #}
+            {% if binding %}
+                <p class="card-text small text-body-secondary mb-2">
+                    现在绑定的 QQ：<span class="font-monospace">{{ status.masked_qq }}</span>。新的 QQ 验证通过之前，现在的绑定保持不变。
+                </p>
+            {% endif %}
+            <p class="card-text mb-2">
+                正在验证的 QQ：<strong class="font-monospace">{{ code_qq }}</strong><br>
+                昵称：<strong>{{ code_nickname }}</strong>
+            </p>
+
+            <div class="border border-2 border-primary rounded text-center px-2 py-2 mb-3">
+                {% if code %}
+                    <div class="small text-body-secondary">你的验证码</div>
+                    <div class="fs-2 font-monospace fw-bold user-select-all" id="qqbot-code">{{ code }}</div>
+                    <div class="small text-body-secondary">还有大约 {{ minutes_left }} 分钟有效，只能用一次</div>
+                {% else %}
+                    <div id="qqbot-code-hidden">验证码只在生成它的浏览器里显示，请点「重新生成」。</div>
+                    <div class="small text-body-secondary">旧的验证码会自动作废。</div>
+                {% endif %}
+            </div>
+
+            <ol class="ps-3 mb-3">
+                <li>在 QQ 里搜索下面的群号。</li>
+                <li>点「申请加入」。</li>
+                <li>
+                    在「验证信息」里填验证码{% if code %} <strong class="font-monospace">{{ code }}</strong>{% endif %}，发送。
+                    机器人会自动通过。
+                </li>
+            </ol>
+
+            <div class="fw-bold">可以申请的群</div>
+            {% if has_groups %}
+                {% include "qqbot/member/_groups.html" %}
+            {% else %}
+                <p class="small text-body-secondary mb-0">目前没有你可以申请的群。如有疑问，请联系 QQ 管理员。</p>
+            {% endif %}
+            {% include "qqbot/member/_rules.html" %}
+
+        {% else %}
+            {# ---------------- bound ---------------- #}
+            <p class="card-text mb-2">
+                已绑定 QQ：<strong class="font-monospace">{{ status.masked_qq }}</strong>
+                {% if not status.has_problem %}<span class="text-body-secondary">（{{ status.state_label }}）</span>{% endif %}
+            </p>
+
+            {% if status.has_problem %}
+                <div class="alert alert-danger py-2" id="qqbot-problem">
+                    <div class="fw-bold">{{ status.state_label }}</div>
+                    {% if status.state == "conflict" %}
+                        这个 QQ 同时被其他账号认领了。请联系 QQ 管理员处理，处理好之前这里不显示群号。
+                    {% else %}
+                        这个 QQ 已经被其他账号验证。如果这是你的 QQ，请联系 QQ 管理员。
+                    {% endif %}
+                </div>
+            {% endif %}
+
+            <p class="card-text mb-1">我的群名片：<strong class="text-break">{{ card }}</strong></p>
+            {% if card_shortened %}
+                <div class="form-text mt-0">
+                    <i class="fa-solid fa-circle-info fa-fw text-warning"></i>
+                    群名片最长 {{ card_max_bytes }} 个字节，角色名已自动缩短。想显示完整的角色名，可以把昵称改短一些。
+                </div>
+            {% endif %}
+
+            {% if not status.has_problem %}
+                <div class="fw-bold mt-3">你可以加入的群</div>
+                {% if has_groups %}
+                    {% include "qqbot/member/_groups.html" %}
+                    <div class="form-text mt-0">在 QQ 里搜索群号，点「申请加入」，机器人会自动通过。</div>
+                {% else %}
+                    <p class="small text-body-secondary mb-0">目前没有你可以加入的群。如有疑问，请联系 QQ 管理员。</p>
+                {% endif %}
+            {% endif %}
+
+            <div id="qqbot-actions">
+                <div class="collapse qqbot-panel" id="qqbot-nickname-panel" data-bs-parent="#qqbot-actions">
+                    <hr>
+                    <form method="post" action="{% url 'qqbot:member_nickname' %}" id="qqbot-nickname-form">
+                        {% csrf_token %}
+                        <div class="fw-bold mb-2">修改昵称</div>
+                        <div class="mb-2">
+                            {% include "qqbot/member/_card_input.html" with input_id="qqbot-nickname-input" initial_nickname=binding.nickname %}
+                        </div>
+                        <button type="submit" class="btn btn-warning">
+                            <i class="fa-solid fa-pen fa-fw"></i> 保存昵称
+                        </button>
+                    </form>
+                </div>
+
+                <div class="collapse qqbot-panel" id="qqbot-rebind-panel" data-bs-parent="#qqbot-actions">
+                    <hr>
+                    <form method="post" action="{% url 'qqbot:member_submit' %}" id="qqbot-rebind-form">
+                        {% csrf_token %}
+                        <input type="hidden" name="nickname" value="{{ binding.nickname }}">
+                        <label for="qqbot-rebind-qq" class="form-label fw-bold mb-2">换绑到新的 QQ 号</label>
+                        <div class="input-group">
+                            <input type="text" name="qq" id="qqbot-rebind-qq" class="form-control" inputmode="numeric"
+                                   autocomplete="off" maxlength="32" required placeholder="新的 QQ 号">
+                            <button type="submit" class="btn btn-primary">
+                                <i class="fa-solid fa-right-left fa-fw"></i> 换绑
+                            </button>
+                        </div>
+                        <div class="form-text">
+                            新的 QQ 验证通过之前，现在的绑定保持不变。
+                            {% if cooldown_ends %}
+                                <strong>{{ cooldown_ends|date:"Y-m-d H:i" }} 之前不能换绑</strong>（上次换号后要等 {{ cooldown_hours }} 小时）。
+                            {% elif cooldown_hours %}
+                                换绑后 {{ cooldown_hours }} 小时内不能再换。
+                            {% endif %}
+                        </div>
+                    </form>
+                </div>
+
+                <div class="collapse qqbot-panel" id="qqbot-unbind-panel" data-bs-parent="#qqbot-actions">
+                    <hr>
+                    <form method="post" action="{% url 'qqbot:member_unbind' %}" id="qqbot-unbind-form">
+                        {% csrf_token %}
+                        <div class="fw-bold mb-2">解除绑定</div>
+                        <p class="small mb-2">
+                            解除后，这个 QQ 不再算联盟成员，机器人可能把它移出联盟的 QQ 群。以后可以重新绑定。
+                        </p>
+                        {% if cooldown_ends %}
+                            <p class="small mb-2" id="qqbot-unbind-cooldown">
+                                <i class="fa-solid fa-triangle-exclamation fa-fw text-warning"></i>
+                                解除绑定不会让换绑冷却重新计算：{{ cooldown_ends|date:"Y-m-d H:i" }} 之前，只能重新绑定这个 QQ，不能改绑别的 QQ。
+                            </p>
+                        {% endif %}
+                        <div class="form-check mb-2">
+                            <input class="form-check-input" type="checkbox" name="confirm" value="1" id="qqbot-unbind-confirm" required>
+                            <label class="form-check-label" for="qqbot-unbind-confirm">我确认要解除绑定</label>
+                        </div>
+                        <button type="submit" class="btn btn-danger">
+                            <i class="fa-solid fa-link-slash fa-fw"></i> 解除绑定
+                        </button>
+                    </form>
+                </div>
+            </div>
+        {% endif %}
+    </div>
+
+    {% if view == "pending" or view == "bound" or is_manager %}
+        <div class="card-footer d-flex flex-wrap justify-content-center gap-2">
+            {% if view == "pending" %}
+                <form method="post" action="{% url 'qqbot:member_submit' %}" class="d-inline" id="qqbot-regenerate-form">
+                    {% csrf_token %}
+                    <input type="hidden" name="regenerate" value="1">
+                    <button type="submit" class="btn btn-primary" title="生成一个新的验证码，旧的作废">
+                        <i class="fa-solid fa-rotate fa-fw"></i> 重新生成
+                    </button>
+                </form>
+                <form method="post" action="{% url 'qqbot:member_code_cancel' %}" class="d-inline" id="qqbot-cancel-form">
+                    {% csrf_token %}
+                    <button type="submit" class="btn btn-secondary" title="不绑定这个 QQ 了">
+                        <i class="fa-solid fa-xmark fa-fw"></i> 取消
+                    </button>
+                </form>
+            {% elif view == "bound" %}
+                <button type="button" class="btn btn-warning qqbot-toggle" data-bs-toggle="collapse"
+                        data-bs-target="#qqbot-nickname-panel" aria-expanded="false" aria-controls="qqbot-nickname-panel"
+                        title="修改群名片上的昵称">
+                    <i class="fa-solid fa-pen fa-fw"></i> 改昵称
+                </button>
+                <button type="button" class="btn btn-primary qqbot-toggle" data-bs-toggle="collapse"
+                        data-bs-target="#qqbot-rebind-panel" aria-expanded="false" aria-controls="qqbot-rebind-panel"
+                        title="改绑另一个 QQ 号">
+                    <i class="fa-solid fa-right-left fa-fw"></i> 换绑
+                </button>
+                <button type="button" class="btn btn-danger qqbot-toggle" data-bs-toggle="collapse"
+                        data-bs-target="#qqbot-unbind-panel" aria-expanded="false" aria-controls="qqbot-unbind-panel"
+                        title="解除 QQ 绑定">
+                    <i class="fa-solid fa-link-slash fa-fw"></i> 解绑
+                </button>
+            {% endif %}
+            {% if is_manager %}
+                <a class="btn btn-outline-secondary" href="{% url 'qqbot:manage_index' %}" title="QQ 管理员的管理页面" id="qqbot-manage-link">
+                    <i class="fa-solid fa-gear fa-fw"></i> QQ 管理
+                </a>
+            {% endif %}
+        </div>
     {% endif %}
-{% endblock active %}
-
-{% block user %}
-    {% if username %}
-        QQ：<span class="font-monospace">{{ username }}</span>
-        {% if status.state_label %}<br><small class="text-body-secondary">{{ status.state_label }}</small>{% endif %}
-    {% endif %}
-{% endblock user %}
-
-{% block extra %}
-    {% if not has_main %}
-        <p class="card-text text-warning">请先设置主角色。</p>
-    {% elif status.has_problem %}
-        <p class="card-text text-danger">这个 QQ 有冲突，请联系 QQ 管理员。</p>
-    {% elif status.live_code %}
-        <p class="card-text text-primary">待验证：请点「管理」查看验证码。</p>
-    {% elif not status.binding %}
-        <p class="card-text text-body-secondary">还没有绑定 QQ。</p>
-    {% endif %}
-{% endblock extra %}
-
-{% block controls %}
-    <a class="btn btn-primary" href="{% url 'qqbot:my_qq' %}" title="管理">
-        <i class="fa-solid fa-gear fa-fw"></i> 管理
-    </a>
-{% endblock controls %}
+</div>

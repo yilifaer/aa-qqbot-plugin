@@ -1,5 +1,3 @@
-import copy
-
 from allianceauth import hooks
 from allianceauth.services.hooks import MenuItemHook, UrlHook
 
@@ -18,30 +16,23 @@ PUBLIC_VIEWS = [
 
 
 class QQBotMenuItem(MenuItemHook):
-    """Sidebar entry for members and QQ managers (DESIGN.md 4.1).
+    """Sidebar entry "QQ 管理", only for QQ managers (DECISIONS.md #18).
 
-    Members go to their own page. A QQ manager without ``basic_access``
-    (e.g. a non-Member state) cannot open that page, so for them the entry
-    leads straight to the manage pages.
+    Members have no entry of their own: everything they do is in the
+    "QQ 绑定" card on AA's services page (AA's own "服务" menu entry).
     """
 
     def __init__(self):
         super().__init__(
-            "QQ 绑定",
+            "QQ 管理",
             "fa-brands fa-qq",
-            "qqbot:my_qq",
+            "qqbot:manage_index",
             navactive=["qqbot:"],
         )
 
     def render(self, request):
-        user = request.user
-        if user.has_perm("qqbot.basic_access"):
+        if request.user.has_perm("qqbot.manage"):
             return MenuItemHook.render(self, request)
-        if user.has_perm("qqbot.manage"):
-            # Render a copy: the hook object may be shared between requests.
-            item = copy.copy(self)
-            item.url_name = "qqbot:manage_index"
-            return MenuItemHook.render(item, request)
         return ""
 
 

@@ -120,13 +120,13 @@ def render_card(binding: Binding, config=None) -> str:
 
 
 def preview_card(user, nickname, config=None) -> str:
-    """Card preview for the member page; no binding needed."""
+    """Card preview for the services card; no binding needed."""
     return _card_for(user, nickname or "", "", config)
 
 
 def full_card(user, nickname, config=None) -> str:
     """The automatic card as formatted, before it is fitted into
-    CARD_MAX_BYTES (for the member page's "your card was shortened" hint)."""
+    CARD_MAX_BYTES (for the services card's "your card was shortened" hint)."""
     return _card_for(user, nickname or "", "", config, fit=False)
 
 

@@ -92,7 +92,7 @@ def _summary() -> dict:
 
 
 def _ctx(tab: str, **extra) -> dict:
-    ctx = {"qqbot_nav": "manage", "manage_tab": tab, "summary": _summary()}
+    ctx = {"manage_tab": tab, "summary": _summary()}
     ctx.update(extra)
     return ctx
 

@@ -191,7 +191,7 @@ def evaluate_many(groups, qqs, now=None, config=None) -> dict[str, dict[int, Dec
 
 
 def groups_for_user(user, now=None) -> list[QQGroup]:
-    """Active groups the user may currently join (for the member page).
+    """Active groups the user may currently join (for the services card).
 
     * The user has a live code (new member, or changing QQ): the groups to
       apply to with that code. Only the user-level rules count (active, main

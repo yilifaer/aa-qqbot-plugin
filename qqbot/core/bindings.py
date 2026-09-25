@@ -143,7 +143,7 @@ def _last_qq_change(user, existing, qq_n, cooldown: timedelta, now):
 
 def cooldown_ends(qq_changed_at, now=None, config=None):
     """When the rebind cooldown that started at ``qq_changed_at`` ends, or
-    ``None`` when it is already over (for the member pages)."""
+    ``None`` when it is already over (for the services card)."""
     now = now or timezone.now()
     config = config or Config.get_solo()
     if not qq_changed_at or not config.rebind_cooldown_hours:
@@ -590,7 +590,7 @@ def conflicts() -> list[tuple[str, list[Binding]]]:
     return [(qq, grouped[qq]) for qq in qqs]
 
 
-# Display states of one binding (member pages, services card).
+# Display states of one binding (services card, manage pages).
 STATE_VERIFIED = "verified"
 STATE_TRUSTED = "trusted"
 STATE_CONFLICT = "conflict"  # other accounts claim the same QQ, none verified

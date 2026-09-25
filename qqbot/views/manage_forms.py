@@ -151,7 +151,7 @@ class ConfigForm(forms.ModelForm):
         label=Config._meta.get_field("rules_text").verbose_name,
         required=False,
         widget=forms.Textarea(attrs={"rows": 8}),
-        help_text="显示在「我的 QQ」页面上，每一行单独显示。",
+        help_text="显示在「服务」页的 QQ 绑定卡片下方（小字），每一行单独显示。",
     )
 
     class Meta:

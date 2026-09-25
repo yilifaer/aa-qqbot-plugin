@@ -15,7 +15,7 @@ _NICKNAME_RE = re.compile(
 
 
 def mask_qq(qq) -> str:
-    """Mask a QQ number for logs and member pages: ``12345678`` -> ``12****78``."""
+    """Mask a QQ number for logs and the services card: ``12345678`` -> ``12****78``."""
     if qq is None:
         return ""
     qq = str(qq)
