@@ -300,7 +300,7 @@ export async function callApi({ baseUrl, keyId, secret }, name, payload = {}) {
 | `qqbot.E003` | 有密钥短于 32 个字符 | 换一把更长的密钥 |
 | `qqbot.E004` | 有密钥编号不符合第 2.1 节的格式（空格、中文、超过 64 个字符） | 用这个编号发的请求会一直得到 `missing_headers`；把编号改成 `koishi-1` 这样的英文名字，两边同步修改 |
 | `qqbot.W001` | 缓存不是 Redis 一类的共享缓存 | 防重放需要跨进程共享的缓存；AA 本身要求 Redis，一般不会出现 |
-| `qqbot.W002` | `local.py` 的 `CELERYBEAT_SCHEDULE` 里没有每日对账任务 | 接口照常工作，但 AA 每天的自动对账不会运行；让 IT 按 README 第 2 节第 3 步加上（在后台手动添加了定时任务时可以忽略） |
+| `qqbot.W002` | `local.py` 的 `CELERYBEAT_SCHEDULE` 里没有每日对账任务 | 接口照常工作，但 AA 每天的自动对账不会运行；让 IT 按 README 的安装步骤加上（在后台手动添加了定时任务时可以忽略） |
 
 注：没有配置密钥时，所有接口（包括 `health`）都直接返回 `503 misconfigured`，所以 `problems` 里实际不会出现 `qqbot.E002`；
 列在这里是为了和 AA 的 `manage.py check` 对照。以后可能增加新的问题代码，不认识的代码原样显示即可。

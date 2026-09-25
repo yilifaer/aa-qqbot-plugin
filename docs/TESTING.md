@@ -8,13 +8,13 @@
 
 ## 准备
 
-- 按 [README](../README.md) 第 2 节装好插件，第 4 节分配好权限。
+- 按 [GUIDE](GUIDE.md) 第 2 节装好插件，第 4 节分配好权限。
 - 两个**普通**测试账号 A、B：都有主角色，状态是 Member。
-  **不要用超级管理员测成员功能**：超级管理员不会自动获得入群资格（README 第 4 节）。
+  **不要用超级管理员测成员功能**：超级管理员不会自动获得入群资格（GUIDE 第 4 节）。
 - 一个 QQ 管理员账号（可以是你自己的账号，加进「QQ 管理」组）。
 - 「模拟机器人」：树莓派上还没有 Koishi 时，用它代替机器人。
-  在 AA 虚拟环境、`myauth` 目录下（README 第 2 节第 0 步）运行 `python manage.py shell`，
-  粘贴 README 第 2 节第 7 步里的那段代码（从 `import json, secrets` 到 `bot("health")`），按两次回车。之后可以这样调用：
+  在 AA 虚拟环境、`myauth` 目录下（GUIDE 第 2 节第 0 步）运行 `python manage.py shell`，
+  粘贴 GUIDE 第 2 节第 7 步里的那段代码（从 `import json, secrets` 到 `bot("health")`），按两次回车。之后可以这样调用：
 
   | 调用 | 作用 |
   |---|---|
@@ -30,7 +30,7 @@
 
 ## A. 安装
 
-- [ ] README 第 2 节第 7 步的检查全部通过：`check` 没有 `qqbot.` 提示；`curl` 得到 `401`；`bot("health")` 得到 `200` 和 `"config_ok": true`；
+- [ ] GUIDE 第 2 节第 7 步的检查全部通过：`check` 没有 `qqbot.` 提示；`curl` 得到 `401`；`bot("health")` 得到 `200` 和 `"config_ok": true`；
       后台「Periodic tasks」里有 `qqbot_reconcile`。
 - [ ] `pip show aa-qqbot` 显示 `Version: 1.0.0b1`。
 

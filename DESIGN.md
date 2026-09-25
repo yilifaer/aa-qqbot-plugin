@@ -295,7 +295,7 @@
 
 ---
 
-## 10. IT 需要做的事（安装时，详见 README 第 2 节）
+## 10. IT 需要做的事（安装时，详见 README 和 docs/GUIDE.md 第 2 节）
 
 1. `pip install` 本插件
 2. `local.py`：

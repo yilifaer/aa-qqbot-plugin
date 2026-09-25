@@ -203,7 +203,7 @@ def evaluate_many(groups, qqs, now=None, config=None) -> dict[str, dict[int, Dec
   - health 接口复用同一套检查逻辑（纯函数 `problems() -> list[str]`）
 - `admin.py`：注册 `QQGroup`、`Binding`（只读，改动走前台）、`AuditLog`（只读）、`Config`。
 - `management/commands/qqbot_reconcile.py`：手动执行对账。
-- `README.md`（中文）：功能、给 IT 的安装步骤（`pip install`；`local.py` 中 `INSTALLED_APPS += ["qqbot"]`、`APPS_WITH_PUBLIC_VIEWS += ["qqbot"]`、`QQBOT_API_KEYS`、`CELERYBEAT_SCHEDULE`；`migrate`；重启）、权限怎么分配、如何生成密钥（`python -c "import secrets; print(secrets.token_urlsafe(48))"`）、升级与卸载（卸载时要删掉数据库里的 `qqbot_reconcile` 定时任务，AA 5 的 beat 把它存在 django_celery_beat 表里）。
+- `README.md`（中英双语、简短）+ `docs/GUIDE.md`（中文分步说明和常见问题）：功能、给 IT 的安装步骤（`pip install`；`local.py` 中 `INSTALLED_APPS += ["qqbot"]`、`APPS_WITH_PUBLIC_VIEWS += ["qqbot"]`、`QQBOT_API_KEYS`、`CELERYBEAT_SCHEDULE`；`migrate`；重启）、权限怎么分配、如何生成密钥（`python -c "import secrets; print(secrets.token_urlsafe(48))"`）、升级与卸载（卸载时要删掉数据库里的 `qqbot_reconcile` 定时任务，AA 5 的 beat 把它存在 django_celery_beat 表里）。
 
 ## 8. 安全底线（任何部分都必须遵守）
 

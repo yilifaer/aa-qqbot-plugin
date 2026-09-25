@@ -2,7 +2,7 @@
 
 版本号遵循 [PEP 440](https://peps.python.org/pep-0440/)（`1.0.0b1` = 1.0.0 的第 1 个测试版）。
 每次交给别人安装的改动都要提升版本号（`qqbot/__init__.py` 里的 `__version__`）并在这里写一段，
-否则装的人很难确认自己装的是哪一版（决定 #20）。升级方法见 [README 第 7 节](README.md#7-升级)。
+否则装的人很难确认自己装的是哪一版（决定 #20）。升级方法见 [README](README.md#升级)。
 
 ## [1.0.0b1] - 2026-09-25（第一个公开测试版）
 
@@ -20,7 +20,7 @@
 - 每日对账任务 `qqbot.tasks.reconcile` 和命令 `python manage.py qqbot_reconcile`。
 - 系统检查 `qqbot.E001`–`qqbot.E004`、`qqbot.W001`，以及 `qqbot.W002`（`local.py` 里漏了每日对账任务时提醒）。
 - 支持 Alliance Auth 5.2–5.x、Python 3.10–3.13、MariaDB/MySQL/PostgreSQL/SQLite；兼容 AA 的深色主题（Darkly）。
-- 文档：给 IT 的安装、检查、升级、卸载步骤和常见问题（README）；树莓派测试清单（[`docs/TESTING.md`](docs/TESTING.md)）；
+- 文档：给 IT 的安装、检查、升级、卸载步骤和常见问题（[docs/GUIDE.md](docs/GUIDE.md)）；树莓派测试清单（[`docs/TESTING.md`](docs/TESTING.md)）；
   Koishi 插件开工说明（[`KOISHI_START.md`](KOISHI_START.md)）。
 
 ### 安装和打包
@@ -29,14 +29,14 @@
   而且已经有 `0001_initial`。如果沿用这个名字，装过旧版的 AA 执行 `migrate` 时会显示「No migrations to apply」，
   新数据表一张都不会建，「服务」页随即对所有人报错。
   - 装过本仓库 1.0.0b1 之前的开发测试版（`1.0.0.dev0`）的测试机，升级后 `migrate` 会报「table already exists」，
-    处理方法见 README「常见问题」。
+    处理方法见 [docs/GUIDE.md](docs/GUIDE.md)「常见问题」。
 - 从 GitHub 升级改用 `pip install --upgrade --force-reinstall --no-deps …`：版本号不变时，普通的 `pip install -U` 什么都不做，也不报错。
 - 打包元数据改用新的许可证写法（`license = "MIT"`，需要 setuptools 77 或更新，从 GitHub 安装时 pip 会自动下载）。
   旧写法 setuptools 已经提示弃用，计划 2027-02 之后不再支持。
 - **没有**把 `django-sri` 加进依赖：AA 5.2.x/5.3.x 没有限制它的版本，而 `django-sri` 1.0 删掉了 AA 页面要用的 `sri_static` 标签。
   这是 AA 本身的问题，AA 5.4.0 起已经自己限制为 `django-sri<1`；本插件如果也写死 `django-sri<1`，
   等以后的 AA 5.x 需要 `django-sri` 1.x 时，安装本插件反而会让 pip 失败或把 AA 降级。
-  用 AA 5.2/5.3 的站点请按 README「常见问题」手动运行 `pip install "django-sri<1"`。
+  用 AA 5.2/5.3 的站点请按 [docs/GUIDE.md](docs/GUIDE.md)「常见问题」手动运行 `pip install "django-sri<1"`。
 
 ### 已知限制
 
