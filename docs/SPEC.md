@@ -30,7 +30,8 @@
 - `General`：只承载权限 `qqbot.basic_access`（成员）和 `qqbot.manage`（QQ 管理员）。
 - `Config`：前台可改的单例设置，用 `Config.get_solo()` 读取。
 - `QQGroup`：受管群。`kind` 为 `fixed`（固定群）或 `role`（身份组小群）。`required_groups` 只对 `role` 生效，满足任意一个即可。`last_roster_at` 记录最近一次完整名单上报的时间。
-- `Binding`：一个用户一个。`status` 为 `verified` 或 `trusted`。数据库层面保证 `verified` 的 QQ 唯一；`trusted` 可以重复，重复即为冲突。
+- `Binding`：一个用户一个。`status` 为 `verified` 或 `trusted`。`verified_qq` 在已验证时等于 `qq`，否则为 NULL，并带普通唯一索引（MySQL/MariaDB 不支持条件唯一约束），由 `save()` 同步、检查约束兜底；`trusted` 可以重复，重复即为冲突。
+- `Lock`：128 行预建的锁行，由 `core/locks.py` 按「用户 → QQ → 数据行」的固定顺序加 `SELECT … FOR UPDATE`，所有绑定写操作都必须经过它，避免死锁和并发破坏约束。
 - `BindCode`：待验证的提交。只存 HMAC，同一用户最多一条有效记录（未用、未作废、未过期）。
 - `RosterEntry`：每个群最近一次完整名单中的 QQ。
 - `Event`：机器人拉取的发件箱，游标为自增 `id`。
@@ -72,6 +73,8 @@ class Decision:
 def evaluate(group: QQGroup, qqs: Iterable[str], now=None) -> dict[str, Decision]
 def evaluate_binding(binding: Binding, groups=None) -> dict[int, Decision]   # 按 group.pk
 def groups_for_user(user) -> list[QQGroup]   # 该用户当前有资格进的有效群（给页面用）
+# 有有效验证码（待验证）时，按用户层面的规则列出可申请的群；否则按绑定判定；冲突时返回 []
+def evaluate_many(groups, qqs, now=None, config=None) -> dict[str, dict[int, Decision]]
 ```
 对群 G 中一个 QQ 的判定规则，**按顺序**执行，先命中的生效：
 1. 该 QQ 没有绑定：如果有这个 QQ 的有效 `BindCode`，返回 `deny/PENDING_VERIFY`；否则返回 `deny/NOT_BOUND`。
@@ -102,7 +105,9 @@ def groups_for_user(user) -> list[QQGroup]   # 该用户当前有资格进的有
 - `refresh_binding(binding) -> bool`：计算 `fingerprint = sha256(按群 pk 排序的判定)[:32] + sha256(群名片)[:32]`。判定部分变化时写 `recheck`，名片部分变化时写 `card`，然后保存 fingerprint。第一次计算（fingerprint 为空）也写事件。
 - `refresh_user(user_or_id)`：用户有绑定就调用 `refresh_binding`，否则什么都不做。
 - `refresh_all() -> int`：遍历所有绑定，返回写出的事件数（给每日对账用）。
-- `prune(now=None)`：删除 30 天前的事件、7 天前已过期或已用的验证码。
+- `prune(now=None)`：删除 30 天前的事件、7 天前已过期、已用或已作废的验证码。
+- `poll(after, limit, now=None) -> EventPage(events, last_id, has_more)`：给 `events` 接口用。**只返回创建超过 `EVENT_VISIBILITY_DELAY`（10 秒）的事件**，遇到第一条更新的事件就停止，避免游标越过还没提交的事务写出的事件。
+- `refresh_all()` 每批 500 个绑定调用 `eligibility.evaluate_many`，查询次数不随绑定数量增长。
 
 ### 3.9 `core/bindings.py`（所有写操作，全部在 `transaction.atomic()` 中完成）
 返回值用 dataclass，字段 `ok: bool`、`outcome: str`（机器可读），以及成功或失败时的中文 `message`。
@@ -146,7 +151,7 @@ def groups_for_user(user) -> list[QQGroup]   # 该用户当前有资格进的有
   - `groups {}` → `{groups: [{group_id, name, kind}]}`，只含有效群。
   - `check {group_id, qqs: [..≤3000], full_roster: bool}` → `{group_id, results: [{qq, decision, reason, card}]}`。未知或无效的群 → 404 `unknown_group`。`full_roster=true` 表示 `qqs` 是该群的完整成员名单，调用 `update_roster`。结果中无效的 QQ 原样返回，`decision=review, reason=BAD_QQ`。
   - `claim {qq, text, group_id?}` → `{claimed: bool, outcome, result: {qq, decision, reason, card} | null}`。带了 `group_id` 时给出该群的判定。
-  - `events {after: int ≥ 0, limit?: 1..500 默认 200}` → `{events: [{id, kind, qq, created_at}], last_id, has_more}`。
+  - `events {after: int ≥ 0, limit?: 1..500 默认 200}` → `{events: [{id, kind, qq, created_at}], last_id, has_more}`，调用 `core.events.poll`；事件最多延迟约 10 秒可见（`API.md` 要写明）。
 - `API.md`（中文 + 字段表）：完整契约、错误码表、**签名测试向量**（固定 secret、时间戳、nonce、请求体，给出预期签名，并写一个测试确保向量与实现一致），以及给 Koishi 端的实现要点：`redirect: 'manual'`、只接受 200、三态处理、`review` 永不处置、昵称和名片要转义。
 
 ## 5. 成员页面

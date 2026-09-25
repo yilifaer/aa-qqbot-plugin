@@ -13,7 +13,7 @@ Every write in ``core/bindings.py`` takes its locks in this order, inside
 
 Keys are striped: users and QQs are hashed onto ``USER_STRIPES`` /
 ``QQ_STRIPES`` pre-created :class:`~qqbot.models.Lock` rows (created by
-migration 0002), and all user rows sort before all QQ rows. Taking keys in
+the initial migration), and all user rows sort before all QQ rows. Taking keys in
 ascending order therefore gives one global lock order, so these locks cannot
 deadlock with each other. Two unrelated users or QQs that share a stripe
 merely wait for each other briefly.
@@ -52,7 +52,10 @@ def _acquire(keys) -> None:
     if not connection.in_atomic_block:  # pragma: no cover - programming error
         raise RuntimeError("qqbot locks must be taken inside transaction.atomic()")
     got = set(
-        Lock.objects.select_for_update().filter(pk__in=keys).order_by("pk").values_list("pk", flat=True)
+        Lock.objects.select_for_update()
+        .filter(pk__in=keys)
+        .order_by("pk")
+        .values_list("pk", flat=True)
     )
     missing = [k for k in keys if k not in got]
     if missing:

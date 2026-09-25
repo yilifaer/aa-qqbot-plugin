@@ -287,7 +287,9 @@ def _claim(qq_n, code_hash, now) -> ClaimResult:
     with transaction.atomic():
         # Find the code's owner without locking the code row, so the user
         # lock can be taken first (same order as submit / unbind).
-        owner = list(BindCode.objects.filter(code_hash=code_hash).values_list("user_id", flat=True)[:1])
+        owner = list(
+            BindCode.objects.filter(code_hash=code_hash).values_list("user_id", flat=True)[:1]
+        )
         if not owner:
             return ClaimResult(False, "code_invalid", "验证码不存在。", qq=qq_n)
         locks.lock_user(owner[0])
