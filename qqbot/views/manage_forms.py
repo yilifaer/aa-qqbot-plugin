@@ -210,6 +210,7 @@ class ConfigForm(forms.ModelForm):
             "card_format",
             "code_ttl_minutes",
             "roster_max_age_days",
+            "trusted_window_days",
             "rebind_cooldown_hours",
         )
         help_texts = {

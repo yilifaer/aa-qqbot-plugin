@@ -1,6 +1,6 @@
 # 树莓派测试清单
 
-在测试 AA 上逐条点一遍，每条做完打勾。适用版本：**1.0.0b3**。
+在测试 AA 上逐条点一遍，每条做完打勾。适用版本：**1.0.0b4**。
 
 群号、QQ 号都用下面的**测试值**（`100000001`、`10001` 这类），不要用真实号码，也不要把真实号码放进截图或 issue。
 
@@ -32,7 +32,7 @@
 
 - [ ] GUIDE 第 2 节第 7 步的检查全部通过：`check` 没有 `qqbot.` 提示；`curl` 得到 `401`；`bot("health")` 得到 `200` 和 `"config_ok": true`；
       后台「Periodic tasks」里有 `qqbot_reconcile`。
-- [ ] `pip show aa-qqbot` 显示 `Version: 1.0.0b3`。
+- [ ] `pip show aa-qqbot` 显示 `Version: 1.0.0b4`。
 
 ## B. 权限和入口
 

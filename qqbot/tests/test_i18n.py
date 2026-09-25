@@ -351,6 +351,7 @@ class PageLanguageTestCase(TestCase):
                 reverse("qqbot:manage_settings"),
                 {"rules_text": "Be nice.", "card_format": config.card_format,
                  "code_ttl_minutes": 15, "roster_max_age_days": config.roster_max_age_days,
+                 "trusted_window_days": config.trusted_window_days,
                  "rebind_cooldown_hours": config.rebind_cooldown_hours},
             ),
         }

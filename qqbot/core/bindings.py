@@ -764,5 +764,10 @@ def on_user_deleted(user) -> None:
         binding = Binding.objects.filter(user_id=user.pk).first()
         if binding is None:
             return
-        events.emit(Event.Kind.RECHECK, binding.qq)
+        # Written after the deletion commits: a long bulk delete must not leave
+        # an older event id invisible to the bot's cursor until after it has
+        # moved past it.
+        # 等删除提交之后再写事件：批量删除耗时较长时，事件编号不会被机器人的游标跳过。
+        qq = binding.qq
+        transaction.on_commit(lambda: events.emit(Event.Kind.RECHECK, qq))
         audit.log(Action.USER_DELETED, qq=binding.qq, target_user=user, status=binding.status)

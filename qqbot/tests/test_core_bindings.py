@@ -716,7 +716,12 @@ class BindingStateTests(BaseTestCase):
 class UserDeletedTests(BaseTestCase):
     def test_on_user_deleted(self):
         bind(self.user, "12345678")
-        bindings.on_user_deleted(self.user)
+        with self.captureOnCommitCallbacks(execute=False) as callbacks:
+            bindings.on_user_deleted(self.user)
+        # The bot's event is written only after the deletion commits.
+        self.assertNotIn("recheck", event_kinds("12345678"))
+        for callback in callbacks:
+            callback()
         self.assertIn("recheck", event_kinds("12345678"))
         entry = audits(A.USER_DELETED).get()
         self.assertEqual((entry.qq, entry.target_name), ("12345678", "alice"))

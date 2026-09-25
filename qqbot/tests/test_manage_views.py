@@ -588,6 +588,7 @@ def settings_data(**kw):
         "card_format": Config.DEFAULT_CARD_FORMAT,
         "code_ttl_minutes": 10,
         "roster_max_age_days": 7,
+        "trusted_window_days": 30,
         "rebind_cooldown_hours": 24,
     }
     data.update(kw)
