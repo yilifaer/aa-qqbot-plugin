@@ -154,8 +154,8 @@ OneBot 实现为 LLBot，已启用 `database-sqlite`。
 
 ## 7. 怎么接上树莓派上的测试 AA
 
-1. **树莓派上装好 aa-qqbot**：按 aa-qqbot 仓库的 [`README.md`](README.md) 操作，包括 `APPS_WITH_PUBLIC_VIEWS`
-   和 `QQBOT_API_KEYS` 两项配置，并按 README 第 2 节第 7 步确认装好了。Koishi 插件写好之前，可以先用那里的
+1. **树莓派上装好 aa-qqbot**：按 aa-qqbot 仓库的 [`README.zh-CN.md`](README.zh-CN.md) 操作，包括 `APPS_WITH_PUBLIC_VIEWS`
+   和 `QQBOT_API_KEYS` 两项配置，并按 [docs/GUIDE.md](docs/GUIDE.md) 第 2 节第 7 步确认装好了。Koishi 插件写好之前，可以先用那里的
    「模拟机器人」和 [`docs/TESTING.md`](docs/TESTING.md) 把 AA 这一侧测一遍。
 2. **生成一把测试密钥**（所有者在自己电脑上运行，不要贴进对话）：
    ```bash
@@ -163,7 +163,7 @@ OneBot 实现为 LLBot，已启用 `database-sqlite`。
    ```
    把它写进树莓派的 `local.py`，例如 `QQBOT_API_KEYS = {"koishi-test": "刚才生成的那串"}`，然后重启 AA。
    同一把密钥由所有者自己填进 Koishi 控制台的插件配置里。
-   如果装 aa-qqbot 时已经按 README 第 2 节第 2 步生成过密钥，直接用那一把和它的密钥编号即可，不用再生成。
+   如果装 aa-qqbot 时已经按 README 生成过密钥，直接用那一把和它的密钥编号即可，不用再生成。
 3. **机器人要能访问到树莓派**：最简单是直接用树莓派 AA 的 `SITE_URL`（AA 的网址）加 `/qqbot/api/v1/`。
    测试时也可以用局域网地址，例如 `http://<树莓派的IP>/qqbot/api/v1/`，但要先让 IT 在树莓派 AA 的 `local.py` 里
    追加 `ALLOWED_HOSTS += ["<树莓派的IP>"]` 并重启 AA，否则会得到 400 网页（API.md 第 6 节）。

@@ -1,4 +1,7 @@
-"""QQ manager routes (included at ``/qqbot/manage/`` in namespace ``qqbot``)."""
+"""QQ manager routes (included at ``/qqbot/manage/`` in namespace ``qqbot``).
+
+QQ 管理员页面的路由（挂在 ``/qqbot/manage/`` 下，命名空间为 ``qqbot``）。
+"""
 
 from django.urls import path
 

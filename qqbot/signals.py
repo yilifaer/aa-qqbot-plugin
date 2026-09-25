@@ -10,6 +10,18 @@ Anything we miss is caught by the daily reconciliation task.
 
 Within one transaction the same piece of work is scheduled at most once (AA
 saves a profile several times while reassigning a state, for example).
+
+让机器人及时得知变化的信号接收器（docs/SPEC.md 第 7 节）。
+
+每个接收器只用 ``transaction.on_commit`` *安排* 工作，这样要等改动对其他
+数据库连接可见之后，才会通知机器人。安排好的工作通过 :func:`_safe` 执行，
+每个接收器本身也包在 :func:`_never_raise` 里：这些信号有好几个是在
+Alliance Auth 自己的代码里触发的（例如分配 State 时的 ``state_changed``、
+``User`` 的保存 / 删除），如果异常从这里漏出去，就会把 AA 弄坏。这里漏掉
+的情况由每天的对账任务兜底。
+
+同一个事务里，同一件工作最多只安排一次（例如 AA 在重新分配 State 时会
+把 profile 保存好几次）。
 """
 
 import functools
@@ -33,6 +45,7 @@ _KEY_ATTR = "_qqbot_on_commit_key"
 _RECHECK_ALL_KEY = ("recheck_all",)
 
 # Attribute names used to carry snapshots from pre_* to post_* signals.
+# 用来把快照从 pre_* 信号带到 post_* 信号的属性名。
 _OLD_ACTIVE = "_qqbot_old_is_active"
 _OLD_PROFILE = "_qqbot_old_profile"
 _CLEARED_IDS = "_qqbot_cleared_ids"
@@ -40,11 +53,15 @@ _CLEARED_IDS = "_qqbot_cleared_ids"
 
 # --------------------------------------------------------------------------
 # helpers
+# 辅助函数
 # --------------------------------------------------------------------------
 
 
 def _safe(func, *args, **kwargs):
-    """Run ``func`` in its own transaction; log and swallow any exception."""
+    """Run ``func`` in its own transaction; log and swallow any exception.
+
+    在独立事务中运行 ``func``；出任何异常都只记日志，不往外抛。
+    """
     try:
         with transaction.atomic():
             return func(*args, **kwargs)
@@ -54,7 +71,10 @@ def _safe(func, *args, **kwargs):
 
 
 def _never_raise(receiver_func):
-    """Signal receivers must never raise into the sender."""
+    """Signal receivers must never raise into the sender.
+
+    信号接收器绝不能把异常抛给发送方。
+    """
 
     @functools.wraps(receiver_func)
     def wrapper(*args, **kwargs):
@@ -67,18 +87,24 @@ def _never_raise(receiver_func):
 
 
 def _already_scheduled(key) -> bool:
-    """True when a callback with ``key`` is pending in the current transaction."""
+    """True when a callback with ``key`` is pending in the current transaction.
+
+    当前事务里已经有一个 ``key`` 相同、正在等待执行的回调时，返回 True。
+    """
     try:
         conn = transaction.get_connection()
         if not conn.in_atomic_block:
             return False
         return any(getattr(entry[1], _KEY_ATTR, None) == key for entry in conn.run_on_commit)
-    except Exception:  # private API changed: just schedule again (harmless)
+    except Exception:  # private API changed: just schedule again (harmless) / 私有 API 变了：再安排一次即可（无害）
         return False
 
 
 def _schedule(key, func, *args):
-    """``on_commit(_safe(func, *args))``, at most once per ``key`` and transaction."""
+    """``on_commit(_safe(func, *args))``, at most once per ``key`` and transaction.
+
+    即 ``on_commit(_safe(func, *args))``，同一个事务里每个 ``key`` 最多安排一次。
+    """
     if _already_scheduled(key):
         return
 
@@ -114,7 +140,11 @@ def _is_basic_access(perm) -> bool:
 
 def _group_matters(group) -> bool:
     """True when membership of ``group`` can change a QQ decision: the group
-    carries basic_access or is required by a role QQ group."""
+    carries basic_access or is required by a role QQ group.
+
+    当 ``group`` 的成员变化可能改变 QQ 的判断结果时返回 True：该组带有
+    basic_access 权限，或者是某个身份组小群要求的组。
+    """
     if group is None or group.pk is None:
         return False
     if _group_has_basic_access(group):
@@ -137,7 +167,10 @@ def _state_has_basic_access(state) -> bool:
 
 
 def _changed_ids(instance, action, pk_set):
-    """The related ids an m2m change touched (``pre_clear`` snapshots them)."""
+    """The related ids an m2m change touched (``pre_clear`` snapshots them).
+
+    这次 m2m 变化涉及的关联 id（``pre_clear`` 时会先把它们存成快照）。
+    """
     if action == "post_clear":
         return getattr(instance, _CLEARED_IDS, None) or set()
     return pk_set or set()
@@ -145,6 +178,7 @@ def _changed_ids(instance, action, pk_set):
 
 # --------------------------------------------------------------------------
 # AA state
+# AA 的 State
 # --------------------------------------------------------------------------
 
 
@@ -156,6 +190,7 @@ def on_state_changed(sender, user=None, state=None, **kwargs):
 
 # --------------------------------------------------------------------------
 # User: is_active, delete
+# User：is_active、删除
 # --------------------------------------------------------------------------
 
 
@@ -185,6 +220,8 @@ def on_user_post_save(sender, instance, created=False, raw=False, **kwargs):
 def on_user_pre_delete(sender, instance, **kwargs):
     # Runs while the binding still exists; own savepoint so a failure here
     # cannot poison the deleting transaction.
+    # 运行时绑定还在；使用独立的保存点，这样这里出错也不会连累正在删除
+    # 用户的那个事务。
     try:
         with transaction.atomic():
             bindings.on_user_deleted(instance)
@@ -194,6 +231,7 @@ def on_user_pre_delete(sender, instance, **kwargs):
 
 # --------------------------------------------------------------------------
 # User.groups / User.user_permissions
+# 用户所在的组 / 用户直接拥有的权限
 # --------------------------------------------------------------------------
 
 
@@ -202,10 +240,12 @@ def on_user_pre_delete(sender, instance, **kwargs):
 def on_user_groups_changed(sender, instance, action, reverse, pk_set=None, **kwargs):
     if not reverse:
         # user.groups.add(...) etc.: ``instance`` is the user.
+        # user.groups.add(...) 等：``instance`` 是用户。
         if action.startswith("post_"):
             schedule_refresh_user(instance.pk)
         return
     # group.user_set.add(...) etc.: ``instance`` is the group, pk_set users.
+    # group.user_set.add(...) 等：``instance`` 是组，pk_set 是用户 id。
     if action == "pre_clear":
         if _group_matters(instance):
             setattr(instance, _CLEARED_IDS, set(instance.user_set.values_list("pk", flat=True)))
@@ -227,6 +267,7 @@ def on_user_permissions_changed(sender, instance, action, reverse, pk_set=None, 
             schedule_refresh_user(instance.pk)
         return
     # permission.user_set.add(...): ``instance`` is the permission.
+    # permission.user_set.add(...)：``instance`` 是权限。
     if not _is_basic_access(instance):
         return
     if action == "pre_clear":
@@ -241,6 +282,7 @@ def on_user_permissions_changed(sender, instance, action, reverse, pk_set=None, 
 
 # --------------------------------------------------------------------------
 # UserProfile (main character) and EveCharacter (name / corp / alliance)
+# UserProfile（主角色）和 EveCharacter（名字 / 军团 / 联盟）
 # --------------------------------------------------------------------------
 
 
@@ -266,7 +308,7 @@ def on_profile_post_save(sender, instance, created=False, raw=False, **kwargs):
         return
     old = instance.__dict__.pop(_OLD_PROFILE, None)
     if created or old is None:
-        return  # a new profile has no binding yet
+        return  # a new profile has no binding yet / 新建的 profile 还没有绑定
     if old != (instance.main_character_id, instance.state_id):
         schedule_refresh_user(instance.user_id)
 
@@ -275,7 +317,7 @@ def on_profile_post_save(sender, instance, created=False, raw=False, **kwargs):
 @_never_raise
 def on_character_post_save(sender, instance, created=False, raw=False, **kwargs):
     if raw or created:
-        return  # a brand-new character is nobody's main yet
+        return  # a brand-new character is nobody's main yet / 全新的角色还不是任何人的主角色
     user_ids = UserProfile.objects.filter(main_character_id=instance.pk).values_list(
         "user_id", flat=True
     )
@@ -285,6 +327,7 @@ def on_character_post_save(sender, instance, created=False, raw=False, **kwargs)
 
 # --------------------------------------------------------------------------
 # Permission / membership changes that can affect many users at once
+# 可能一次影响很多用户的权限 / 成员变化
 # --------------------------------------------------------------------------
 
 
@@ -294,6 +337,12 @@ def _perm_m2m_touches_basic_access(instance, action, reverse, pk_set, holder_has
     Forward (``instance`` holds permissions): relevant when basic_access is in
     ``pk_set``, or on clear when the holder had it. Reverse (``instance`` is
     the permission): relevant when it is basic_access.
+
+    ``Group.permissions`` 和 ``State.permissions`` 共用的判断逻辑。
+
+    正向（``instance`` 是拥有权限的一方）：``pk_set`` 里有 basic_access 时相关；
+    清空（clear）时，如果原来拥有 basic_access 也相关。反向（``instance`` 是
+    权限本身）：它就是 basic_access 时相关。
     """
     if reverse:
         return _is_basic_access(instance)
@@ -328,6 +377,8 @@ def _on_state_members_changed(sender, instance, action, reverse, pk_set=None, **
     # AA re-assigns states itself (state_changed covers each user); the bot
     # additionally gets one recheck_all when a state carrying basic_access
     # changed its membership rules.
+    # AA 会自己重新分配 State（每个用户都会收到 state_changed）；当带有
+    # basic_access 的 State 改了成员规则时，再额外给机器人发一次 recheck_all。
     if not action.startswith("post_"):
         return
     if reverse:
@@ -352,6 +403,7 @@ for _field in ("member_characters", "member_corporations", "member_alliances", "
 @_never_raise
 def on_group_pre_delete(sender, instance, **kwargs):
     # Deleting a group removes its members without m2m_changed signals.
+    # 删除组时会直接移除组成员，不会发出 m2m_changed 信号。
     if _group_matters(instance):
         schedule_recheck_all()
 

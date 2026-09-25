@@ -4,6 +4,13 @@ Every view needs a login and ``qqbot.manage``; changes are POST-only.
 Binding changes go through ``qqbot.core.bindings``; group and settings
 saves emit events and audit records through ``qqbot.core``.
 Managers see full QQ numbers.
+
+QQ 管理员页面（docs/SPEC.md 第 6 节，DESIGN.md 4.3）。
+
+每个视图都要求已登录并拥有 ``qqbot.manage`` 权限；修改操作只接受 POST。
+绑定的修改统一走 ``qqbot.core.bindings``；保存群和设置时，
+通过 ``qqbot.core`` 发出事件并写审计记录。
+管理员可以看到完整的 QQ 号。
 """
 
 from django.contrib import messages
@@ -56,6 +63,7 @@ DECISION_BADGES = {
 }
 
 # Where a POST action may send the manager back to (no free-form URLs).
+# POST 操作完成后可以把管理员送回哪些页面（只能是这几个，不接受任意 URL）。
 BACK_TARGETS = {"pending": "qqbot:manage_pending", "bindings": "qqbot:manage_bindings"}
 
 BINDING_RELATED = ("user", "user__profile", "user__profile__main_character")
@@ -63,6 +71,7 @@ BINDING_RELATED = ("user", "user__profile", "user__profile__main_character")
 
 # --------------------------------------------------------------------------
 # helpers
+# 辅助函数
 # --------------------------------------------------------------------------
 
 
@@ -71,7 +80,10 @@ def _conflict_qqs() -> list[str]:
 
 
 def _fresh_unbound():
-    """Unbound roster entries of active groups whose roster is fresh."""
+    """Unbound roster entries of active groups whose roster is fresh.
+
+    已启用且群成员名单还在有效期内的群里，尚未绑定的名单条目。
+    """
     return unbound_roster().filter(
         group__last_roster_at__isnull=False,
         group__last_roster_at__gte=fresh_roster_cutoff(),
@@ -118,7 +130,10 @@ def _page(request, qs):
 
 
 def _querystring(request) -> str:
-    """Current GET parameters without ``page`` (for pagination links)."""
+    """Current GET parameters without ``page`` (for pagination links).
+
+    当前请求的 GET 参数，去掉 ``page``（用来拼分页链接）。
+    """
     params = request.GET.copy()
     params.pop("page", None)
     return params.urlencode()
@@ -147,6 +162,7 @@ def _group_audit_detail(group: QQGroup) -> dict:
 
 # --------------------------------------------------------------------------
 # index / groups
+# 首页 / 群管理
 # --------------------------------------------------------------------------
 
 
@@ -177,7 +193,10 @@ def groups(request):
 
 
 def _save_group(request, form, op: str):
-    """Save the group form; returns the group or None (errors on the form)."""
+    """Save the group form; returns the group or None (errors on the form).
+
+    保存群表单；成功时返回群对象，失败时返回 None（错误信息加在表单上）。
+    """
     changed = list(form.changed_data)
     try:
         with transaction.atomic():
@@ -253,6 +272,7 @@ def group_delete(request, pk):
 
 # --------------------------------------------------------------------------
 # bindings
+# 绑定
 # --------------------------------------------------------------------------
 
 
@@ -262,7 +282,7 @@ def binding_list(request):
     form = BindingFilterForm(request.GET or None)
     qs = Binding.objects.select_related(*BINDING_RELATED).order_by("user__username", "pk")
     conflict_qqs = set(_conflict_qqs())
-    form.is_valid()  # a bad value in one field must not drop the others
+    form.is_valid()  # a bad value in one field must not drop the others / 一个字段出错不能连累其他筛选条件
     filters = form.cleaned_data if form.is_bound else {}
     if filters:
         q = (filters.get("q") or "").strip()
@@ -347,6 +367,7 @@ def _binding_context(binding: Binding, card_form=None) -> dict:
         others=others,
         other_verified=other_verified,
         # Trusted claims on a QQ nobody verified (DESIGN 5.4).
+        # 同一个 QQ 被多个账号以老成员免验证方式认领，且没有人验证过它（DESIGN 5.4）。
         conflict=(
             binding.status == Binding.Status.TRUSTED and bool(others) and not other_verified
         ),
@@ -390,6 +411,7 @@ def binding_card(request, pk):
 def binding_confirm(request, pk):
     binding = _get_binding(pk)
     # The QQ shown on the page: a member may have rebound (same pk) since.
+    # 传入页面上显示的 QQ：成员可能在这期间换绑了（pk 不变）。
     result = bindings.confirm(binding, request.user, expected_qq=request.POST.get("qq", ""))
     _message(request, result)
     return _back(request, "qqbot:manage_binding", pk=binding.pk)
@@ -424,6 +446,7 @@ def binding_unbind(request, pk):
 
 # --------------------------------------------------------------------------
 # pending
+# 待处理
 # --------------------------------------------------------------------------
 
 
@@ -471,6 +494,7 @@ def pending(request):
 
 # --------------------------------------------------------------------------
 # settings
+# 设置
 # --------------------------------------------------------------------------
 
 
@@ -500,6 +524,8 @@ def settings_view(request):
             if "card_format" in changed:
                 # Every card may change: recompute all bindings in the
                 # background (inline if the broker is unreachable).
+                # 所有群名片都可能变化：在后台重新计算全部绑定
+                # （连不上 broker 时直接在当前请求里执行）。
                 transaction.on_commit(tasks.queue_reconcile)
         if "card_format" in changed:
             messages.success(request, "设置已保存。群名片格式已修改，所有人的群名片会在后台重新计算。")
@@ -520,10 +546,12 @@ def settings_view(request):
 
 # --------------------------------------------------------------------------
 # audit
+# 审计日志
 # --------------------------------------------------------------------------
 
 
 # Chinese labels for the keys and well-known values in AuditLog.detail.
+# AuditLog.detail 里的键名和常见取值对应的中文显示文字。
 DETAIL_KEY_LABELS = {
     "op": "操作",
     "changed": "修改了",

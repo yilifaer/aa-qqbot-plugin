@@ -1,4 +1,7 @@
-"""Forms for the QQ manager pages (docs/SPEC.md section 6)."""
+"""Forms for the QQ manager pages (docs/SPEC.md section 6).
+
+QQ 管理员页面用到的表单（docs/SPEC.md 第 6 节）。
+"""
 
 from django import forms
 from django.contrib.auth.models import Group
@@ -17,10 +20,18 @@ class QQGroupForm(forms.ModelForm):
     * A role group needs at least one AA group; a fixed group must not have
       any (it is open to every member, so selected groups would be ignored
       and the manager probably meant a role group).
+
+    新增 / 编辑一个受管理的 QQ 群。
+
+    * ``group_id`` 会先规范化（带空格或全角数字都可以），并且不能重复。
+    * 身份组小群至少要选一个 AA 组；固定群一个组都不能选（固定群对所有成员
+      开放，选了的组会被忽略，管理员多半其实是想建身份组小群）。
     """
 
     # Wider than the model field so "123 456 789" or full-width digits reach
     # clean_group_id() and get normalized instead of failing max_length.
+    # 比模型字段更长，这样 "123 456 789" 或全角数字能进入 clean_group_id()
+    # 被规范化，而不是直接因为超过 max_length 报错。
     group_id = forms.CharField(
         label="群号",
         max_length=40,
@@ -99,7 +110,11 @@ class QQGroupForm(forms.ModelForm):
 
 class CardOverrideForm(forms.Form):
     """Manager-set group card. Empty means "use the automatic card"; the
-    byte limit is checked by ``core.bindings.set_card_override``."""
+    byte limit is checked by ``core.bindings.set_card_override``.
+
+    管理员手动指定的群名片。留空表示“使用自动生成的群名片”；
+    字节数上限由 ``core.bindings.set_card_override`` 检查。
+    """
 
     card = forms.CharField(
         label="指定群名片",
@@ -139,7 +154,11 @@ class AuditFilterForm(forms.Form):
 
 class MultilineField(forms.CharField):
     """CharField that normalizes browser line endings (``\r\n`` -> ``\n``)
-    before comparing and saving, so an untouched textarea is not "changed"."""
+    before comparing and saving, so an untouched textarea is not "changed".
+
+    一个 CharField：比较和保存之前，先统一浏览器提交的换行符（``\r\n`` -> ``\n``），
+    这样没动过的多行文本框不会被当成“已修改”。
+    """
 
     def to_python(self, value):
         value = super().to_python(value)

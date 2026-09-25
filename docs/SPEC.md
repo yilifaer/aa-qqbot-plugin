@@ -22,7 +22,7 @@
 | `qqbot/api/`、`API.md` | 机器人接口 |
 | `qqbot/views/member*.py`、`templates/qqbot/member/`（卡片用的片段）、`service_hook.py`、`templates/qqbot/service_ctrl.html` | 服务页的 QQ 绑定卡片（成员的全部界面）及其 POST 视图 |
 | `qqbot/views/manage*.py`、`templates/qqbot/manage/` | 管理页面 |
-| `qqbot/signals.py`、`tasks.py`、`checks.py`、`admin.py`、`management/`、`README.md` | 集成、后台任务、系统检查、安装文档 |
+| `qqbot/signals.py`、`tasks.py`、`checks.py`、`admin.py`、`management/`、`README.md`、`README.zh-CN.md`、`docs/GUIDE.md` | 集成、后台任务、系统检查、安装文档 |
 | `qqbot/tests/test_<领域>_*.py` | 各部分自己的测试；公共测试工具放 `qqbot/tests/utils.py`（core 负责创建） |
 
 ## 2. 数据模型（见 `models.py`）
@@ -203,7 +203,7 @@ def evaluate_many(groups, qqs, now=None, config=None) -> dict[str, dict[int, Dec
   - health 接口复用同一套检查逻辑（纯函数 `problems() -> list[str]`）
 - `admin.py`：注册 `QQGroup`、`Binding`（只读，改动走前台）、`AuditLog`（只读）、`Config`。
 - `management/commands/qqbot_reconcile.py`：手动执行对账。
-- `README.md`（中文）：功能、给 IT 的安装步骤（`pip install`；`local.py` 中 `INSTALLED_APPS += ["qqbot"]`、`APPS_WITH_PUBLIC_VIEWS += ["qqbot"]`、`QQBOT_API_KEYS`、`CELERYBEAT_SCHEDULE`；`migrate`；重启）、权限怎么分配、如何生成密钥（`python -c "import secrets; print(secrets.token_urlsafe(48))"`）、升级与卸载（卸载时要删掉数据库里的 `qqbot_reconcile` 定时任务，AA 5 的 beat 把它存在 django_celery_beat 表里）。
+- `README.md`（英文，简短）+ `README.zh-CN.md`（中文，简短）+ `docs/GUIDE.md`（中文分步说明和常见问题）：功能、给 IT 的安装步骤（`pip install`；`local.py` 中 `INSTALLED_APPS += ["qqbot"]`、`APPS_WITH_PUBLIC_VIEWS += ["qqbot"]`、`QQBOT_API_KEYS`、`CELERYBEAT_SCHEDULE`；`migrate`；重启）、权限怎么分配、如何生成密钥（`python -c "import secrets; print(secrets.token_urlsafe(48))"`）、升级与卸载（卸载时要删掉数据库里的 `qqbot_reconcile` 定时任务，AA 5 的 beat 把它存在 django_celery_beat 表里）。
 
 ## 8. 安全底线（任何部分都必须遵守）
 

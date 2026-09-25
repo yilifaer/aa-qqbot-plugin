@@ -3,6 +3,11 @@
 :func:`problems` is the single source of truth: the Django system checks
 below and the bot API's ``health`` endpoint both use it. Codes are the
 system check ids (``qqbot.E001`` ...).
+
+配置检查（见 docs/SPEC.md 第 7 节）。
+
+``problems`` 是唯一的判断依据：下面的 Django 系统检查和机器人接口的
+``health`` 接口都调用它。问题代码就是系统检查的 id（``qqbot.E001`` 等）。
 """
 
 from django.conf import settings
@@ -19,10 +24,13 @@ W001 = "qqbot.W001"
 W002 = "qqbot.W002"
 
 # The daily reconciliation task that local.py must schedule (README).
+# local.py 里必须安排的每日对账任务（见 README）。
 RECONCILE_TASK = "qqbot.tasks.reconcile"
 
 # Cache backends that are not shared between processes (gunicorn workers),
 # so the API's replay protection (nonces) and rate limits would not work.
+# 不在多个进程（gunicorn worker）之间共享的缓存后端；用这些后端时，
+# 接口的防重放（nonce）和限速都不起作用。
 _UNSHARED_CACHE_MARKERS = ("locmem", "dummy", "filebased")
 
 
@@ -33,7 +41,10 @@ def _cache_backend() -> str:
 
 
 def _reconcile_scheduled() -> bool:
-    """Whether ``CELERYBEAT_SCHEDULE`` has an entry for the daily reconcile."""
+    """Whether ``CELERYBEAT_SCHEDULE`` has an entry for the daily reconcile.
+
+    ``CELERYBEAT_SCHEDULE`` 里是否有每日对账任务。
+    """
     schedule = getattr(settings, "CELERYBEAT_SCHEDULE", None)
     if not isinstance(schedule, dict):
         return False
@@ -45,7 +56,11 @@ def _reconcile_scheduled() -> bool:
 
 def _usable_key_id(key_id) -> bool:
     """A key id the bot can actually send in ``X-QQBot-Key`` (same ``str()``
-    conversion as ``signing.configured_keys``)."""
+    conversion as ``signing.configured_keys``).
+
+    这个密钥编号能否真正放进 ``X-QQBot-Key`` 请求头发送（与
+    ``signing.configured_keys`` 一样，先用 ``str()`` 转换）。
+    """
     from .api.signing import KEY_ID_RE
 
     return bool(KEY_ID_RE.fullmatch(str(key_id)))
@@ -55,6 +70,10 @@ def problems() -> list[str]:
     """Short codes of configuration problems, e.g. ``["qqbot.E002"]``.
 
     Pure: reads settings only, never raises.
+
+    返回配置问题的简短代码，例如 ``["qqbot.E002"]``。
+
+    纯函数：只读取设置，从不抛出异常。
     """
     found = []
     public = getattr(settings, "APPS_WITH_PUBLIC_VIEWS", None)
@@ -92,7 +111,10 @@ def _messages() -> dict:
         ),
         E002: Error(
             "QQBOT_API_KEYS 没有配置（或者不是字典），机器人接口会一直返回 503。",
-            hint='在 local.py 里写 QQBOT_API_KEYS = {"koishi-1": "<密钥>"}，密钥的生成方法见 README 第 2 节。',
+            hint=(
+                '在 local.py 里写 QQBOT_API_KEYS = {"koishi-1": "<密钥>"}。'
+                '密钥这样生成：python -c "import secrets; print(secrets.token_urlsafe(48))"'
+            ),
             id=E002,
         ),
         E003: Error(
