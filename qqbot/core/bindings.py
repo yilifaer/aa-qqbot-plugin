@@ -768,6 +768,10 @@ def on_user_deleted(user) -> None:
         # an older event id invisible to the bot's cursor until after it has
         # moved past it.
         # 等删除提交之后再写事件：批量删除耗时较长时，事件编号不会被机器人的游标跳过。
+        # robust: the user is already deleted by then; a failure is only
+        # logged (the daily reconciliation catches it), never a 500.
+        # robust：这时用户已经删掉了；写事件失败只记日志（每天的对账会兜底），
+        # 不会让删除用户的页面报 500。
         qq = binding.qq
-        transaction.on_commit(lambda: events.emit(Event.Kind.RECHECK, qq))
+        transaction.on_commit(lambda: events.emit(Event.Kind.RECHECK, qq), robust=True)
         audit.log(Action.USER_DELETED, qq=binding.qq, target_user=user, status=binding.status)

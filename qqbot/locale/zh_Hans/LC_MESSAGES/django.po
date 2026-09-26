@@ -668,6 +668,40 @@ msgstr "认领时间"
 msgid "Confirm as owner"
 msgstr "确认归他"
 
+#, python-format
+msgid "Bound without a code in the last %(days)s day"
+msgid_plural "Bound without a code in the last %(days)s days"
+msgstr[0] "最近 %(days)s 天的免验证绑定"
+
+#, python-format
+msgid ""
+"These members entered a QQ from a group member list and were bound without a "
+"verification code (\"Trusted (already in group)\"). During the transition "
+"window anyone can claim any QQ in the group this way, so take a quick look: "
+"is the main character the same person as that QQ in the group? If yes, click "
+"\"Confirm as owner\" (the binding becomes verified and leaves this list). If "
+"not, force-unbind it. Bindings you leave alone keep working and drop off "
+"this list after %(days)s day."
+msgid_plural ""
+"These members entered a QQ from a group member list and were bound without a "
+"verification code (\"Trusted (already in group)\"). During the transition "
+"window anyone can claim any QQ in the group this way, so take a quick look: "
+"is the main character the same person as that QQ in the group? If yes, click "
+"\"Confirm as owner\" (the binding becomes verified and leaves this list). If "
+"not, force-unbind it. Bindings you leave alone keep working and drop off "
+"this list after %(days)s days."
+msgstr[0] ""
+"这些成员填写的 QQ 在群成员名单里，没用验证码就绑定了（「老成员免验证」）。"
+"过渡期内，任何人都可以这样认领群里的任意一个 QQ，所以请看一眼：主角色和群里"
+"这个 QQ 是同一个人吗？是的话点「确认归他」（绑定变成「已验证」，从这里消失）；"
+"不是的话就强制解绑。不处理的绑定照常生效，%(days)s 天后从这里消失。"
+
+msgid "In groups"
+msgstr "所在的群"
+
+msgid "Nothing to review."
+msgstr "没有需要复核的绑定。"
+
 msgid "No conflicts right now."
 msgstr "现在没有冲突。"
 

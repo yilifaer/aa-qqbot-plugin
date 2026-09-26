@@ -48,6 +48,7 @@
 - 添加、修改、停用 QQ 群，分「固定群」（所有成员都能进）和「身份组小群」（只有指定 AA 组的人能进）；
 - 查看所有绑定，修改某人的群名片，确认绑定，强制解绑；
 - 处理「冲突」（同一个 QQ 被两个账号认领）和「群里有但没绑定」的 QQ；
+- 在「待处理」里复核最近 7 天的免验证绑定，发现冒领别人 QQ 的可以直接强制解绑；
 - 修改入群须知、群名片格式、验证码有效期、群成员名单有效期、换绑冷却等设置；
 - 查看操作记录。
 
@@ -144,7 +145,7 @@ pip show allianceauth django-sri aa-qqbot | grep -E '^(Name|Version)'
 pip install git+https://github.com/yilifaer/aa-qqbot-plugin.git
 ```
 
-- 最后一行出现 `Successfully installed aa-qqbot-1.0.0b4` 就装好了（可能还会列出其他包，是 AA 缺的依赖）。
+- 最后一行出现 `Successfully installed aa-qqbot-1.0.0b5` 就装好了（可能还会列出其他包，是 AA 缺的依赖）。
 - 提示 `Cannot find command 'git'`：先安装 git（见「准备」），或者改用不需要 git 的写法：
   `pip install https://github.com/yilifaer/aa-qqbot-plugin/archive/refs/heads/main.zip`
 - 注意：包名是 `aa-qqbot`，只能用上面的 GitHub 地址安装。**不要**运行 `pip install qqbot`：

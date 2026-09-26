@@ -1,6 +1,7 @@
 from datetime import timedelta
 from unittest import mock
 
+from django.contrib.auth.models import User
 from django.core.cache import cache
 from django.db import IntegrityError, transaction
 from django.db.models import UniqueConstraint
@@ -729,6 +730,17 @@ class UserDeletedTests(BaseTestCase):
         entry.refresh_from_db()
         self.assertIsNone(entry.target_user)
         self.assertEqual(entry.target_name, "alice")
+        self.assertFalse(Binding.objects.exists())
+
+    def test_on_user_deleted_event_failure_does_not_raise(self):
+        # The user is already deleted when the event is written; a failure
+        # must be logged, not turned into a 500 on the delete page.
+        bind(self.user, "12345678")
+        with mock.patch.object(bindings.events, "emit", side_effect=RuntimeError("boom")), \
+                self.assertLogs("django", "ERROR"):
+            with self.captureOnCommitCallbacks(execute=True):
+                self.user.delete()
+        self.assertFalse(User.objects.filter(pk=self.user.pk).exists())
         self.assertFalse(Binding.objects.exists())
 
     def test_on_user_deleted_without_binding(self):

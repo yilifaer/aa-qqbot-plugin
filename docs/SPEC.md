@@ -176,7 +176,7 @@ def evaluate_many(groups, qqs, now=None, config=None) -> dict[str, dict[int, Dec
 
 ## 6. 管理页面
 
-- `manage_urls.urlpatterns`，URL 名称：`manage_index`（重定向到 `manage_bindings`）、`manage_groups`、`manage_group_create`、`manage_group_edit <pk>`、`manage_group_delete <pk>`（确认后 POST）、`manage_bindings`（搜索：用户名、角色名、QQ、军团简称；筛选：状态、冲突；每页 50 条）、`manage_binding <pk>`（详情：各群判定表、名片预览；操作：设置或清除名片、确认、强制解绑）、`manage_pending`（冲突列表加各群未绑定的 QQ）、`manage_settings`（Config 表单）、`manage_audit`（分页，可按 QQ 筛选）。
+- `manage_urls.urlpatterns`，URL 名称：`manage_index`（重定向到 `manage_bindings`）、`manage_groups`、`manage_group_create`、`manage_group_edit <pk>`、`manage_group_delete <pk>`（确认后 POST）、`manage_bindings`（搜索：用户名、角色名、QQ、军团简称；筛选：状态、冲突；每页 50 条）、`manage_binding <pk>`（详情：各群判定表、名片预览；操作：设置或清除名片、确认、强制解绑）、`manage_pending`（冲突列表、最近 7 天的免验证绑定（`RECENT_TRUSTED_DAYS`，按 `qq_changed_at` 倒序，不含冲突和别人已验证的 QQ，不计入待处理数字）、各群未绑定的 QQ）、`manage_settings`（Config 表单）、`manage_audit`（分页，可按 QQ 筛选）。
 - 所有视图：`@login_required` + `@permission_required("qqbot.manage", raise_exception=True)`，修改操作只接受 POST。管理员可以看到完整 QQ 号。
 - 群表单规则：`role` 类型必须至少选择一个 `required_groups`；群号经 `normalize_qq` 规范化且唯一。保存或删除后调用 `emit_groups_changed()` 并写审计 `GROUP`。设置保存后写审计 `CONFIG`，群名片格式变化时调用 `refresh_all()`（数量大时交给 Celery 异步执行）。
 - 所有修改只能通过 core 完成。

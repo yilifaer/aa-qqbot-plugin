@@ -157,4 +157,6 @@ class ConfigAdmin(admin.ModelAdmin):
             # 每个群名片都可能变化：在后台重新计算所有绑定。
             from .tasks import queue_reconcile
 
-            transaction.on_commit(queue_reconcile)
+            # robust: the settings are saved by then; a failure is logged.
+            # robust：这时设置已经保存；出错只记日志。
+            transaction.on_commit(queue_reconcile, robust=True)

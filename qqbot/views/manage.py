@@ -13,6 +13,8 @@ QQ 管理员页面（docs/SPEC.md 第 6 节，DESIGN.md 4.3）。
 管理员可以看到完整的 QQ 号。
 """
 
+from datetime import timedelta
+
 from django.contrib import messages
 from django.contrib.auth.decorators import login_required, permission_required
 from django.core.paginator import Paginator
@@ -20,6 +22,7 @@ from django.db import IntegrityError, transaction
 from django.db.models import Count, Q
 from django.shortcuts import get_object_or_404, redirect
 from django.template.response import TemplateResponse
+from django.utils import timezone
 from django.utils.translation import gettext, pgettext, pgettext_lazy
 from django.utils.translation import gettext_lazy as _
 from django.views.decorators.http import require_http_methods, require_POST
@@ -43,6 +46,10 @@ logger = get_extension_logger(__name__)
 
 MANAGE = "qqbot.manage"
 PAGE_SIZE = 50
+# "Needs attention" lists bindings made without a code in this many days
+# (decision #22).
+# 「待处理」页列出最近这么多天内的免验证绑定（决定 #22）。
+RECENT_TRUSTED_DAYS = 7
 
 REASON_LABELS = {
     eligibility.OK: _("Eligible"),
@@ -92,6 +99,39 @@ def _fresh_unbound():
         group__last_roster_at__isnull=False,
         group__last_roster_at__gte=fresh_roster_cutoff(),
     )
+
+
+def _recent_trusted(now=None) -> list[Binding]:
+    """Trusted bindings made (or moved to their QQ) in the last
+    ``RECENT_TRUSTED_DAYS`` days, newest first, for managers to review.
+
+    Only claims nobody else shares: conflicts are listed separately, and a
+    trusted claim on a QQ someone verified has no effect.
+
+    最近 ``RECENT_TRUSTED_DAYS`` 天内做的（或换绑到这个 QQ 的）免验证绑定，
+    按时间倒序，给管理员复核。
+
+    只列没有别人认领同一个 QQ 的：冲突另外列出；别人已经验证过的 QQ，
+    免验证认领本来就不生效。
+    """
+    now = now or timezone.now()
+    rows = list(
+        Binding.objects.filter(
+            status=Binding.Status.TRUSTED,
+            qq_changed_at__gte=now - timedelta(days=RECENT_TRUSTED_DAYS),
+        )
+        .select_related(*BINDING_RELATED)
+        .order_by("-qq_changed_at", "-pk")
+    )
+    shared = set(
+        Binding.objects.filter(qq__in={b.qq for b in rows})
+        .order_by()
+        .values("qq")
+        .annotate(n=Count("pk"))
+        .filter(n__gt=1)
+        .values_list("qq", flat=True)
+    )
+    return [b for b in rows if b.qq not in shared]
 
 
 def _summary() -> dict:
@@ -504,6 +544,24 @@ def pending(request):
     for entry in _fresh_unbound():
         slot = by_group.setdefault(entry.group_id, {"group": entry.group, "qqs": []})
         slot["qqs"].append(entry.qq)
+    recent = _recent_trusted()
+    groups_by_qq: dict[str, list[QQGroup]] = {}
+    for entry in (
+        RosterEntry.objects.filter(qq__in={b.qq for b in recent}, group__is_active=True)
+        .select_related("group")
+        .order_by("group__kind", "group__sort_order", "group__name")
+    ):
+        groups_by_qq.setdefault(entry.qq, []).append(entry.group)
+    recent_trusted = [
+        {
+            "binding": b,
+            "main": getattr(getattr(b.user, "profile", None), "main_character", None),
+            "card": cards.render_card(b, config),
+            "groups": groups_by_qq.get(b.qq, []),
+        }
+        for b in recent
+    ]
+
     cutoff = fresh_roster_cutoff(config=config)
     stale_groups = list(
         QQGroup.objects.filter(is_active=True)
@@ -516,6 +574,8 @@ def pending(request):
         _ctx(
             "pending",
             conflicts=conflict_rows,
+            recent_trusted=recent_trusted,
+            recent_trusted_days=RECENT_TRUSTED_DAYS,
             unbound_groups=list(by_group.values()),
             stale_groups=stale_groups,
             roster_max_age_days=config.roster_max_age_days,
@@ -558,7 +618,9 @@ def settings_view(request):
                 # background (inline if the broker is unreachable).
                 # 所有群名片都可能变化：在后台重新计算全部绑定
                 # （连不上 broker 时直接在当前请求里执行）。
-                transaction.on_commit(tasks.queue_reconcile)
+                # robust: the settings are saved by then; a failure is logged.
+                # robust：这时设置已经保存；出错只记日志。
+                transaction.on_commit(tasks.queue_reconcile, robust=True)
         if "card_format" in changed:
             messages.success(
                 request,

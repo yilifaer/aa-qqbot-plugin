@@ -5,7 +5,9 @@ from unittest import mock
 
 from django.contrib.auth.models import Group
 from django.core.cache import cache
+from django.db import connection
 from django.test import TestCase
+from django.test.utils import CaptureQueriesContext
 from django.urls import reverse
 from django.utils import timezone
 
@@ -576,6 +578,81 @@ class PendingTests(ManagerTestCase):
         # Distinct QQs in the header count.
         self.assertEqual(r.context["summary"]["unbound"], 3)
 
+    def test_empty_recent_trusted(self):
+        r = self.client.get(PENDING)
+        self.assertEqual(r.context["recent_trusted"], [])
+        self.assertContains(r, "最近 7 天的免验证绑定")
+        self.assertContains(r, "没有需要复核的绑定")
+
+    def test_lists_recent_trusted_bindings(self):
+        now = timezone.now()
+        g = create_group("123456", name="聊天群")
+        put_in_roster(g, ["33333333"])
+        bob = create_member("bob", character_name="Bob Builder")
+        new = bind(bob, "33333333", status="trusted", qq_changed_at=now - timedelta(hours=1))
+        newer = bind(create_member("erin"), "55555555", status="trusted",
+                     qq_changed_at=now - timedelta(minutes=5))
+        # Older than 7 days, verified, a conflict, a claim on a verified QQ:
+        # none of these belong in the list.
+        bind(create_member("old"), "44444444", status="trusted",
+             qq_changed_at=now - timedelta(days=8))
+        bind(create_member("ver"), "66666666", qq_changed_at=now)
+        bind(create_member("c1"), "77777777", status="trusted", qq_changed_at=now)
+        bind(create_member("c2"), "77777777", status="trusted", qq_changed_at=now)
+        bind(create_member("own"), "88888888", qq_changed_at=now)
+        bind(create_member("shadow"), "88888888", status="trusted", qq_changed_at=now)
+
+        r = self.client.get(PENDING)
+        rows = r.context["recent_trusted"]
+        self.assertEqual([row["binding"].pk for row in rows], [newer.pk, new.pk])
+        self.assertEqual(rows[1]["groups"], [g])
+        self.assertContains(r, "Bob Builder")
+        self.assertContains(r, "聊天群")
+        for b in (new, newer):
+            self.assertContains(r, reverse("qqbot:manage_binding_confirm", args=[b.pk]))
+            self.assertContains(
+                r, reverse("qqbot:manage_binding_unbind", args=[b.pk]) + "?back=pending"
+            )
+        self.assertNotContains(r, "44444444")
+        self.assertNotContains(r, "66666666")
+        self.assertNotContains(r, "88888888")
+        # The conflict shows up once, in the conflict section.
+        self.assertEqual([c["qq"] for c in r.context["conflicts"]], ["77777777"])
+        # Not counted as "needs attention": only the conflict is.
+        self.assertEqual(r.context["summary"]["pending"], 1)
+
+    def test_confirm_removes_from_recent_trusted(self):
+        b = bind(create_member("bob"), "33333333", status="trusted",
+                 qq_changed_at=timezone.now())
+        r = self.client.post(
+            reverse("qqbot:manage_binding_confirm", args=[b.pk]),
+            {"back": "pending", "qq": "33333333"},
+        )
+        self.assertRedirects(r, PENDING)
+        b.refresh_from_db()
+        self.assertEqual(b.status, "verified")
+        self.assertEqual(self.client.get(PENDING).context["recent_trusted"], [])
+
+    def test_recent_trusted_query_count_is_constant(self):
+        now = timezone.now()
+        g = create_group("123456")
+        put_in_roster(g, ["33333333", "44444444", "55555555"])
+        bind(create_member("a"), "33333333", status="trusted", qq_changed_at=now)
+        self.client.get(PENDING)  # warm caches (Config, permissions)
+        with CaptureQueriesContext(connection) as one:
+            self.client.get(PENDING)
+        bind(create_member("b"), "44444444", status="trusted", qq_changed_at=now)
+        bind(create_member("c"), "55555555", status="trusted", qq_changed_at=now)
+        with CaptureQueriesContext(connection) as three:
+            self.client.get(PENDING)
+        self.assertEqual(len(one), len(three))
+
+    def test_recent_trusted_in_english(self):
+        bind(create_member("bob"), "33333333", status="trusted", qq_changed_at=timezone.now())
+        r = self.client.get(PENDING, HTTP_ACCEPT_LANGUAGE="en")
+        self.assertContains(r, "Bound without a code in the last 7 days")
+        self.assertContains(r, "In groups")
+
 
 # --------------------------------------------------------------------------
 # settings
@@ -628,6 +705,19 @@ class SettingsTests(ManagerTestCase):
         self.assertEqual(
             log.detail["card_format"], {"old": Config.DEFAULT_CARD_FORMAT, "new": "{nickname}"}
         )
+
+    def test_card_format_change_survives_reconcile_failure(self):
+        # The settings are saved before the callback runs: a failure there
+        # is logged, and the manager still gets the normal page back.
+        def broken():
+            raise RuntimeError("boom")
+
+        with mock.patch("qqbot.tasks.queue_reconcile", new=broken), \
+                self.assertLogs("django", "ERROR"):
+            with self.captureOnCommitCallbacks(execute=True):
+                r = self.client.post(SETTINGS, settings_data(card_format="{nickname}"))
+        self.assertRedirects(r, SETTINGS)
+        self.assertEqual(Config.get_solo().card_format, "{nickname}")
 
     def test_card_format_change_refreshes_cards_end_to_end(self):
         create_group("123456")
