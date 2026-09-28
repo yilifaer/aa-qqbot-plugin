@@ -49,8 +49,8 @@ class QQBotMenuItem(MenuItemHook):
         # AA 会把没有主角色的用户从所有插件页面跳回首页，所以对他们不显示这个入口。
         if request.user.has_perm("qqbot.manage") and has_main_character(request.user):
             # The number badge, like AA's own group requests entry. The hook
-            # object is shared by all requests: set it every time.
-            # 数字角标，和 AA 自带的「入组申请」一样。hook 对象是所有请求共用的，
+            # object may be reused between requests: set it every time.
+            # 数字角标，和 AA 自带的「入组申请」一样。hook 对象可能被多个请求重复使用，
             # 每次都要重新赋值。
             self.count = attention.attention_counts()["total"] or None
             # qqbot's UI language (``qqbot.i18n``) / qqbot 的界面语言

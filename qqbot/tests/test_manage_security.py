@@ -176,6 +176,10 @@ class EscapingTests(TestCase):
     def test_names_cards_and_descriptions_escaped(self):
         group = create_group("123456", name=XSS, description=XSS)
         role = create_group("223456", kind="role", required=[XSS], name="小群")
+        # An active role group without AA groups: its name is in the
+        # "misconfigured" alert on the pending page.
+        # 没选 AA 组的启用中身份组小群：群名出现在待处理页的配置错误提示里。
+        create_group("323456", kind="role", name=XSS)
         member = create_member("x" + "1", character_name=XSS, corp_ticker="<b>")
         other = create_member("x2", character_name=XSS)
         b = bind(member, "11111111", status="trusted", nickname=XSS, card_override=XSS)
