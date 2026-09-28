@@ -3,18 +3,22 @@
 Day-to-day management happens on the front-end manage pages; the admin is a
 fallback for superusers. Bindings and the audit log are view-only here
 because every binding change must go through ``qqbot.core`` (locks, events
-for the bot, audit records). Group and settings saves emit the same events
-and audit records as the manage pages.
+for the bot, audit records). The one exception: deleting an AA user here
+also deletes their binding (the cascade), and qqbot's ``pre_delete``
+receiver records it and tells the bot. Group and settings saves emit the
+same events and audit records as the manage pages.
 
 Django 后台（见 docs/SPEC.md 第 7 节）。
 
 日常管理在前台管理页面上进行；后台只是给超级用户的备用入口。绑定和审计日志
 在这里只能查看，因为每次修改绑定都必须经过 ``qqbot.core``（加锁、给机器人
-发事件、写审计记录）。在这里保存群和设置时，会和管理页面一样发出事件、
-写审计记录。
+发事件、写审计记录）。唯一的例外：在后台删除 AA 用户时，他的绑定会跟着删除
+（级联删除），qqbot 的 ``pre_delete`` 接收器会记录下来并通知机器人。在这里
+保存群和设置时，会和管理页面一样发出事件、写审计记录。
 """
 
 from django.contrib import admin
+from django.core.exceptions import PermissionDenied
 from django.db import transaction
 from django.utils.translation import pgettext_lazy
 
@@ -126,6 +130,27 @@ class BindingAdmin(_ReadOnlyAdmin):
         profile = getattr(obj.user, "profile", None)
         char = getattr(profile, "main_character", None)
         return char.character_name if char else "—"
+
+    def has_delete_permission(self, request, obj=None):
+        # Deleting an AA user cascades to their binding, and Django's admin
+        # asks this for every cascaded object (obj is set). Allow it: the
+        # User admin's own permission (auth.delete_user) guards the deletion,
+        # and qqbot's pre_delete receiver writes USER_DELETED and a recheck
+        # event. obj=None stays False: no "delete selected" action here.
+        # 删除 AA 用户时会级联删除他的绑定，Django 后台会对每个被级联删除的
+        # 对象调用这里（obj 不为空）。这时放行：删除本身由用户后台自己的权限
+        # （auth.delete_user）把关，qqbot 的 pre_delete 接收器会写 USER_DELETED
+        # 审计并发复查事件。obj 为空时仍返回 False：这里没有「删除所选」。
+        return obj is not None
+
+    def delete_view(self, request, object_id, extra_context=None):
+        # A binding itself is only removed through qqbot.core.
+        # 绑定本身只能通过 qqbot.core 删除。
+        raise PermissionDenied
+
+    def change_view(self, request, object_id, form_url="", extra_context=None):
+        extra_context = {**(extra_context or {}), "show_delete": False}
+        return super().change_view(request, object_id, form_url, extra_context)
 
 
 @admin.register(AuditLog)

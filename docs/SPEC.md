@@ -201,7 +201,7 @@ def evaluate_many(groups, qqs, now=None, config=None) -> dict[str, dict[int, Dec
   - `qqbot.W001`：缓存后端不是 Redis 一类的共享缓存（nonce 防重放需要跨进程共享）
   - `qqbot.W002`：`CELERYBEAT_SCHEDULE` 里没有 `task == "qqbot.tasks.reconcile"` 的条目（条目名不限；在后台手动添加定时任务的站点可以忽略这条警告）
   - health 接口复用同一套检查逻辑（纯函数 `problems() -> list[str]`）
-- `admin.py`：注册 `QQGroup`、`Binding`（只读，改动走前台）、`AuditLog`（只读）、`Config`。
+- `admin.py`：注册 `QQGroup`、`Binding`（只读，改动走前台；但删除 AA 用户时允许级联删除它：`has_delete_permission(obj)` 为真、`delete_view` 返回 403、详情页不显示删除按钮、列表没有批量删除）、`AuditLog`（只读）、`Config`。
 - `management/commands/qqbot_reconcile.py`：手动执行对账。
 - `README.md`（英文，简短）+ `README.zh-CN.md`（中文，简短）+ `docs/GUIDE.md`（中文分步说明和常见问题）：功能、给 IT 的安装步骤（`pip install`；`local.py` 中 `INSTALLED_APPS += ["qqbot"]`、`APPS_WITH_PUBLIC_VIEWS += ["qqbot"]`、`QQBOT_API_KEYS`、`CELERYBEAT_SCHEDULE`；`migrate`；重启）、权限怎么分配、如何生成密钥（`python -c "import secrets; print(secrets.token_urlsafe(48))"`）、升级与卸载（卸载时要删掉数据库里的 `qqbot_reconcile` 定时任务，AA 5 的 beat 把它存在 django_celery_beat 表里）。
 
