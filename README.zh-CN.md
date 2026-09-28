@@ -4,6 +4,8 @@
 
 Alliance Auth 的 QQ 群成员管理插件。成员在 AA 的「服务」页绑定 QQ，QQ 机器人（Koishi，另一个项目）通过接口向 AA 查询谁可以进群、留在群里。
 
+这是 [QQMonitor](https://github.com/Leitowow/QQMonitor) 插件的完全重写，代码没有沿用，旧的绑定数据也不导入，所有人需要重新绑定。
+
 - 已经在群里的老成员：填 QQ 号就生效，不用验证码（群添加后的前 30 天内有效，可在设置里改）
 - 新成员：拿到验证码，申请入群时填在「验证信息」里
 - QQ 管理员在侧边栏「QQ 管理」里管理群、绑定和冲突
@@ -22,7 +24,7 @@ Alliance Auth 的 QQ 群成员管理插件。成员在 AA 的「服务」页绑�
 1. 安装插件：
 
 ```bash
-pip install git+https://github.com/yilifaer/aa-qqbot-plugin.git
+pip install git+https://github.com/yilifaer/aa-qqbot-plugin.git@v1.0.0
 ```
 
 2. 生成机器人密钥。记下输出的这一串，下一步要用，之后还要交给机器人那边：
@@ -73,11 +75,11 @@ sudo supervisorctl restart myauth:
 ## 升级
 
 ```bash
-pip install --upgrade --force-reinstall --no-deps git+https://github.com/yilifaer/aa-qqbot-plugin.git
+pip install --upgrade --force-reinstall --no-deps git+https://github.com/yilifaer/aa-qqbot-plugin.git@v1.0.0
 python manage.py migrate
 ```
 
-然后重启 AA。更新内容见 [CHANGELOG.md](CHANGELOG.md)。
+然后重启 AA。升级到更新的版本时，把 `v1.0.0` 换成新版本号；各版本见 [CHANGELOG.md](CHANGELOG.md)。
 
 ## 卸载
 

@@ -4,6 +4,8 @@ English | [简体中文](README.zh-CN.md)
 
 A QQ group membership plugin for Alliance Auth. Members bind their QQ number on AA's Services page. A QQ bot (Koishi, a separate project) asks AA's API who may join and stay in each group.
 
+This is a complete rewrite of [QQMonitor](https://github.com/Leitowow/QQMonitor). No code is shared with it and its bindings are not imported, so everyone binds again.
+
 - Members already in a group: enter your QQ number, no code needed (during the first 30 days after the group is added; configurable)
 - New members: get a one-time code and put it in the QQ join request
 - QQ managers handle groups, bindings and conflicts on the "QQ Admin" page in the sidebar
@@ -22,7 +24,7 @@ Run everything inside AA's virtual environment, in the `myauth` directory.
 1. Install the plugin:
 
 ```bash
-pip install git+https://github.com/yilifaer/aa-qqbot-plugin.git
+pip install git+https://github.com/yilifaer/aa-qqbot-plugin.git@v1.0.0
 ```
 
 2. Generate a secret for the bot. Keep the output; you need it in the next step and for the bot:
@@ -73,11 +75,11 @@ After step 6, members see a card titled "QQ binding" on the Services page. QQ ma
 ## Upgrade
 
 ```bash
-pip install --upgrade --force-reinstall --no-deps git+https://github.com/yilifaer/aa-qqbot-plugin.git
+pip install --upgrade --force-reinstall --no-deps git+https://github.com/yilifaer/aa-qqbot-plugin.git@v1.0.0
 python manage.py migrate
 ```
 
-Then restart AA. See [CHANGELOG.md](CHANGELOG.md) for what changed.
+Then restart AA. For a newer release, replace `v1.0.0` with its tag; [CHANGELOG.md](CHANGELOG.md) lists the versions.
 
 ## Uninstall
 
