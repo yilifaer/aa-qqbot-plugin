@@ -152,6 +152,21 @@ def _trusted_rate_limited(user) -> bool:
     return _count(f"qqbot:trusted:{user.pk}", TRUSTED_RATE_LIMIT)
 
 
+def _force_unbound_before(user, qq_n) -> bool:
+    """True when a QQ manager has force-unbound ``qq_n`` from this user before
+    (DECISIONS #25): binding it again needs a verification code, which only
+    the real owner of the QQ can use. Other users and other QQs are not
+    affected; the audit log is permanent, so this is too.
+
+    QQ 管理员以前是否从这个用户手里强制解绑过 ``qq_n``（决定 #25）：是的话，
+    他再绑这个 QQ 必须用验证码，而验证码只有真号主能用。别人、别的 QQ 都不受
+    影响；审计记录是永久的，所以这条限制也是永久的。
+    """
+    return AuditLog.objects.filter(
+        action=Action.FORCE_UNBIND, target_user_id=user.pk, qq=qq_n
+    ).exists()
+
+
 def _last_qq_change(user, existing, qq_n, cooldown: timedelta, now):
     """When the user last changed their QQ, for the rebind cooldown.
 
@@ -312,7 +327,7 @@ def submit(user, qq, nickname, now=None) -> SubmitResult:
                     retry_after=remaining,
                 )
 
-        if in_fresh_roster(qq_n, now):
+        if in_fresh_roster(qq_n, now) and not _force_unbound_before(user, qq_n):
             if _trusted_rate_limited(user):
                 return SubmitResult(
                     False, "rate_limited",
@@ -815,7 +830,7 @@ def code_not_needed(user, qq, now=None) -> bool:
     而且别的账号在这个 QQ 上没有任何绑定（别人已验证会得到 ``taken``，
     别人免验证会变成冲突，这两种情况用验证码才对）。只读；用于待验证卡片上的提示。
     """
-    if not in_fresh_roster(qq, now):
+    if not in_fresh_roster(qq, now) or _force_unbound_before(user, qq):
         return False
     return not Binding.objects.filter(qq=qq).exclude(user_id=user.pk).exists()
 

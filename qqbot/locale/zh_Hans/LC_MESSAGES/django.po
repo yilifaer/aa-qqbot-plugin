@@ -664,9 +664,6 @@ msgstr[0] "%(counter)s 个账号认领"
 msgid "Nickname / group nickname"
 msgstr "昵称 / 群名片"
 
-msgid "Claimed at"
-msgstr "认领时间"
-
 msgid "Confirm as owner"
 msgstr "确认归他"
 
@@ -1321,3 +1318,16 @@ msgstr "你的账号没有被授予「QQ 绑定 - 成员」权限，请联系管
 
 msgid "You are already in one of the groups. Click “Regenerate” to bind right away, without a verification code."
 msgstr "检测到你已经在群里，点「重新生成」即可直接免验证。"
+
+msgid "When the QQ was last bound or changed"
+msgstr "最近一次绑定或换号的时间"
+
+msgctxt "qqbot"
+msgid "Took effect"
+msgstr "生效时间"
+
+msgid "Latest bind / QQ change"
+msgstr "最近一次绑定/换号"
+
+msgid "After a forced unbind, this member needs a verification code to bind the same QQ again, and only the real owner can use one."
+msgstr "强制解绑后，这个人再绑同一个 QQ 必须用验证码（只有真号主能用）。"

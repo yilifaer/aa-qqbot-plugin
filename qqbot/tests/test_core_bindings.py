@@ -360,6 +360,45 @@ class SubmitOtherOutcomesTests(BaseTestCase):
         r = bindings.submit(self.user, "42345678", "凯拉", now=t0 + timedelta(minutes=5))
         self.assertEqual(r.outcome, "pending")
 
+    def force_unbound(self, qq="12345678"):
+        """The user bound ``qq`` without a code; a manager force-unbound it."""
+        self.assertEqual(bindings.submit(self.user, qq, "凯拉").outcome, "trusted")
+        bindings.unbind(self.user, actor=create_member("boss"), forced=True)
+
+    def test_force_unbound_qq_needs_a_code(self):
+        """DECISIONS #25."""
+        put_in_roster(self.group, ["12345678"])
+        self.force_unbound()
+        r = bindings.submit(self.user, "12345678", "凯拉")
+        self.assertEqual(r.outcome, "pending")
+        self.assertTrue(r.code)
+        self.assertFalse(Binding.objects.filter(user=self.user).exists())
+        self.assertEqual(bindings.claim("12345678", r.code).outcome, "claimed")
+        self.assertEqual(Binding.objects.get(user=self.user).status, "verified")
+
+    def test_force_unbound_qq_others_unaffected(self):
+        put_in_roster(self.group, ["12345678"])
+        self.force_unbound()
+        other = create_member("bob")
+        self.assertEqual(bindings.submit(other, "12345678", "鲍勃").outcome, "trusted")
+
+    def test_force_unbound_qq_other_qq_unaffected(self):
+        put_in_roster(self.group, ["12345678", "22345678"])
+        self.force_unbound()
+        self.assertEqual(bindings.submit(self.user, "22345678", "凯拉").outcome, "trusted")
+
+    def test_own_unbind_same_qq_stays_trusted(self):
+        put_in_roster(self.group, ["12345678"])
+        bindings.submit(self.user, "12345678", "凯拉")
+        bindings.unbind(self.user, actor=self.user)
+        self.assertEqual(bindings.submit(self.user, "12345678", "凯拉").outcome, "trusted")
+
+    def test_force_unbound_qq_gets_no_skip_code_hint(self):
+        put_in_roster(self.group, ["12345678"])
+        self.force_unbound()
+        self.assertFalse(bindings.code_not_needed(self.user, "12345678"))
+        self.assertTrue(bindings.code_not_needed(create_member("bob"), "12345678"))
+
     def test_own_unbind_after_forced_unbind_keeps_cooldown(self):
         put_in_roster(self.group, ["12345678", "22345678", "32345678"])
         t0 = timezone.now()

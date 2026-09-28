@@ -31,7 +31,7 @@
             <div class="table-responsive">
                 <table class="table table-sm align-middle mb-0">
                     <thead>
-                        <tr><th>{% translate "Main character" context "qqbot" %}</th><th>{% translate "AA username" %}</th><th>{% translate "Nickname / group nickname" %}</th><th>{% translate "Claimed at" %}</th><th></th></tr>
+                        <tr><th>{% translate "Main character" context "qqbot" %}</th><th>{% translate "AA username" %}</th><th>{% translate "Nickname / group nickname" %}</th><th>{% translate "Bound at" %}</th><th></th></tr>
                     </thead>
                     <tbody>
                         {% for row in c.bindings %}
@@ -81,6 +81,7 @@
             If it matches, click "Confirm as owner" (it becomes verified and leaves this list); if it is not them, "Force unbind".
             Rows you leave alone drop off this list after {{ days }} days; the binding itself is not affected.
         {% endblocktranslate %}
+        {% translate "After a forced unbind, this member needs a verification code to bind the same QQ again, and only the real owner can use one." %}
     </p>
 
     {% if trusted_rows %}
@@ -88,7 +89,7 @@
             <div class="table-responsive">
                 <table class="table table-sm align-middle mb-0">
                     <thead>
-                        <tr><th>{% translate "Main character" context "qqbot" %}</th><th>{% translate "AA username" %}</th><th>QQ</th><th>{% translate "Status" %}</th><th>{% translate "Groups with this QQ on their member list" %}</th><th>{% translate "Bound at" %}</th><th></th></tr>
+                        <tr><th>{% translate "Main character" context "qqbot" %}</th><th>{% translate "AA username" %}</th><th>QQ</th><th>{% translate "Status" %}</th><th>{% translate "Groups with this QQ on their member list" %}</th><th title="{% translate "When the QQ was last bound or changed" %}">{% translate "Took effect" context "qqbot" %}</th><th></th></tr>
                     </thead>
                     <tbody>
                         {% for row in trusted_rows %}

@@ -627,6 +627,23 @@ class ManagerButtonTests(MemberCardTestCase):
         self.assertRegex(card, r'id="qqbot-attention">2<')
 
 
+class ForceUnboundCardTests(MemberCardTestCase):
+    """DECISIONS #25: an ordinary pending card, no hint of the forced unbind.
+
+    决定 #25：显示普通的待验证卡片，不透露被强制解绑过。
+    """
+
+    def test_plain_pending_card(self):
+        put_in_roster(self.fixed, [QQ])
+        self.post(SUBMIT, {"qq": QQ, "nickname": "凯拉"})
+        bindings.unbind(self.user, actor=create_member("boss"), forced=True)
+        _r, card = self.post(SUBMIT, {"qq": QQ, "nickname": "凯拉"})
+        self.assertIsNotNone(page_code(card))
+        self.assertNotIn('id="qqbot-skip-code"', card)
+        for word in ("强制", "forced", "Forced"):
+            self.assertNotIn(word, card)
+
+
 class SkipCodeHintTests(MemberCardTestCase):
     """A7: the roster came in after the code was made (T-6).
 

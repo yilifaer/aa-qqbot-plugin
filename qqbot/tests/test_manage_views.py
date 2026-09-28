@@ -733,6 +733,33 @@ class PendingTests(ManagerTestCase):
         self.assertEqual(len(r.context["trusted_page"].object_list), 21)
         self.assertLessEqual(len(big.captured_queries), len(small.captured_queries) + 2)
 
+    def test_took_effect_time(self):
+        """The review list shows qq_changed_at; the detail page shows both."""
+        created = timezone.now() - timedelta(days=40)
+        changed = timezone.now() - timedelta(days=2)
+        b = self.trusted("bob", "33333333", qq_changed_at=changed)
+        Binding.objects.filter(pk=b.pk).update(created_at=created)
+        local = timezone.localtime
+        r = self.client.get(PENDING)
+        self.assertContains(r, "生效时间")
+        self.assertContains(r, "最近一次绑定或换号的时间")
+        self.assertContains(r, local(changed).strftime("%Y-%m-%d %H:%M"))
+        self.assertNotContains(r, local(created).strftime("%Y-%m-%d %H:%M"))
+        r = self.client.get(reverse("qqbot:manage_binding", args=[b.pk]))
+        self.assertContains(r, "绑定时间")
+        self.assertContains(r, local(created).strftime("%Y-%m-%d %H:%M"))
+        self.assertContains(r, "最近一次绑定/换号")
+        self.assertContains(r, local(changed).strftime("%Y-%m-%d %H:%M"))
+        r = self.client.get(PENDING, HTTP_ACCEPT_LANGUAGE="en")
+        self.assertContains(r, "Took effect")
+        r = self.client.get(reverse("qqbot:manage_binding", args=[b.pk]), HTTP_ACCEPT_LANGUAGE="en")
+        self.assertContains(r, "Latest bind / QQ change")
+
+    def test_detail_without_qq_changed_at(self):
+        b = bind(create_member("old"), "44444444")
+        r = self.client.get(reverse("qqbot:manage_binding", args=[b.pk]))
+        self.assertNotContains(r, "qqbot-qq-changed-at")
+
     def test_trusted_review_in_english(self):
         self.trusted("bob", "33333333")
         r = self.client.get(PENDING, HTTP_ACCEPT_LANGUAGE="en")
