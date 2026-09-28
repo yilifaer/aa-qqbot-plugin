@@ -9,7 +9,7 @@
 - QQ 机器人（Koishi，另一个仓库）来问 AA：「这个 QQ 能不能进这个群？群名片该叫什么？」；
 - 成员离开联盟、账号被停用、换了主角色，AA 都会记下来，机器人下次来取时就知道了。
 
-当前版本：**1.0.0b4**（测试版），更新内容见 [`CHANGELOG.md`](../CHANGELOG.md)。
+当前版本：**1.0.0b5**（测试版），更新内容见 [`CHANGELOG.md`](../CHANGELOG.md)。
 需要 Alliance Auth 5.x（5.2 及以上）、Python 3.10 及以上。
 
 ---
@@ -48,6 +48,7 @@
 - 添加、修改、停用 QQ 群，分「固定群」（所有成员都能进）和「身份组小群」（只有指定 AA 组的人能进）；
 - 查看所有绑定，修改某人的群名片，确认绑定，强制解绑；
 - 处理「冲突」（同一个 QQ 被两个账号认领）和「群里有但没绑定」的 QQ；
+- 在「待处理」里复核最近 30 天的免验证绑定，发现冒领别人 QQ 的可以直接强制解绑；
 - 修改入群须知、群名片格式、验证码有效期、群成员名单有效期、换绑冷却等设置；
 - 查看操作记录。
 
@@ -108,6 +109,12 @@
   mysqldump -u allianceserver -p alliance_auth > ~/aa-backup-$(date +%F).sql
   ```
 
+  Ubuntu 上装的 MariaDB/MySQL 可以不输密码（root 走 socket 认证；`--single-transaction` 备份时不锁表）：
+
+  ```bash
+  sudo mysqldump --single-transaction alliance_auth > ~/aa-backup-$(date +%F).sql
+  ```
+
 ### 第 0 步：进入 AA 的虚拟环境，确认版本
 
 用 SSH 登录服务器后运行：
@@ -144,7 +151,7 @@ pip show allianceauth django-sri aa-qqbot | grep -E '^(Name|Version)'
 pip install git+https://github.com/yilifaer/aa-qqbot-plugin.git
 ```
 
-- 最后一行出现 `Successfully installed aa-qqbot-1.0.0b4` 就装好了（可能还会列出其他包，是 AA 缺的依赖）。
+- 最后一行出现 `Successfully installed aa-qqbot-1.0.0b5` 就装好了（可能还会列出其他包，是 AA 缺的依赖）。
 - 提示 `Cannot find command 'git'`：先安装 git（见「准备」），或者改用不需要 git 的写法：
   `pip install https://github.com/yilifaer/aa-qqbot-plugin/archive/refs/heads/main.zip`
 - 注意：包名是 `aa-qqbot`，只能用上面的 GitHub 地址安装。**不要**运行 `pip install qqbot`：
@@ -294,6 +301,8 @@ sudo supervisorctl status             # 每一行都应该是 RUNNING
 5. 按第 4 节分配权限后，用一个**普通成员账号**（不要用超级管理员）打开左侧菜单「服务（Services）」，能看到「QQ 绑定」卡片；
    QQ 管理员的左侧菜单有「QQ 管理」。
 6. QQ 管理员打开「QQ 管理」→「QQ 群」，加上第一个群。
+7. 等机器人第一次巡检成功——「QQ 管理」→「QQ 群」里这个群的「名单」一栏有人数和最近的上报时间——再通知老成员去绑定。
+   在这之前绑定的老成员都会拿到验证码（1.0.0b5 起卡片会提示他们点「重新生成」直接免验证）。
 
 ### 用 Docker 安装的 AA
 
@@ -334,19 +343,26 @@ QQBOT_API_KEYS = {
 
 操作步骤：
 
-1. **成员权限**：后台 →「States」→ 点开 **Member** → 在「Permissions」的搜索框里输入
-   `QQ 绑定 - 成员`，选中后点箭头移到右边 → 保存。
-2. **管理员权限**：后台 →「Groups」→ 新建或点开「QQ 管理」组 → 在「Permissions」的搜索框里输入
-   `QQ 绑定 - 管理员`，移到右边 → 保存。
+1. **成员权限**：后台 →「Authentication」→「States」→ 点开 **Member**（进入编辑页）→ 在「Permissions」左边框上方的过滤框里输入
+   `QQ binding: member`（或 `QQ 绑定 - 成员`；这个框按显示名过滤）→ 选中后点箭头移到右边 → 保存。
+2. **管理员权限**：后台 →「Groups」→ 新建或点开「QQ 管理」组（进入编辑页）→ 同样在「Permissions」左边框上方的过滤框里输入
+   `QQ binding: manager`（或 `QQ 绑定 - 管理员`），移到右边 → 保存。
 3. **把 QQ 管理员加进这个组**：后台 →「Users」→ 点开该管理员 →「Groups」里加上「QQ 管理」→ 保存。
    （在后台新建的组默认是「内部组」，AA 前台的「组管理」页面里看不到它，所以要在后台用户页里加。）
+
+注意：
+
+- **要用超级管理员账号改 State**：AA 5.4 里只有 `change_state` 权限的 staff 打开 State 编辑页时，权限一栏是只读的。
+- **不要去「Authentication」→「Permissions」列表页里找**：那里只按权限代码搜索（AA 的 `PermissionAdmin` 只搜 `codename`），
+  要搜 `basic_access` / `manage`；搜「QQ」只会搜到旧版 qqmonitor 的权限。
 
 说明：
 
 - 以后想让盟友、外交官也能进群，只要在后台把 `basic_access` 再挂到对应的状态或组上，不用改代码。
 - **超级管理员**虽然能看到所有页面，但判断「能不能进群」时**不会**因为是超级管理员就自动放行，
   和普通人一样要真的被授予 `basic_access`。所以用超级管理员账号测试时，卡片能看到，
-  但会显示「目前没有你可以加入的群」，机器人也会判定为 `NO_ACCESS`。
+  但卡片上方会直接提示「你的账号没有被授予「QQ 绑定 - 成员」权限，请联系管理员；超级管理员身份不算。」，
+  机器人也会判定为 `NO_ACCESS`。
   测试成员功能请用普通成员账号，或者确认超级管理员账号所在的状态也挂了成员权限。
 - 被停用的账号、没有主角色的账号一律不能进群。
 
@@ -357,8 +373,11 @@ QQBOT_API_KEYS = {
 | 页面 | 地址 | 谁能看 |
 |---|---|---|
 | QQ 绑定卡片（绑定、验证码、群号、改昵称、换绑、解绑） | 左侧菜单「服务（Services）」→「QQ 绑定」卡片，地址 `/services/`。成员没有单独的页面，也没有单独的菜单项；旧地址 `/qqbot/` 会自动跳到这张卡片 | 成员 |
-| QQ 管理（群、已绑定成员、待处理、设置、操作记录） | 左侧菜单「QQ 管理」（只有管理员看得到），或 QQ 绑定卡片底部的「QQ 管理」按钮，地址 `/qqbot/manage/` | QQ 管理员 |
-| Django 后台 | `/admin/` 里的「QQ 绑定」 | 超级管理员（绑定和操作记录在后台只能看不能改，改动请走前台） |
+| QQ 管理（群、已绑定成员、待处理、设置、操作记录） | 左侧菜单「QQ 管理」（只有有主角色的管理员看得到），或 QQ 绑定卡片底部的「QQ 管理」按钮，地址 `/qqbot/manage/`。「待处理」里还有最近 30 天的免验证绑定，给管理员复核 | QQ 管理员 |
+| Django 后台 | `/admin/` 里的「QQ 绑定」 | 超级管理员（绑定和操作记录在后台只能看不能改，改动请走前台；删除 AA 用户时绑定会跟着删除，见下） |
+
+**红色数字**：侧边栏「QQ 管理」旁边和卡片上「QQ 管理」按钮上的红色数字 = 冲突的 QQ 数 + 没选 AA 组的启用中身份组小群数，
+点进去就是要处理的页面。未绑定的群成员和免验证复核不算在里面。
 
 装好之后的第一件事：QQ 管理员打开「QQ 管理」→「QQ 群」，把要管理的群一个个加进去。
 
@@ -367,6 +386,26 @@ QQBOT_API_KEYS = {
 ```bash
 python manage.py qqbot_reconcile
 ```
+
+任何 QQ 群的新增、修改、删除都会让所有绑定的「指纹」过期，下一次每日对账会给每个绑定各写一条 `recheck` 事件
+（人多时是一大批）。机器人按群合并处理，属于正常现象。
+
+**删除 AA 用户**：在 AA 后台删除用户（单个删，或「Users」列表的「Delete selected users」）会一并删除他的 QQ 绑定，
+并通知机器人复查这个 QQ；「QQ 管理」→「操作记录」里显示「账号已删除」。**不需要先解绑。**
+
+- 非超级管理员需要 `auth | user | Can delete user`（注意：不是 `authentication | user | Can delete user`，AA 检查的是前者），
+  **外加删除确认页列出的其他删除权限**：Django 会对每个跟着被删、并且在后台注册过的类型检查删除权限。
+  常见的有（都是 Can delete …；第一条几乎每个用户都需要）：
+  - `notifications | notification`
+  - `authentication | character ownership`、`authentication | ownership record`
+  - `esi | token`
+  - `groupmanagement | group request`
+
+  确认页顶部如果提示「你的账号没有权限删除以下类型的对象：…」，就照着把列出的删除权限补给这个账号
+  （用超级管理员账号在后台「用户」或「组」里加）。QQ 绑定不需要单独授权（1.0.0b5 起）。
+
+**同步昵称动作**：后台「Users」列表的动作「Sync nicknames for selected QQ binding accounts」会立刻重算所选用户的群名片并通知机器人，
+可以放心用；这个英文名字是 AA 生成的，改不了。
 
 **界面语言**：QQ 绑定卡片和「QQ 管理」页面跟随每个人在 AA 里的语言：任何中文（简体、繁体）都显示简体中文，其他语言（英语、德语、俄语等）都显示英文。
 没在 AA 里选过语言的人，按浏览器的语言算：浏览器是中文就显示中文，其他语言显示英文（很多人的 Windows / Chrome 是英文的）。
@@ -447,12 +486,16 @@ sudo supervisorctl restart myauth:
 
 4. 从 `local.py` 里删掉安装时加的那段（按本文第 2 节安装的，是从 `# ---------- aa-qqbot ----------` 到 `# ---------- aa-qqbot 结束 ----------`；按 README 安装的，是 README 第 3 步那几行）。
 
-5. 卸载插件，并清理后台里残留的两个 QQ 权限：
+5. 卸载插件，并清理后台里残留的两个 QQ 权限（一定要在第 4 步之后做）：
 
    ```bash
    pip uninstall -y aa-qqbot
-   python manage.py remove_stale_contenttypes --include-stale-apps --noinput
+   python manage.py shell -c "from django.contrib.contenttypes.models import ContentType; print(ContentType.objects.filter(app_label='qqbot').delete())"
    ```
+
+   只删除本插件的 9 个内容类型、2 个权限（以及这 2 个权限挂在状态、组、用户上的关联），输出类似
+   `(…, {'auth.Permission': 2, 'contenttypes.ContentType': 9, …})`。
+   **不要用 `python manage.py remove_stale_contenttypes --include-stale-apps`**：它会把这台 AA 上所有已卸载插件留下的权限一起删掉。
 
 6. 启动 AA：
 
@@ -479,10 +522,13 @@ sudo supervisorctl restart myauth:
 | 日志里有 `NameError: name 'APPS_WITH_PUBLIC_VIEWS' is not defined` | `local.py` 里没有这个变量 | 在 aa-qqbot 那段前面加一行 `APPS_WITH_PUBLIC_VIEWS = []` |
 | 所有 AA 页面都报错，错误信息里有 `sri_static` | AA 5.2.x / 5.3.x 没有限制 `django-sri` 的版本，而 2026-09 发布的 `django-sri` 1.0 删掉了 AA 页面要用的 `sri_static` 标签 | `pip install "django-sri<1"`，然后重启。AA 5.4 及以上已自带这个限制，最简单的办法是把 AA 升到 5.4 |
 | 「服务」页没有「QQ 绑定」卡片 | 账号没有「QQ 绑定 - 成员」权限，或者装完没重启 | 第 4 节；`sudo supervisorctl restart myauth:` |
-| 左侧菜单没有「QQ 管理」 | 没有「QQ 绑定 - 管理员」权限 | 第 4 节 |
+| 左侧菜单没有「QQ 管理」 | 没有「QQ 绑定 - 管理员」权限；或者账号没有主角色（1.0.0b5 起没有主角色的管理员不显示这个菜单，因为点进去也会被 AA 跳回首页） | 第 4 节；在 AA 首页添加角色并设为主角色 |
 | 卡片和「QQ 管理」页面是英文（"QQ binding"、"QQ Admin"） | 这个人在 AA 里选的是英文（或者没选、浏览器是英文） | 让他在 AA 左侧菜单底部的语言选择里选「简体中文」。改 `LANGUAGE_CODE` 没用（第 5 节末尾） |
-| 超级管理员能看到卡片，但显示「目前没有你可以加入的群」 | 超级管理员**不会**自动获得入群资格 | 让这个账号所在的状态（例如 Member）带上成员权限，或者用普通成员账号测试 |
-| 老成员填了 QQ 也拿到验证码 | 这个群添加到 AA 已经超过「老成员免验证过渡期」（默认 30 天）；或者机器人还没上报过这个群的完整名单，或名单已超过有效期（默认 7 天） | 等机器人巡检；树莓派上还没有机器人时，用 [`docs/TESTING.md`](TESTING.md) 里的「模拟机器人」 |
+| 超级管理员能看到卡片，但显示「目前没有你可以加入的群」（1.0.0b5 起卡片上方会直接提示原因） | 超级管理员**不会**自动获得入群资格 | 让这个账号所在的状态（例如 Member）带上成员权限，或者用普通成员账号测试 |
+| 老成员填了 QQ 也拿到验证码 | 这个群添加到 AA 已经超过「老成员免验证过渡期」（默认 30 天）；或者机器人还没上报过这个群的完整名单，或名单已超过有效期（默认 7 天） | 先让机器人巡检一次再通知老成员绑定（第 2 节第 7 步）；机器人上报名单之后，卡片会提示他点「重新生成」直接免验证。树莓派上还没有机器人时，用 [`docs/TESTING.md`](TESTING.md) 里的「模拟机器人」 |
+| 后台删用户时提示「你的账号没有权限删除以下类型的对象：QQ binding / QQ 绑定」 | 1.0.0b4 的问题 | 升级到 1.0.0b5；临时办法：先在「QQ 管理」里强制解绑再删 |
+| 后台删用户时提示没有权限删除其他类型的对象（通知、角色归属、ESI token 等） | 非超级管理员要有确认页列出的每一种删除权限 | 第 5 节「删除 AA 用户」 |
+| 点「服务」或「QQ 管理」被跳回首页，顶部红字「只有主要角色才能执行这个操作。在下面添加一个」 | 账号没设主角色：AA 5.x 在 qqbot 的代码运行之前就把这样的用户从「服务」页和所有插件页面跳回 `/dashboard/` | 在首页添加角色并设为主角色。这期间成员自己不能解绑、改昵称，需要时由 QQ 管理员强制解绑 |
 | 机器人收到 `302` 或登录网页 | `APPS_WITH_PUBLIC_VIEWS` 里没有 `"qqbot"`（`qqbot.E001`） | 在 `local.py` 里**追加**，然后重启 |
 | 机器人收到 `400` 网页（Bad Request） | 机器人访问用的地址（例如树莓派的局域网 IP）不在 `ALLOWED_HOSTS` 里 | 机器人用 `SITE_URL` 里的域名访问；或者在 `local.py` 末尾加 `ALLOWED_HOSTS += ["192.168.x.x"]`（换成实际 IP）后重启 |
 | 机器人收到 `301` | 网址末尾少了 `/`，或者用 http 访问了只允许 https 的站 | 网址以 `/` 结尾，用 https |
@@ -491,7 +537,7 @@ sudo supervisorctl restart myauth:
 | 每日对账好像没在 04:17 运行 | 时间是 UTC，北京时间是 12:17 | 正常；想改时间就改 `crontab(...)` 里的 `hour` |
 | 升级后好像没变化 | 版本号没变时 `pip install -U` 不会重新安装 | 用第 7 节带 `--force-reinstall --no-deps` 的命令 |
 | 报错 `Application labels aren't unique, duplicates: qqbot` | `local.py` 里有两处把 `"qqbot"` 加进 `INSTALLED_APPS`（通常是旧版 0.x 留下的） | 删掉旧的那一处，只保留第 2 节第 3 步那一段 |
-| 以前装过旧版（0.x）：`local.py` 里有 `QQBOT_GROUP_CHAT`、`QQBOT_PING_GROUP`，数据库里有 `qqbot_qqbinding` 表 | 旧版留下的设置和数据，新版不再使用 | 删掉 `local.py` 里这两行；运行 `python manage.py remove_stale_contenttypes --noinput` 清理旧权限；旧表可以在 `python manage.py dbshell` 里执行 `DROP TABLE qqbot_qqbinding;` 删除（先备份） |
+| 以前装过旧版（0.x）：`local.py` 里有 `QQBOT_GROUP_CHAT`、`QQBOT_PING_GROUP`，数据库里有 `qqbot_qqbinding` 表 | 旧版留下的设置和数据，新版不再使用 | 删掉 `local.py` 里这两行；装好新版后（`qqbot` 还在 `INSTALLED_APPS` 里）运行 `python manage.py shell -c "from django.apps import apps; from django.contrib.contenttypes.models import ContentType; live = {m._meta.model_name for m in apps.get_app_config('qqbot').get_models()}; print(ContentType.objects.filter(app_label='qqbot').exclude(model__in=live).delete())"` 清理旧版的权限（只删 qqbot 里已经不存在的类型）；旧表可以在 `python manage.py dbshell` 里执行 `DROP TABLE qqbot_qqbinding;` 删除（先备份） |
 | `migrate` 报 `table "qqbot_…" already exists`（MySQL 是 `Table 'qqbot_…' already exists`） | 这台 AA 装过 1.0.0b1 之前的开发测试版（`1.0.0.dev0`），数据表已经建好了 | 运行 `python manage.py migrate qqbot 0001_v1_initial --fake`，再运行 `python manage.py migrate`，然后重启 |
 | 页面报错 `no such table: qqbot_…`（MySQL 是 `Table '…qqbot_…' doesn't exist`） | 数据表没建好：没运行 `migrate`，或者装的是 1.0.0b1 之前的开发测试版 | 用 `pip show aa-qqbot` 确认版本是 1.0.0b1 或更新（不是就按第 7 节升级），再运行 `python manage.py migrate`，然后重启 |
 

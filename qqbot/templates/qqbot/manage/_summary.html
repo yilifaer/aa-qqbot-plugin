@@ -21,12 +21,21 @@ Counts shown at the top of the bindings page. Context: summary.
             </div>
         </a>
     </div>
-    <div class="col-12 col-md">
+    <div class="col-6 col-md">
         <a class="card text-center h-100 text-decoration-none {% if summary.unbound %}border-warning{% endif %}" href="{% url 'qqbot:manage_pending' %}#unbound">
             <div class="card-body py-2">
                 <div class="small text-body-secondary">{% translate "In a group but not bound" %}</div>
                 <div class="fs-4 fw-bold">{{ summary.unbound }}</div>
                 <div class="small text-body-secondary">{% translate "From the bot's latest check" %}</div>
+            </div>
+        </a>
+    </div>
+    <div class="col-6 col-md">
+        <a class="card text-center h-100 text-decoration-none" href="{% url 'qqbot:manage_pending' %}#trusted">
+            <div class="card-body py-2">
+                <div class="small text-body-secondary">{% translate "Recent bindings without a code" %}</div>
+                <div class="fs-4 fw-bold">{{ summary.trusted_recent }}</div>
+                <div class="small text-body-secondary">{% blocktranslate count days=summary.trusted_review_days %}Last {{ days }} day, to review{% plural %}Last {{ days }} days, to review{% endblocktranslate %}</div>
             </div>
         </a>
     </div>

@@ -88,12 +88,14 @@ python manage.py migrate qqbot zero
 python manage.py shell -c "from django_celery_beat.models import PeriodicTask; PeriodicTask.objects.filter(name='qqbot_reconcile').delete()"
 ```
 
-Remove the lines you added to `local.py`, then:
+Remove the lines you added to `local.py`, then run this. It deletes only this plugin's 9 content types and 2 permissions:
 
 ```bash
-pip uninstall aa-qqbot
-python manage.py remove_stale_contenttypes --include-stale-apps
+pip uninstall -y aa-qqbot
+python manage.py shell -c "from django.contrib.contenttypes.models import ContentType; print(ContentType.objects.filter(app_label='qqbot').delete())"
 ```
+
+Do not use `python manage.py remove_stale_contenttypes --include-stale-apps` instead: it also deletes the permissions left behind by every other plugin ever uninstalled from this AA.
 
 Start AA.
 
@@ -110,7 +112,7 @@ Start AA.
   ```bash
   pip install "django-sri<1"
   ```
-- Superusers do not get group access automatically. Test with a normal member account.
+- Superusers do not get group access automatically; their card then says so. Test with a normal member account.
 - Language: the QQ binding card and the QQ Admin pages are in Chinese for users whose AA language is Chinese, and in English for everyone else. Members who never picked a language get their browser's language; anyone can pick a language in AA's language menu (AA remembers it). The default group rules text is in Chinese; edit it under QQ Admin → Settings.
 
 ## License

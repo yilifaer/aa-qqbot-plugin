@@ -157,7 +157,7 @@ class QQGroup(models.Model):
         FIXED = "fixed", _("Fixed group")
         ROLE = "role", _("Role group")
 
-    name = models.CharField(_("Group name"), max_length=64)
+    name = models.CharField(pgettext_lazy("qqbot", "Group name"), max_length=64)
     group_id = models.CharField(_("Group number"), max_length=11, unique=True, validators=[validate_qq])
     kind = models.CharField(_("Type"), max_length=8, choices=Kind.choices, default=Kind.FIXED)
     required_groups = models.ManyToManyField(

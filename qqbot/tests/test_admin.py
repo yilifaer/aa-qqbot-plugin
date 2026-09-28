@@ -3,9 +3,13 @@ settings saves go through the same events and audit as the manage pages."""
 
 from unittest import mock
 
-from django.contrib.auth.models import Group
-from django.test import TestCase
+from django.contrib import admin as django_admin
+from django.contrib.admin.utils import get_deleted_objects
+from django.contrib.auth.models import Group, Permission, User
+from django.test import RequestFactory, TestCase
 from django.urls import reverse
+
+from allianceauth.authentication.models import User as AAUser
 
 from ..core import audit
 from ..models import AuditLog, Binding, Config, Event, QQGroup
@@ -173,6 +177,26 @@ class AdminTests(TestCase):
         queue.assert_not_called()
         self.assertEqual(Config.get_solo().code_ttl_minutes, 20)
 
+    def test_config_card_format_change_survives_reconcile_failure(self):
+        # The settings are saved before the callback runs: a failure there
+        # is logged, and the admin still gets the normal redirect.
+        def broken():
+            raise RuntimeError("boom")
+
+        with mock.patch("qqbot.tasks.queue_reconcile", new=broken), \
+                self.assertLogs("django", "ERROR"):
+            with self.captureOnCommitCallbacks(execute=True):
+                r = self.config_post(card_format="{character_name} {nickname}")
+        self.assertEqual(r.status_code, 302)
+        self.assertEqual(Config.get_solo().card_format, "{character_name} {nickname}")
+
+    def test_binding_page_has_no_delete_link(self):
+        r = self.get(url(Binding, "change", self.binding.pk))
+        self.assertEqual(r.status_code, 200)
+        self.assertNotContains(r, url(Binding, "delete", self.binding.pk))
+        r = self.get(url(Binding, "changelist"))
+        self.assertNotContains(r, "delete_selected")
+
     def test_config_bad_card_format_rejected(self):
         r = self.config_post(card_format="{unknown}")
         self.assertEqual(r.status_code, 200)
@@ -187,3 +211,112 @@ class NonSuperuserTests(TestCase):
         self.client.force_login(user)
         self.assertEqual(self.client.get(url(Binding, "changelist")).status_code, 403)
         self.assertEqual(self.client.get(url(AuditLog, "changelist")).status_code, 403)
+
+
+def user_url(view, *args):
+    # AA registers its user admin on a proxy model (authentication.User),
+    # not on auth.User.
+    # AA 的用户后台注册在代理模型（authentication.User）上，不是 auth.User。
+    return reverse(f"admin:{AAUser._meta.app_label}_{AAUser._meta.model_name}_{view}", args=args)
+
+
+class UserDeletionTests(TestCase):
+    """Deleting a bound AA user in the admin (the binding cascades).
+
+    The admin deletes the proxy model, so pre_delete is sent with the proxy
+    class; AA re-sends it with the base User (authentication/admin.py,
+    redirect_pre_delete), which is what qqbot listens to. "Exactly one"
+    USER_DELETED / RECHECK below checks that qqbot handles it once.
+
+    在后台删除已绑定 QQ 的 AA 用户（绑定级联删除）。后台删的是代理模型，
+    pre_delete 的发送方是代理类；AA 会以基础 User 为发送方再发一次，qqbot
+    监听的正是这一次。下面的「恰好 1 条」就是在检查 qqbot 只处理了一次。
+    """
+
+    def setUp(self):
+        self.root = create_user("root", superuser=True)
+        self.alice = create_member("alice")
+        self.bob = create_member("bob")
+        bind(self.alice, "12345678")
+        bind(self.bob, "23456789", status="trusted")
+
+    def assert_deleted_once(self, user, qq):
+        self.assertFalse(User.objects.filter(pk=user.pk).exists())
+        self.assertFalse(Binding.objects.filter(qq=qq).exists())
+        self.assertEqual(
+            AuditLog.objects.filter(action=AuditLog.Action.USER_DELETED, qq=qq).count(), 1
+        )
+        self.assertEqual(Event.objects.filter(kind=Event.Kind.RECHECK, qq=qq).count(), 1)
+
+    def test_nothing_blocks_the_deletion(self):
+        request = RequestFactory().get("/")
+        request.user = self.root
+        _objs, _counts, perms_needed, protected = get_deleted_objects(
+            [AAUser.objects.get(pk=self.alice.pk)], request, django_admin.site
+        )
+        self.assertEqual(perms_needed, set())
+        self.assertEqual(protected, [])
+
+    def test_superuser_deletes_one(self):
+        self.client.force_login(self.root)
+        r = self.client.get(user_url("delete", self.alice.pk))
+        self.assertEqual(r.status_code, 200)
+        self.assertFalse(r.context["perms_lacking"])
+        with self.captureOnCommitCallbacks(execute=True):
+            r = self.client.post(user_url("delete", self.alice.pk), {"post": "yes"})
+        self.assertEqual(r.status_code, 302)
+        self.assert_deleted_once(self.alice, "12345678")
+        self.assertTrue(Binding.objects.filter(qq="23456789").exists())
+
+    def test_superuser_deletes_selected(self):
+        self.client.force_login(self.root)
+        with self.captureOnCommitCallbacks(execute=True):
+            r = self.client.post(
+                user_url("changelist"),
+                {
+                    "action": "delete_selected",
+                    "_selected_action": [self.alice.pk, self.bob.pk],
+                    "post": "yes",
+                },
+            )
+        self.assertEqual(r.status_code, 302)
+        self.assert_deleted_once(self.alice, "12345678")
+        self.assert_deleted_once(self.bob, "23456789")
+
+    def staff(self, *perms):
+        user = create_user("it", superuser=False)
+        user.is_staff = True
+        user.save(update_fields=["is_staff"])
+        user.user_permissions.add(*perms)
+        return user
+
+    def test_staff_with_auth_delete_user(self):
+        # Limitation: create_member() users have no notifications, character
+        # ownerships or ESI tokens, so auth.delete_user alone is enough here.
+        # On a real site Django also checks the delete permission of every
+        # other cascaded, admin-registered model (see docs/GUIDE.md).
+        # 局限：create_member() 建的用户没有通知、角色归属和 ESI token，所以这里
+        # 只要 auth.delete_user 就够。真实站点上 Django 还会检查其他跟着被删、
+        # 在后台注册过的类型的删除权限（见 docs/GUIDE.md）。
+        perm = Permission.objects.get(
+            codename="delete_user", content_type__app_label="auth", content_type__model="user"
+        )
+        self.client.force_login(self.staff(perm))
+        with self.captureOnCommitCallbacks(execute=True):
+            r = self.client.post(user_url("delete", self.alice.pk), {"post": "yes"})
+        self.assertEqual(r.status_code, 302)
+        self.assert_deleted_once(self.alice, "12345678")
+
+    def test_staff_with_only_the_proxy_permission_is_refused(self):
+        # AA checks auth | user | Can delete user; the permission with the
+        # same name on AA's proxy model is not enough (a trap for IT).
+        # AA 检查的是 auth | user | Can delete user；AA 代理模型上同名的权限不够（IT 的坑）。
+        perm = Permission.objects.get(
+            codename="delete_user",
+            content_type__app_label=AAUser._meta.app_label,
+            content_type__model=AAUser._meta.model_name,
+        )
+        self.client.force_login(self.staff(perm))
+        r = self.client.post(user_url("delete", self.alice.pk), {"post": "yes"})
+        self.assertEqual(r.status_code, 403)
+        self.assertTrue(User.objects.filter(pk=self.alice.pk).exists())

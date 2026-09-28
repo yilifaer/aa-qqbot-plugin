@@ -4,6 +4,14 @@
 {% block qqbot_title %}{% translate "Needs attention" %} - {% translate "QQ Admin" %}{% endblock qqbot_title %}
 
 {% block manage_body %}
+    {% if misconfigured_groups %}
+        <div class="alert alert-danger" id="qqbot-misconfigured">
+            <i class="fa-solid fa-triangle-exclamation fa-fw"></i>
+            {% translate "These role groups have no AA group selected, so everyone in them is left for manual review:" %}
+            {% for g in misconfigured_groups %}<strong>{{ g.name }}</strong>{% if not forloop.last %}, {% endif %}{% endfor %}.
+            <a href="{% url 'qqbot:manage_groups' %}">{% translate "Fix them on the QQ groups page." %}</a>
+        </div>
+    {% endif %}
     <h4>{% translate "Conflicting QQ numbers" %}</h4>
     <p class="text-body-secondary">
         {% blocktranslate trimmed %}
@@ -30,7 +38,7 @@
                             {% with b=row.binding %}
                                 <tr>
                                     <td>{% if row.main %}{{ row.main.character_name }} [{{ row.main.corporation_ticker }}]{% else %}<span class="text-danger">{% translate "No main character" %}</span>{% endif %}</td>
-                                    <td><a href="{% url 'qqbot:manage_binding' b.pk %}">{{ b.user.username }}</a>{% if not b.user.is_active %} <span class="badge text-bg-warning">{% translate "Inactive" %}</span>{% endif %}</td>
+                                    <td><a href="{% url 'qqbot:manage_binding' b.pk %}">{{ b.user.username }}</a>{% if not b.user.is_active %} <span class="badge text-bg-warning">{% translate "Inactive" context "qqbot" %}</span>{% endif %}</td>
                                     <td>{{ row.card }}</td>
                                     <td class="small text-nowrap">{{ b.created_at|date:"Y-m-d H:i" }}</td>
                                     <td class="text-end text-nowrap">
@@ -56,6 +64,68 @@
     {% empty %}
         <div class="alert alert-success"><i class="fa-solid fa-circle-check fa-fw"></i> {% translate "No conflicts right now." %}</div>
     {% endfor %}
+
+    <h4 class="mt-4" id="trusted">
+        {% translate "Recent bindings without a code" %}
+        <span class="badge text-bg-info">{{ trusted_page.paginator.count }}</span>
+    </h4>
+    <p class="text-body-secondary">
+        {% blocktranslate trimmed count days=trusted_review_days %}
+            Bindings from the last {{ days }} day that took effect without a verification code because the QQ was on a member list the bot reported ("Trusted (already in group)"), newest first.
+            This only shows the QQ is in the group, not that it belongs to this member: in the QQ group, check that this QQ's own QQ nickname matches the character (its group nickname may already have been changed by the bot to this binding's name, so it proves nothing). If unsure, ask them in a private QQ message, or leave it.
+            If it matches, click "Confirm as owner" (it becomes verified and leaves this list); if it is not them, "Force unbind".
+            Rows you leave alone drop off this list after {{ days }} day; the binding itself is not affected.
+        {% plural %}
+            Bindings from the last {{ days }} days that took effect without a verification code because the QQ was on a member list the bot reported ("Trusted (already in group)"), newest first.
+            This only shows the QQ is in the group, not that it belongs to this member: in the QQ group, check that this QQ's own QQ nickname matches the character (its group nickname may already have been changed by the bot to this binding's name, so it proves nothing). If unsure, ask them in a private QQ message, or leave it.
+            If it matches, click "Confirm as owner" (it becomes verified and leaves this list); if it is not them, "Force unbind".
+            Rows you leave alone drop off this list after {{ days }} days; the binding itself is not affected.
+        {% endblocktranslate %}
+    </p>
+
+    {% if trusted_rows %}
+        <div class="card mb-3">
+            <div class="table-responsive">
+                <table class="table table-sm align-middle mb-0">
+                    <thead>
+                        <tr><th>{% translate "Main character" context "qqbot" %}</th><th>{% translate "AA username" %}</th><th>QQ</th><th>{% translate "Status" %}</th><th>{% translate "Groups with this QQ on their member list" %}</th><th>{% translate "Bound at" %}</th><th></th></tr>
+                    </thead>
+                    <tbody>
+                        {% for row in trusted_rows %}
+                            {% with b=row.binding %}
+                                <tr>
+                                    <td>{% if row.main %}{{ row.main.character_name }} [{{ row.main.corporation_ticker }}]{% else %}<span class="text-danger">{% translate "No main character" %}</span>{% endif %}</td>
+                                    <td><a href="{% url 'qqbot:manage_binding' b.pk %}">{{ b.user.username }}</a>{% if not b.user.is_active %} <span class="badge text-bg-warning">{% translate "Inactive" context "qqbot" %}</span>{% endif %}</td>
+                                    <td class="font-monospace user-select-all">{{ b.qq }}</td>
+                                    <td>{% include "qqbot/manage/_status_badge.html" with conflict=False shadowed=row.shadowed %}</td>
+                                    <td class="small">{% for g in row.groups %}{{ g.name }} <span class="font-monospace text-body-secondary">{{ g.group_id }}</span>{% if not forloop.last %}<br>{% endif %}{% empty %}<span class="text-body-secondary">{% translate "Not on any managed group's member list right now" %}</span>{% endfor %}</td>
+                                    <td class="small text-nowrap">{{ b.qq_changed_at|date:"Y-m-d H:i" }}</td>
+                                    <td class="text-end text-nowrap">
+                                        {% if not row.shadowed %}
+                                            <form method="post" action="{% url 'qqbot:manage_binding_confirm' b.pk %}" class="d-inline">
+                                                {% csrf_token %}
+                                                <input type="hidden" name="back" value="pending">
+                                                <input type="hidden" name="qq" value="{{ b.qq }}">
+                                                <button type="submit" class="btn btn-sm btn-success">
+                                                    <i class="fa-solid fa-circle-check fa-fw"></i> {% translate "Confirm as owner" %}
+                                                </button>
+                                            </form>
+                                        {% endif %}
+                                        <a class="btn btn-sm btn-outline-danger" href="{% url 'qqbot:manage_binding_unbind' b.pk %}?back=pending">
+                                            <i class="fa-solid fa-link-slash fa-fw"></i> {% translate "Force unbind" %}
+                                        </a>
+                                    </td>
+                                </tr>
+                            {% endwith %}
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+        {% include "qqbot/manage/_pagination.html" with page=trusted_page anchor="trusted" %}
+    {% else %}
+        <div class="alert alert-success"><i class="fa-solid fa-circle-check fa-fw"></i> {% blocktranslate count days=trusted_review_days %}No new bindings without a code in the last {{ days }} day.{% plural %}No new bindings without a code in the last {{ days }} days.{% endblocktranslate %}</div>
+    {% endif %}
 
     <h4 class="mt-4" id="unbound">{% translate "QQ numbers in a group but not bound" %}</h4>
     <p class="text-body-secondary">

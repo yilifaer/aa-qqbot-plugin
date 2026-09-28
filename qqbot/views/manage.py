@@ -27,7 +27,7 @@ from django.views.decorators.http import require_http_methods, require_POST
 from allianceauth.services.hooks import get_extension_logger
 
 from .. import tasks
-from ..core import audit, bindings, cards, eligibility, events
+from ..core import attention, audit, bindings, cards, eligibility, events
 from ..core.roster import fresh_roster_cutoff, unbound_roster
 from ..i18n import ui_language_view
 from ..models import AuditLog, Binding, Config, QQGroup, RosterEntry
@@ -95,7 +95,8 @@ def _fresh_unbound():
 
 
 def _summary() -> dict:
-    conflict_count = len(_conflict_qqs())
+    conflict_qqs = _conflict_qqs()
+    conflict_count = len(conflict_qqs)
     unbound_count = _fresh_unbound().order_by().values("qq").distinct().count()
     return {
         "bound": Binding.objects.count(),
@@ -103,6 +104,10 @@ def _summary() -> dict:
         "trusted": Binding.objects.filter(status=Binding.Status.TRUSTED).count(),
         "conflicts": conflict_count,
         "unbound": unbound_count,
+        # Not part of "pending": the review list is no badge (DECISIONS #23).
+        # 不算进 pending：复核列表不算进任何数字角标（决定 #23）。
+        "trusted_recent": bindings.recent_trusted(exclude_qqs=conflict_qqs).count(),
+        "trusted_review_days": bindings.TRUSTED_REVIEW_DAYS,
         "pending": conflict_count + unbound_count,
     }
 
@@ -188,6 +193,13 @@ def _group_audit_detail(group: QQGroup) -> dict:
 @permission_required(MANAGE, raise_exception=True)
 @ui_language_view
 def index(request):
+    # Straight to what needs the manager (DECISIONS #24).
+    # 直接去需要管理员处理的地方（决定 #24）。
+    counts = attention.attention_counts()
+    if counts["conflicts"]:
+        return redirect("qqbot:manage_pending")
+    if counts["misconfigured"]:
+        return redirect("qqbot:manage_groups")
     return redirect("qqbot:manage_bindings")
 
 
@@ -201,14 +213,19 @@ def groups(request):
         .order_by("-is_active", "kind", "sort_order", "name")
     )
     cutoff = fresh_roster_cutoff()
-    rows = [
-        {
-            "group": g,
-            "required": sorted(rg.name for rg in g.required_groups.all()),
-            "roster_fresh": bool(g.last_roster_at and g.last_roster_at >= cutoff),
-        }
-        for g in qs
-    ]
+    rows = []
+    for g in qs:
+        required = sorted(rg.name for rg in g.required_groups.all())
+        rows.append(
+            {
+                "group": g,
+                "required": required,
+                "roster_fresh": bool(g.last_roster_at and g.last_roster_at >= cutoff),
+                # Counted in the number badge (DECISIONS #24).
+                # 算进数字角标（决定 #24）。
+                "misconfigured": g.kind == QQGroup.Kind.ROLE and g.is_active and not required,
+            }
+        )
     return _render(request, "qqbot/manage/groups.html", _ctx("groups", rows=rows))
 
 
@@ -485,6 +502,7 @@ def binding_unbind(request, pk):
 @ui_language_view
 def pending(request):
     config = Config.get_solo()
+    conflict_list = bindings.conflicts()
     conflict_rows = [
         {
             "qq": qq,
@@ -497,7 +515,38 @@ def pending(request):
                 for b in rows
             ],
         }
-        for qq, rows in bindings.conflicts()
+        for qq, rows in conflict_list
+    ]
+
+    # Trusted bindings to review (DECISIONS #23); conflicts are listed above.
+    # 待复核的免验证绑定（决定 #23）；冲突已经在上面列出。
+    trusted_page = _page(
+        request,
+        bindings.recent_trusted(exclude_qqs=[qq for qq, _rows in conflict_list])
+        .select_related(*BINDING_RELATED),
+    )
+    page_bindings = list(trusted_page.object_list)
+    page_qqs = {b.qq for b in page_bindings}
+    groups_by_qq: dict[str, list[QQGroup]] = {}
+    for entry in (
+        RosterEntry.objects.filter(qq__in=page_qqs, group__is_active=True)
+        .select_related("group")
+        .order_by("group__kind", "group__sort_order", "group__name")
+    ):
+        groups_by_qq.setdefault(entry.qq, []).append(entry.group)
+    shadowed = set(
+        Binding.objects.filter(qq__in=page_qqs, status=Binding.Status.VERIFIED)
+        .values_list("qq", flat=True)
+    )
+    trusted_rows = [
+        {
+            "binding": b,
+            "main": getattr(getattr(b.user, "profile", None), "main_character", None),
+            "card": cards.render_card(b, config),
+            "groups": groups_by_qq.get(b.qq, []),
+            "shadowed": b.qq in shadowed,
+        }
+        for b in page_bindings
     ]
 
     by_group: dict[int, dict] = {}
@@ -516,6 +565,11 @@ def pending(request):
         _ctx(
             "pending",
             conflicts=conflict_rows,
+            misconfigured_groups=list(attention.misconfigured_groups().order_by("sort_order", "name")),
+            trusted_rows=trusted_rows,
+            trusted_page=trusted_page,
+            trusted_review_days=bindings.TRUSTED_REVIEW_DAYS,
+            querystring=_querystring(request),
             unbound_groups=list(by_group.values()),
             stale_groups=stale_groups,
             roster_max_age_days=config.roster_max_age_days,
@@ -558,7 +612,9 @@ def settings_view(request):
                 # background (inline if the broker is unreachable).
                 # 所有群名片都可能变化：在后台重新计算全部绑定
                 # （连不上 broker 时直接在当前请求里执行）。
-                transaction.on_commit(tasks.queue_reconcile)
+                # robust: the settings are saved by then; a failure is logged.
+                # robust：这时设置已经保存；出错只记日志。
+                transaction.on_commit(tasks.queue_reconcile, robust=True)
         if "card_format" in changed:
             messages.success(
                 request,
@@ -595,7 +651,7 @@ DETAIL_KEY_LABELS = {
     "op": _("Action"),
     "changed": _("Changed"),
     "group_id": _("Group number"),
-    "name": _("Group name"),
+    "name": pgettext_lazy("qqbot", "Group name"),
     "kind": _("Type"),
     "required_groups": _("Required AA groups"),
     "description": pgettext_lazy("qqbot", "Description"),

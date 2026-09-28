@@ -55,7 +55,7 @@
                                     <div class="fw-bold">{% if item.main %}{{ item.main.character_name }}{% else %}<span class="text-danger">{% translate "No main character" %}</span>{% endif %}</div>
                                     <div class="small text-body-secondary">
                                         {{ b.user.username }}{% if item.main %} · [{{ item.main.corporation_ticker }}]{% endif %}
-                                        {% if not b.user.is_active %}<span class="badge text-bg-warning">{% translate "Inactive" %}</span>{% endif %}
+                                        {% if not b.user.is_active %}<span class="badge text-bg-warning">{% translate "Inactive" context "qqbot" %}</span>{% endif %}
                                     </div>
                                 </td>
                                 <td class="font-monospace">{{ b.qq }}</td>

@@ -88,12 +88,14 @@ python manage.py migrate qqbot zero
 python manage.py shell -c "from django_celery_beat.models import PeriodicTask; PeriodicTask.objects.filter(name='qqbot_reconcile').delete()"
 ```
 
-删掉 `local.py` 里加的那几行，然后：
+删掉 `local.py` 里加的那几行，然后执行下面两行（只删除本插件的 9 个内容类型和 2 个权限）：
 
 ```bash
-pip uninstall aa-qqbot
-python manage.py remove_stale_contenttypes --include-stale-apps
+pip uninstall -y aa-qqbot
+python manage.py shell -c "from django.contrib.contenttypes.models import ContentType; print(ContentType.objects.filter(app_label='qqbot').delete())"
 ```
+
+不要改用 `python manage.py remove_stale_contenttypes --include-stale-apps`：它会把这台 AA 上所有已卸载插件留下的权限一起删掉。
 
 最后启动 AA。
 
@@ -110,7 +112,7 @@ python manage.py remove_stale_contenttypes --include-stale-apps
   ```bash
   pip install "django-sri<1"
   ```
-- 超级管理员不会自动获得入群资格，测试时请用普通成员账号。
+- 超级管理员不会自动获得入群资格（这时卡片会直接提示），测试时请用普通成员账号。
 - 界面语言：「QQ 绑定」卡片和「QQ 管理」页面在用户的 AA 语言是中文时显示中文，其他语言都显示英文（卡片叫 "QQ binding"，菜单叫 "QQ Admin"）。没选过语言的成员按浏览器语言显示，浏览器是英文就会看到英文；让他在 AA 的语言菜单里选「简体中文」即可（AA 会记住）。改 `LANGUAGE_CODE` 没用，因为 Django 先看浏览器的语言。
 
 ## 许可证

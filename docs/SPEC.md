@@ -117,7 +117,7 @@ def evaluate_many(groups, qqs, now=None, config=None) -> dict[str, dict[int, Dec
   - QQ 或昵称不合法 → `outcome="invalid"`。
   - QQ 与自己当前绑定相同 → 只更新昵称（`nickname_updated` 或 `unchanged`），写审计 `NICKNAME` 并写 `card` 事件。
   - QQ 已被**别人** `verified` → `outcome="taken"`（提示联系 QQ 管理员）。
-  - 用户已有绑定，且 `qq_changed_at` 还在 `Config.rebind_cooldown_hours` 冷却期内 → `outcome="cooldown"`，附剩余时间。**成员自己解绑后冷却继续有效**：`unbind` 把被删绑定的 `qq_changed_at` 记进审计 `UNBIND` 的 `detail`，没有绑定时取冷却窗口内最近一条 `UNBIND` 的这个时间判断；重新提交刚解绑的同一个 QQ 不算换号；管理员强制解绑（`FORCE_UNBIND`）不延续冷却。
+  - 用户已有绑定，且 `qq_changed_at` 还在 `Config.rebind_cooldown_hours` 冷却期内 → `outcome="cooldown"`，附剩余时间。**成员自己解绑后冷却继续有效**：`unbind` 把被删绑定的 `qq_changed_at` 记进审计 `UNBIND` 的 `detail`，没有绑定时看冷却窗口内最近一条 `UNBIND`/`FORCE_UNBIND`/`CONFLICT_RESOLVED`：是强制解绑或失去 QQ（冲突中被判给别人、被别人用验证码认领走）时不冷却，即使之前自己解绑过（决定 #22）；是 `UNBIND` 时取它记下的这个时间判断；重新提交刚解绑的同一个 QQ 不算换号。
   - `in_fresh_roster(qq)` → 先检查免验证绑定的频率限制（每个用户每小时最多 5 次，缓存计数，与验证码计数分开），超出返回 `outcome="rate_limited"`；否则 **老成员免验证**：新建或替换为 `trusted` 绑定，`verified_via=""`，`verified_at=None`，清空 `card_override`（换号时），设置 `qq_changed_at=now`，作废该用户所有有效验证码。换号时对旧 QQ 写 `recheck` 事件、写审计 `REBIND`，否则写 `BIND`。存在其他 `trusted` 同号绑定时写审计 `CONFLICT`。对新 QQ 调用 `refresh_binding`。返回 `outcome="trusted"` 或 `"conflict"`。
   - 否则 → **待验证**：作废旧验证码，生成新验证码，写审计 `CODE`，返回 `outcome="pending"`，并在结果里带上**明文验证码**和过期时间（明文只出现这一次，页面可以存在会话里）。现有绑定保持不变，等验证码被使用才替换。
   - 频率限制：每个用户每小时最多生成 5 个验证码（用缓存计数），超出返回 `outcome="rate_limited"`。
@@ -133,8 +133,11 @@ def evaluate_many(groups, qqs, now=None, config=None) -> dict[str, dict[int, Dec
 - `cooldown_ends(qq_changed_at, now=None, config=None)`：冷却结束时间（已结束为 `None`），给服务卡片的换绑、解绑提示用。
 - 已知限制：号主还在群里时，冲突的 QQ 在新鲜名单里，任何一方提交都只会得到 `trusted`/`conflict`，拿不到验证码；因此这类冲突只能由管理员确认或强制解绑来解决，管理页不能引导成员「用验证码胜出」。
 - `set_nickname(user, nickname)`、`set_card_override(binding, card, actor)`（空串表示清除；按 60 字节校验）：写审计并刷新。
-- `conflicts() -> list[tuple[qq, list[Binding]]]`：没有 `verified`、且 `trusted` 绑定数 ≥ 2 的 QQ。
-- `on_user_deleted(user)`：在 `pre_delete` 时调用：写 `recheck` 事件和审计 `USER_DELETED`（快照 QQ）。
+- `conflict_qqs() -> list[str]`（一次查询）和 `conflicts() -> list[tuple[qq, list[Binding]]]`：没有 `verified`、且 `trusted` 绑定数 ≥ 2 的 QQ。
+- `TRUSTED_REVIEW_DAYS = 30`；`recent_trusted(now=None, exclude_qqs=()) -> QuerySet`：`qq_changed_at` 在最近 `TRUSTED_REVIEW_DAYS` 天内的 `trusted` 绑定，排除 `exclude_qqs`，按 `-qq_changed_at, -pk` 排序；只读（决定 #23）。
+- `code_not_needed(user, qq, now=None) -> bool`：`in_fresh_roster(qq, now)` 为真且这个 QQ 上没有别的账号的绑定；只读，给待验证卡片的提示用。
+- `core/attention.py`：`misconfigured_groups()`（启用中、没选 AA 组的身份组小群）；`attention_counts() -> {conflicts, misconfigured, total}`，固定两次查询；给数字角标用（决定 #24）。
+- `on_user_deleted(user)`：在 `pre_delete` 时调用：写 `recheck` 事件和审计 `USER_DELETED`（快照 QQ）。`recheck` 事件在删除事务提交后写（`on_commit(..., robust=True)`）；写入失败只记 ERROR 日志（QQ 打码），不影响删除；漏掉的这条靠机器人下一次巡检发现 `NOT_BOUND`（每日对账补不回来，绑定已经删了）。
 
 ### 3.10 `qqbot/tests/utils.py`
 - `create_member(username, *, corp_ticker="IGC", character_name=None, state_perm=True, active=True)`：用 `AuthUtils` 创建带主角色的用户，把 `basic_access` 挂到用户的 state 上（与生产配置一致）。
@@ -155,28 +158,29 @@ def evaluate_many(groups, qqs, now=None, config=None) -> dict[str, dict[int, Dec
   - `check {group_id, qqs: [..≤3000], full_roster: bool}` → `{group_id, results: [{qq, decision, reason, card}]}`。未知或无效的群 → 404 `unknown_group`。`full_roster=true` 表示 `qqs` 是该群的完整成员名单，调用 `update_roster`。结果中无效的 QQ 原样返回，`decision=review, reason=BAD_QQ`；只原样返回整数和 64 字符以内、可打印、能编码为 UTF-8 的字符串，其他值返回 `null`（一个坏项不能让整批请求失败）。
   - `claim {qq, text, group_id?}` → `{claimed: bool, outcome, result: {qq, decision, reason, card} | null}`。带了 `group_id` 时给出该群的判定。
   - `events {after: int ≥ 0, limit?: 1..500 默认 200}` → `{events: [{id, kind, qq, created_at}], last_id, has_more}`，调用 `core.events.poll`；事件最多延迟约 10 秒可见（`API.md` 要写明）。
-- `API.md`（中文 + 字段表）：完整契约、错误码表、**签名测试向量**（固定 secret、时间戳、nonce、请求体，给出预期签名，并写一个测试确保向量与实现一致），以及给 Koishi 端的实现要点：`redirect: 'manual'`、只接受 200、三态处理、`review` 永不处置、昵称和名片要转义、入群申请一律走 `claim` 并只看 `result.decision`、事件按群合并成批量 `check`、大规模 `deny` 的熔断（一轮移出人数超过阈值时不处置、等人工确认）、子路径部署时签名路径带前缀。
+- `API.md`（中文 + 字段表）：完整契约、错误码表、**签名测试向量**（固定 secret、时间戳、nonce、请求体，给出预期签名，并写一个测试确保向量与实现一致），以及给 Koishi 端的实现要点：`redirect: 'manual'`、只接受 200、三态处理、`review` 永不处置、昵称和名片要转义、入群申请一律走 `claim` 并只看 `result.decision`、事件按群合并成批量 `check`、大规模 `deny` 的熔断（一轮移出人数超过阈值时这一轮不处置并报警；何时继续由机器人决定，人工确认或自动冷静期都行）、子路径部署时签名路径带前缀。
 
 ## 5. 成员界面：服务页的「QQ 绑定」卡片（决定 #18）
 
 - 成员**没有单独的页面**，所有操作都在 AA 服务页（`/services/`，URL 名 `services:services`）的卡片里完成，样子见 `DESIGN.md` §4.1、§4.2。
 - `service_hook.QQBotService`：`name="qq"`，`title` 为「QQ 绑定」，`access_perm="qqbot.basic_access"`，`service_active_for_user = has_perm`。`render_services_ctrl(request)` 用 `views.member.card_context(request)` 的结果（加上 `service_name`）渲染 `qqbot/service_ctrl.html`。`validate_user`、`delete_user` 等回调**什么都不做**（真正的正确性由 signals 和每日对账保证）；`update_groups`、`update_all_groups` **不要覆盖**（AA 的用户后台会为覆盖了它们的服务加一个无用的「Sync groups」操作）。`sync_nickname(user)` 调用 `signals.schedule_refresh_user(user.pk)`（AA 在 pre_save 里、自己的事务中调用它，此时新数据还没写入），外层包 try/except。
-- `card_context(request, now=None)`：所有规则仍在 core，这里只取数据。`view` 取 `no_main` / `unbound` / `pending`（有有效验证码，包括换绑中）/ `bound`；另有 `status`（`member_status`）、`badge_label`/`badge_class`（未启用 `text-bg-warning`，同 AA 自己的 Disabled；待验证蓝；已启用绿；冲突 / 已被占用红。有绑定时标签显示现在绑定的状态，换绑中也一样；冲突 / 已被占用的红标签在已绑定和待验证两种视图里都配有 `#qqbot-problem` 红色说明）、`groups`（`groups_for_user` 按固定群、身份组小群分组；只在待验证、或已绑定且没有冲突时查询）、`rules_text`、群名片前缀拆分与长度提示、会话里的验证码（与有效验证码的哈希一致才显示）、`minutes_left`、`card`/`card_shortened`、`cooldown_ends`/`cooldown_left`（还要等多久，`core.bindings.format_remaining`；卡片只显示剩余时间，不显示钟点：AA 按 `TIME_ZONE`（通常 UTC）显示时间，成员看的是北京时间）/`cooldown_hours`、`is_manager`（`has_perm("qqbot.manage")`）。每次打开服务页都会执行：查询次数固定，不随群数量增长（有测试）。会话里的验证码已失效时从会话删除，并在卡片里提示一次（`#qqbot-stale`）、把上次填的内容预填回表单：未绑定时预填绑定表单，换绑时展开「换绑」小表单（`open_panel="rebind"`）并预填新 QQ。
+- `card_context(request, now=None)`：所有规则仍在 core，这里只取数据。`view` 取 `no_main`（兜底：AA 5.x 的 `main_character_required` 已经先把没有主角色的用户跳回 `/dashboard/`）/ `unbound` / `pending`（有有效验证码，包括换绑中）/ `bound`；另有 `status`（`member_status`）、`badge_label`/`badge_class`（未启用 `text-bg-warning`，同 AA 自己的 Disabled；待验证蓝；已启用绿；冲突 / 已被占用红。有绑定时标签显示现在绑定的状态，换绑中也一样；冲突 / 已被占用的红标签在已绑定和待验证两种视图里都配有 `#qqbot-problem` 红色说明）、`groups`（`groups_for_user` 按固定群、身份组小群分组；只在待验证、或已绑定且没有冲突时查询）、`rules_text`、群名片前缀拆分与长度提示、会话里的验证码（与有效验证码的哈希一致才显示）、`minutes_left`、`card`/`card_shortened`、`cooldown_ends`/`cooldown_left`（还要等多久，`core.bindings.format_remaining`；卡片只显示剩余时间，不显示钟点：AA 按 `TIME_ZONE`（通常 UTC）显示时间，成员看的是北京时间）/`cooldown_hours`、`is_manager`（`has_perm("qqbot.manage")`）、`attention_total`（只在 `is_manager` 时计算，`core.attention`）、`no_member_access`（只有超级管理员且没有被明确授予 `basic_access` 时为真；普通成员不多查询）、`code_not_needed`（只在待验证视图计算）。每次打开服务页都会执行：查询次数固定，不随群数量增长（有测试）。会话里的验证码已失效时从会话删除，并在卡片里提示一次（`#qqbot-stale`）、把上次填的内容预填回表单：未绑定时预填绑定表单，换绑时展开「换绑」小表单（`open_panel="rebind"`）并预填新 QQ。
 - 操作结果（`result`）：POST 视图把 `{level, text, ok, panel, qq, nickname, at}` 存在会话 `qqbot_result` 里，`card_context` 取出后删除（只显示一次；超过 `RESULT_MAX_AGE` 秒、或格式不对的丢弃），卡片在正文最上面用 alert 显示（`#qqbot-result`，success / info / warning / danger）。**不用 Django messages**：AA 把它们显示在整排服务卡片的上方，卡片不在第一排时（手机、较窄的笔记本），跳到 `#qqbot` 后提示条在屏幕外。操作失败（`ok` 为假）时，`panel` 指明刚才用的表单：未绑定视图预填绑定表单的 QQ 和昵称；已绑定视图展开对应的小表单（`open_panel` 为 `nickname` / `rebind` / `unbind`，加 `show` 类，切换按钮 `aria-expanded="true"`），并预填刚才填的昵称或新 QQ。填过的内容只显示在本人的卡片里，照常转义。
 - 卡片模板 `qqbot/service_ctrl.html`：独立的 `<div class="card mx-2 mb-3 …" id="qqbot">`（不继承 `services_ctrl_base.html`，那个模板把文字居中、宽度也放不下表单），宽 `26rem`、`max-width: calc(100% - 1rem)`；标题栏（QQ 图标 + 标题 + 状态徽章）、正文、页脚按钮。卡片内所有 DOM id 以 `qqbot-` 开头且唯一。
   - 未绑定：一句说明；表单 POST 到 `member_submit`：群名片前缀（`[ticker] 角色名 - `，只读）+ 昵称输入框的 input-group、QQ 输入框、「绑定」按钮、小字提示；下面用小字显示入群须知（`Config.rules_text`，**转义后**把换行转成 `<br>`）。
-  - 待验证：验证码（大号等宽字体）或「验证码只在生成它的浏览器里显示，请点重新生成」、剩余分钟数、3 步说明、可申请的群；页脚「重新生成」（POST `member_submit`，`regenerate=1`）和「取消」（POST `member_code_cancel`）。
+  - 待验证：`code_not_needed` 时在验证码上方显示 `#qqbot-skip-code` 提示；验证码（大号等宽字体）或「验证码只在生成它的浏览器里显示，请点重新生成」、剩余分钟数、3 步说明、可申请的群；页脚「重新生成」（POST `member_submit`，`regenerate=1`）和「取消」（POST `member_code_cancel`）。
   - 已绑定：打码的 QQ 与状态、群名片、可加入的群（冲突 / 已被占用时不显示群号，改为红色提示「请联系 QQ 管理员」）、入群须知；页脚「改昵称」「换绑」「解绑」用 Bootstrap collapse 在卡片里展开小表单（`data-bs-parent`，一次只开一个）；没有 JavaScript 时 `<noscript>` 样式把三个小表单全部显示、隐藏切换按钮。解绑表单必须勾选 `confirm` 复选框（`required`）。
-  - 管理员（`qqbot.manage`）在页脚多一个「QQ 管理」按钮，链接 `manage_index`。
+  - 管理员（`qqbot.manage`）在页脚多一个「QQ 管理」按钮，链接 `manage_index`；`attention_total` 大于 0 时按钮上有红色数字（`#qqbot-attention`）。
+  - `no_member_access` 时正文最上面有黄色提示 `#qqbot-no-access`。
   - 主题（卡片和管理页、`base.html` 都适用）：只用 Bootstrap 组件类（alert、badge、btn、list-group、form）和 `text-body-secondary`。AA 的 darkly 主题没有设置 `data-bs-theme="dark"`，Bootstrap 根变量仍是浅色值：`bg-body-tertiary`、`bg-body-secondary`、`text-*-emphasis` 会变成浅底或深褐色字；它的 secondary 色 `#444` 与卡片标题栏、页脚同色。所以禁止这些类以及 `bg-light`、`bg-white`、`table-light`、`alert-light`、`text-dark`、`btn-light`、`*-secondary`（`text-body-secondary` 除外）、`btn-outline-secondary`、`text-bg-light` 和固定颜色；有测试检查 `qqbot/templates/qqbot/` 下的所有模板（包括 `{% if %}` 里写的类）。管理页的中性按钮（「清除」「返回」「恢复自动群名片」）用 `btn-info`，提示用 `text-danger` / `text-bg-warning` / `text-bg-info` / `text-bg-primary`。
 - `member_urls.urlpatterns`（URL 名不变，旧链接继续可用）：`""` → `my_qq`（登录 + 权限保护，只重定向到服务页卡片）、`submit/`、`code/cancel/`、`nickname/`（只接受 POST）、`unbind/`（POST 且勾选 `confirm` 才解绑；没勾选时提示「请先勾选「我确认要解除绑定」……」；GET 重定向回卡片）。
-- 所有视图：`@login_required` + `@permission_required("qqbot.basic_access", raise_exception=True)`，修改操作只接受 POST。操作完成后一律重定向到 `reverse("services:services") + "#qqbot"`，结果显示在卡片里（见上面的 `result`），不写 Django messages。卡片设 `scroll-margin-top: 1rem`（AA 的内容栏本身在顶栏下面，不需要更多）。没有主角色时 POST 只重定向，卡片本身会说明。
-- 菜单项（`auth_hooks.QQBotMenuItem`）：文字「QQ 管理」，链接 `manage_index`，**只对有 `qqbot.manage` 的人显示**；普通成员没有菜单项（用 AA 自带的「服务」菜单）。`base.html` 只给管理页用：没有「我的 QQ」标签；有 `basic_access` 的管理员在顶部看到回到服务页卡片的小链接。
+- 所有视图：`@login_required` + `@permission_required("qqbot.basic_access", raise_exception=True)`，修改操作只接受 POST。操作完成后一律重定向到 `reverse("services:services") + "#qqbot"`，结果显示在卡片里（见上面的 `result`），不写 Django messages。卡片设 `scroll-margin-top: 1rem`（AA 的内容栏本身在顶栏下面，不需要更多）。没有主角色时 AA 的 `main_character_required` 已经先把请求跳回 `/dashboard/`；POST 里的检查（只重定向）和卡片的 `no_main` 视图只是兜底。
+- 菜单项（`auth_hooks.QQBotMenuItem`）：文字「QQ 管理」，链接 `manage_index`，**只对有 `qqbot.manage` 且有主角色的人显示**（没有主角色时 AA 会把插件页面跳回首页）；`render()` 每次都重新给 `count` 赋值（`attention_counts()["total"]`，0 时为 `None`，AA 不显示角标；hook 对象可能被重复使用）；普通成员没有菜单项（用 AA 自带的「服务」菜单）。`base.html` 只给管理页用：没有「我的 QQ」标签；有 `basic_access` 的管理员在顶部看到回到服务页卡片的小链接。
 - QQ 输入框不能设比 `SubmitForm` 更短的 `maxlength`（浏览器会静默截掉粘贴内容的末位，变成另一个合法 QQ）。
 
 ## 6. 管理页面
 
-- `manage_urls.urlpatterns`，URL 名称：`manage_index`（重定向到 `manage_bindings`）、`manage_groups`、`manage_group_create`、`manage_group_edit <pk>`、`manage_group_delete <pk>`（确认后 POST）、`manage_bindings`（搜索：用户名、角色名、QQ、军团简称；筛选：状态、冲突；每页 50 条）、`manage_binding <pk>`（详情：各群判定表、名片预览；操作：设置或清除名片、确认、强制解绑）、`manage_pending`（冲突列表加各群未绑定的 QQ）、`manage_settings`（Config 表单）、`manage_audit`（分页，可按 QQ 筛选）。
+- `manage_urls.urlpatterns`，URL 名称：`manage_index`（有冲突 → `manage_pending`；只有配置错误的身份组小群 → `manage_groups`；都没有 → `manage_bindings`）、`manage_groups`、`manage_group_create`、`manage_group_edit <pk>`、`manage_group_delete <pk>`（确认后 POST）、`manage_bindings`（搜索：用户名、角色名、QQ、军团简称；筛选：状态、冲突；每页 50 条）、`manage_binding <pk>`（详情：各群判定表、名片预览；操作：设置或清除名片、确认、强制解绑）、`manage_pending`（配置错误的身份组小群提示；冲突列表；最近 30 天的免验证绑定（`recent_trusted`，排除冲突 QQ，每页 50 条，显示所在群和「此 QQ 已被别人验证」徽章，这种行不显示确认按钮；数量显示在标题徽章和「已绑定成员」页第 4 张统计卡片，不计入 `summary.pending` 和任何角标）；各群未绑定的 QQ）、`manage_settings`（Config 表单）、`manage_audit`（分页，可按 QQ 筛选）。
 - 所有视图：`@login_required` + `@permission_required("qqbot.manage", raise_exception=True)`，修改操作只接受 POST。管理员可以看到完整 QQ 号。
 - 群表单规则：`role` 类型必须至少选择一个 `required_groups`；群号经 `normalize_qq` 规范化且唯一。保存或删除后调用 `emit_groups_changed()` 并写审计 `GROUP`。设置保存后写审计 `CONFIG`，群名片格式变化时调用 `refresh_all()`（数量大时交给 Celery 异步执行）。
 - 所有修改只能通过 core 完成。
@@ -201,7 +205,7 @@ def evaluate_many(groups, qqs, now=None, config=None) -> dict[str, dict[int, Dec
   - `qqbot.W001`：缓存后端不是 Redis 一类的共享缓存（nonce 防重放需要跨进程共享）
   - `qqbot.W002`：`CELERYBEAT_SCHEDULE` 里没有 `task == "qqbot.tasks.reconcile"` 的条目（条目名不限；在后台手动添加定时任务的站点可以忽略这条警告）
   - health 接口复用同一套检查逻辑（纯函数 `problems() -> list[str]`）
-- `admin.py`：注册 `QQGroup`、`Binding`（只读，改动走前台）、`AuditLog`（只读）、`Config`。
+- `admin.py`：注册 `QQGroup`、`Binding`（只读，改动走前台；但删除 AA 用户时允许级联删除它：`has_delete_permission(obj)` 为真、`delete_view` 返回 403、详情页不显示删除按钮、列表没有批量删除）、`AuditLog`（只读）、`Config`。
 - `management/commands/qqbot_reconcile.py`：手动执行对账。
 - `README.md`（英文，简短）+ `README.zh-CN.md`（中文，简短）+ `docs/GUIDE.md`（中文分步说明和常见问题）：功能、给 IT 的安装步骤（`pip install`；`local.py` 中 `INSTALLED_APPS += ["qqbot"]`、`APPS_WITH_PUBLIC_VIEWS += ["qqbot"]`、`QQBOT_API_KEYS`、`CELERYBEAT_SCHEDULE`；`migrate`；重启）、权限怎么分配、如何生成密钥（`python -c "import secrets; print(secrets.token_urlsafe(48))"`）、升级与卸载（卸载时要删掉数据库里的 `qqbot_reconcile` 定时任务，AA 5 的 beat 把它存在 django_celery_beat 表里）。
 

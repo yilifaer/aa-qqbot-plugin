@@ -240,6 +240,33 @@ class AuthTests(ApiTestCase):
     def test_unknown_key(self):
         self.assertError(self.call("health", key="nope"), 401, "unknown_key")
 
+    def test_refusal_log_has_proxy_headers(self):
+        # Behind nginx or a tunnel REMOTE_ADDR is always 127.0.0.1; the
+        # forwarded headers are logged (never trusted), newlines escaped.
+        # 在 nginx 或隧道后面 REMOTE_ADDR 永远是 127.0.0.1；转发头只记日志（从不信任），换行被转义。
+        r = self.call("health", key="nope", headers={
+            "X-Forwarded-For": "203.0.113.7, 10.0.0.1",
+            "CF-Connecting-IP": "203.0.113.7\nFAKE",
+        })
+        self.assertError(r, 401, "unknown_key")
+        line = self.warning_line()
+        self.assertIn("X-Forwarded-For='203.0.113.7, 10.0.0.1'", line)
+        self.assertIn("CF-Connecting-IP='203.0.113.7\\nFAKE'", line)
+        self.assertNotIn("\n", line)
+
+    def test_refusal_log_without_proxy_headers(self):
+        r = self.call("health", key="nope")
+        self.assertError(r, 401, "unknown_key")
+        line = self.warning_line()
+        self.assertNotIn("X-Forwarded-For", line)
+        self.assertIn("from 127.0.0.1, key 'nope'", line)
+
+    def warning_line(self):
+        # views.logger is a mock in these tests (ApiTestCase.setUp).
+        # 这些测试里 views.logger 是 mock（见 ApiTestCase.setUp）。
+        args = views.logger.warning.call_args.args
+        return args[0] % args[1:]
+
     def test_stale_timestamp_past(self):
         r = self.call("health", ts=int(time.time()) - 400)
         self.assertError(r, 401, "stale_timestamp")
