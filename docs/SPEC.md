@@ -118,7 +118,7 @@ def evaluate_many(groups, qqs, now=None, config=None) -> dict[str, dict[int, Dec
   - QQ 与自己当前绑定相同 → 只更新昵称（`nickname_updated` 或 `unchanged`），写审计 `NICKNAME` 并写 `card` 事件。
   - QQ 已被**别人** `verified` → `outcome="taken"`（提示联系 QQ 管理员）。
   - 用户已有绑定，且 `qq_changed_at` 还在 `Config.rebind_cooldown_hours` 冷却期内 → `outcome="cooldown"`，附剩余时间。**成员自己解绑后冷却继续有效**：`unbind` 把被删绑定的 `qq_changed_at` 记进审计 `UNBIND` 的 `detail`，没有绑定时看冷却窗口内最近一条 `UNBIND`/`FORCE_UNBIND`/`CONFLICT_RESOLVED`：是强制解绑或失去 QQ（冲突中被判给别人、被别人用验证码认领走）时不冷却，即使之前自己解绑过（决定 #22）；是 `UNBIND` 时取它记下的这个时间判断；重新提交刚解绑的同一个 QQ 不算换号。
-  - `in_fresh_roster(qq)` → 先检查免验证绑定的频率限制（每个用户每小时最多 5 次，缓存计数，与验证码计数分开），超出返回 `outcome="rate_limited"`；否则 **老成员免验证**：新建或替换为 `trusted` 绑定，`verified_via=""`，`verified_at=None`，清空 `card_override`（换号时），设置 `qq_changed_at=now`，作废该用户所有有效验证码。换号时对旧 QQ 写 `recheck` 事件、写审计 `REBIND`，否则写 `BIND`。存在其他 `trusted` 同号绑定时写审计 `CONFLICT`。对新 QQ 调用 `refresh_binding`。返回 `outcome="trusted"` 或 `"conflict"`。
+  - `in_fresh_roster(qq)`，并且 QQ 管理员没有从这个用户手里强制解绑过这个 QQ（审计里没有 `FORCE_UNBIND`、`target_user` 为该用户、`qq` 为该 QQ 的记录；有的话往下走验证码分支，卡片不做额外说明，决定 #25）→ 先检查免验证绑定的频率限制（每个用户每小时最多 5 次，缓存计数，与验证码计数分开），超出返回 `outcome="rate_limited"`；否则 **老成员免验证**：新建或替换为 `trusted` 绑定，`verified_via=""`，`verified_at=None`，清空 `card_override`（换号时），设置 `qq_changed_at=now`，作废该用户所有有效验证码。换号时对旧 QQ 写 `recheck` 事件、写审计 `REBIND`，否则写 `BIND`。存在其他 `trusted` 同号绑定时写审计 `CONFLICT`。对新 QQ 调用 `refresh_binding`。返回 `outcome="trusted"` 或 `"conflict"`。
   - 否则 → **待验证**：作废旧验证码，生成新验证码，写审计 `CODE`，返回 `outcome="pending"`，并在结果里带上**明文验证码**和过期时间（明文只出现这一次，页面可以存在会话里）。现有绑定保持不变，等验证码被使用才替换。
   - 频率限制：每个用户每小时最多生成 5 个验证码（用缓存计数），超出返回 `outcome="rate_limited"`。
 - `live_code(user, now=None) -> BindCode | None`。
@@ -135,7 +135,7 @@ def evaluate_many(groups, qqs, now=None, config=None) -> dict[str, dict[int, Dec
 - `set_nickname(user, nickname)`、`set_card_override(binding, card, actor)`（空串表示清除；按 60 字节校验）：写审计并刷新。
 - `conflict_qqs() -> list[str]`（一次查询）和 `conflicts() -> list[tuple[qq, list[Binding]]]`：没有 `verified`、且 `trusted` 绑定数 ≥ 2 的 QQ。
 - `TRUSTED_REVIEW_DAYS = 30`；`recent_trusted(now=None, exclude_qqs=()) -> QuerySet`：`qq_changed_at` 在最近 `TRUSTED_REVIEW_DAYS` 天内的 `trusted` 绑定，排除 `exclude_qqs`，按 `-qq_changed_at, -pk` 排序；只读（决定 #23）。
-- `code_not_needed(user, qq, now=None) -> bool`：`in_fresh_roster(qq, now)` 为真且这个 QQ 上没有别的账号的绑定；只读，给待验证卡片的提示用。
+- `code_not_needed(user, qq, now=None) -> bool`：`in_fresh_roster(qq, now)` 为真、这个用户没有被强制解绑过这个 QQ，且这个 QQ 上没有别的账号的绑定；只读，给待验证卡片的提示用。
 - `core/attention.py`：`misconfigured_groups()`（启用中、没选 AA 组的身份组小群）；`attention_counts() -> {conflicts, misconfigured, total}`，固定两次查询；给数字角标用（决定 #24）。
 - `on_user_deleted(user)`：在 `pre_delete` 时调用：写 `recheck` 事件和审计 `USER_DELETED`（快照 QQ）。`recheck` 事件在删除事务提交后写（`on_commit(..., robust=True)`）；写入失败只记 ERROR 日志（QQ 打码），不影响删除；漏掉的这条靠机器人下一次巡检发现 `NOT_BOUND`（每日对账补不回来，绑定已经删了）。
 
