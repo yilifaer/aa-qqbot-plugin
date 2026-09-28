@@ -112,7 +112,7 @@ Start AA.
   ```bash
   pip install "django-sri<1"
   ```
-- Superusers do not get group access automatically. Test with a normal member account.
+- Superusers do not get group access automatically; their card then says so. Test with a normal member account.
 - Language: the QQ binding card and the QQ Admin pages are in Chinese for users whose AA language is Chinese, and in English for everyone else. Members who never picked a language get their browser's language; anyone can pick a language in AA's language menu (AA remembers it). The default group rules text is in Chinese; edit it under QQ Admin → Settings.
 
 ## License
