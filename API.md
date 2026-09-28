@@ -281,7 +281,7 @@ export async function callApi({ baseUrl, keyId, secret }, name, payload = {}) {
 {
   "ok": true,
   "server_time": "2026-09-25T08:00:00.123456+00:00",
-  "version": "1.0.0b6",
+  "version": "1.0.0",
   "config_ok": true,
   "problems": []
 }

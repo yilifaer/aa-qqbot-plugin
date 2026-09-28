@@ -9,7 +9,7 @@
 - QQ 机器人（Koishi，另一个仓库）来问 AA：「这个 QQ 能不能进这个群？群名片该叫什么？」；
 - 成员离开联盟、账号被停用、换了主角色，AA 都会记下来，机器人下次来取时就知道了。
 
-当前版本：**1.0.0b6**（测试版），更新内容见 [`CHANGELOG.md`](../CHANGELOG.md)。
+当前版本：**1.0.0**，更新内容见 [`CHANGELOG.md`](../CHANGELOG.md)。
 需要 Alliance Auth 5.x（5.2 及以上）、Python 3.10 及以上。
 
 ---
@@ -148,12 +148,12 @@ pip show allianceauth django-sri aa-qqbot | grep -E '^(Name|Version)'
 ### 第 1 步：安装插件
 
 ```bash
-pip install git+https://github.com/yilifaer/aa-qqbot-plugin.git
+pip install git+https://github.com/yilifaer/aa-qqbot-plugin.git@v1.0.0
 ```
 
-- 最后一行出现 `Successfully installed aa-qqbot-1.0.0b6` 就装好了（可能还会列出其他包，是 AA 缺的依赖）。
+- 最后一行出现 `Successfully installed aa-qqbot-1.0.0` 就装好了（可能还会列出其他包，是 AA 缺的依赖）。
 - 提示 `Cannot find command 'git'`：先安装 git（见「准备」），或者改用不需要 git 的写法：
-  `pip install https://github.com/yilifaer/aa-qqbot-plugin/archive/refs/heads/main.zip`
+  `pip install https://github.com/yilifaer/aa-qqbot-plugin/archive/refs/tags/v1.0.0.zip`
 - 注意：包名是 `aa-qqbot`，只能用上面的 GitHub 地址安装。**不要**运行 `pip install qqbot`：
   PyPI 上的 `qqbot` 是另一个无关的项目，会覆盖本插件的代码。
 
@@ -306,7 +306,7 @@ sudo supervisorctl status             # 每一行都应该是 RUNNING
 
 ### 用 Docker 安装的 AA
 
-把 `git+https://github.com/yilifaer/aa-qqbot-plugin.git` 加进 `conf/requirements.txt`，第 3 步那段写进 `conf/local.py`，
+把 `git+https://github.com/yilifaer/aa-qqbot-plugin.git@v1.0.0` 加进 `conf/requirements.txt`，第 3 步那段写进 `conf/local.py`，
 然后按 AA 的 Docker 文档重新构建镜像，并在容器里执行 `python manage.py check` 和 `python manage.py migrate`。
 
 ---
@@ -437,7 +437,7 @@ python manage.py qqbot_reconcile
 
 ```bash
 # 在 AA 虚拟环境里、myauth 目录下（见第 2 节第 0 步）
-pip install --upgrade --force-reinstall --no-deps git+https://github.com/yilifaer/aa-qqbot-plugin.git
+pip install --upgrade --force-reinstall --no-deps git+https://github.com/yilifaer/aa-qqbot-plugin.git@v1.0.0   # 升级到新版本时把 v1.0.0 换成新版本号
 pip freeze | grep aa-qqbot
 python manage.py check
 python manage.py migrate
@@ -454,7 +454,7 @@ sudo supervisorctl restart myauth:
   `--no-deps` 表示不去动 AA 和其他依赖。
 - `pip freeze | grep aa-qqbot` 会显示 `aa-qqbot @ git+https://…@<提交号>`，可以确认装的是哪一次提交；
   `pip show aa-qqbot` 显示版本号。更新内容见 [`CHANGELOG.md`](../CHANGELOG.md)，里面如果提到新的设置项，按说明加进 `local.py`。
-- 不用 git 时，把地址换成 `https://github.com/yilifaer/aa-qqbot-plugin/archive/refs/heads/main.zip`，其余相同。
+- 不用 git 时，把地址换成 `https://github.com/yilifaer/aa-qqbot-plugin/archive/refs/tags/v1.0.0.zip`，其余相同。
 
 ---
 
