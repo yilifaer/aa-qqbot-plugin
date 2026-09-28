@@ -88,12 +88,14 @@ python manage.py migrate qqbot zero
 python manage.py shell -c "from django_celery_beat.models import PeriodicTask; PeriodicTask.objects.filter(name='qqbot_reconcile').delete()"
 ```
 
-删掉 `local.py` 里加的那几行，然后：
+删掉 `local.py` 里加的那几行，然后执行下面两行（只删除本插件的 9 个内容类型和 2 个权限）：
 
 ```bash
-pip uninstall aa-qqbot
-python manage.py remove_stale_contenttypes --include-stale-apps
+pip uninstall -y aa-qqbot
+python manage.py shell -c "from django.contrib.contenttypes.models import ContentType; print(ContentType.objects.filter(app_label='qqbot').delete())"
 ```
+
+不要改用 `python manage.py remove_stale_contenttypes --include-stale-apps`：它会把这台 AA 上所有已卸载插件留下的权限一起删掉。
 
 最后启动 AA。
 

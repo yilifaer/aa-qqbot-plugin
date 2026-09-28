@@ -448,12 +448,16 @@ sudo supervisorctl restart myauth:
 
 4. 从 `local.py` 里删掉安装时加的那段（按本文第 2 节安装的，是从 `# ---------- aa-qqbot ----------` 到 `# ---------- aa-qqbot 结束 ----------`；按 README 安装的，是 README 第 3 步那几行）。
 
-5. 卸载插件，并清理后台里残留的两个 QQ 权限：
+5. 卸载插件，并清理后台里残留的两个 QQ 权限（一定要在第 4 步之后做）：
 
    ```bash
    pip uninstall -y aa-qqbot
-   python manage.py remove_stale_contenttypes --include-stale-apps --noinput
+   python manage.py shell -c "from django.contrib.contenttypes.models import ContentType; print(ContentType.objects.filter(app_label='qqbot').delete())"
    ```
+
+   只删除本插件的 9 个内容类型、2 个权限（以及这 2 个权限挂在状态、组、用户上的关联），输出类似
+   `(…, {'auth.Permission': 2, 'contenttypes.ContentType': 9, …})`。
+   **不要用 `python manage.py remove_stale_contenttypes --include-stale-apps`**：它会把这台 AA 上所有已卸载插件留下的权限一起删掉。
 
 6. 启动 AA：
 
@@ -492,7 +496,7 @@ sudo supervisorctl restart myauth:
 | 每日对账好像没在 04:17 运行 | 时间是 UTC，北京时间是 12:17 | 正常；想改时间就改 `crontab(...)` 里的 `hour` |
 | 升级后好像没变化 | 版本号没变时 `pip install -U` 不会重新安装 | 用第 7 节带 `--force-reinstall --no-deps` 的命令 |
 | 报错 `Application labels aren't unique, duplicates: qqbot` | `local.py` 里有两处把 `"qqbot"` 加进 `INSTALLED_APPS`（通常是旧版 0.x 留下的） | 删掉旧的那一处，只保留第 2 节第 3 步那一段 |
-| 以前装过旧版（0.x）：`local.py` 里有 `QQBOT_GROUP_CHAT`、`QQBOT_PING_GROUP`，数据库里有 `qqbot_qqbinding` 表 | 旧版留下的设置和数据，新版不再使用 | 删掉 `local.py` 里这两行；运行 `python manage.py remove_stale_contenttypes --noinput` 清理旧权限；旧表可以在 `python manage.py dbshell` 里执行 `DROP TABLE qqbot_qqbinding;` 删除（先备份） |
+| 以前装过旧版（0.x）：`local.py` 里有 `QQBOT_GROUP_CHAT`、`QQBOT_PING_GROUP`，数据库里有 `qqbot_qqbinding` 表 | 旧版留下的设置和数据，新版不再使用 | 删掉 `local.py` 里这两行；装好新版后（`qqbot` 还在 `INSTALLED_APPS` 里）运行 `python manage.py shell -c "from django.apps import apps; from django.contrib.contenttypes.models import ContentType; live = {m._meta.model_name for m in apps.get_app_config('qqbot').get_models()}; print(ContentType.objects.filter(app_label='qqbot').exclude(model__in=live).delete())"` 清理旧版的权限（只删 qqbot 里已经不存在的类型）；旧表可以在 `python manage.py dbshell` 里执行 `DROP TABLE qqbot_qqbinding;` 删除（先备份） |
 | `migrate` 报 `table "qqbot_…" already exists`（MySQL 是 `Table 'qqbot_…' already exists`） | 这台 AA 装过 1.0.0b1 之前的开发测试版（`1.0.0.dev0`），数据表已经建好了 | 运行 `python manage.py migrate qqbot 0001_v1_initial --fake`，再运行 `python manage.py migrate`，然后重启 |
 | 页面报错 `no such table: qqbot_…`（MySQL 是 `Table '…qqbot_…' doesn't exist`） | 数据表没建好：没运行 `migrate`，或者装的是 1.0.0b1 之前的开发测试版 | 用 `pip show aa-qqbot` 确认版本是 1.0.0b1 或更新（不是就按第 7 节升级），再运行 `python manage.py migrate`，然后重启 |
 
