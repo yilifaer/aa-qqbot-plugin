@@ -179,6 +179,7 @@ msgstr "固定群"
 msgid "Role group"
 msgstr "身份组小群"
 
+msgctxt "qqbot"
 msgid "Group name"
 msgstr "群名称"
 
@@ -526,6 +527,7 @@ msgstr "用户 / 主角色"
 msgid "Allowed groups"
 msgstr "可进的群"
 
+msgctxt "qqbot"
 msgid "Inactive"
 msgstr "已停用"
 
@@ -667,40 +669,6 @@ msgstr "认领时间"
 
 msgid "Confirm as owner"
 msgstr "确认归他"
-
-#, python-format
-msgid "Bound without a code in the last %(days)s day"
-msgid_plural "Bound without a code in the last %(days)s days"
-msgstr[0] "最近 %(days)s 天的免验证绑定"
-
-#, python-format
-msgid ""
-"These members entered a QQ from a group member list and were bound without a "
-"verification code (\"Trusted (already in group)\"). During the transition "
-"window anyone can claim any QQ in the group this way, so take a quick look: "
-"is the main character the same person as that QQ in the group? If yes, click "
-"\"Confirm as owner\" (the binding becomes verified and leaves this list). If "
-"not, force-unbind it. Bindings you leave alone keep working and drop off "
-"this list after %(days)s day."
-msgid_plural ""
-"These members entered a QQ from a group member list and were bound without a "
-"verification code (\"Trusted (already in group)\"). During the transition "
-"window anyone can claim any QQ in the group this way, so take a quick look: "
-"is the main character the same person as that QQ in the group? If yes, click "
-"\"Confirm as owner\" (the binding becomes verified and leaves this list). If "
-"not, force-unbind it. Bindings you leave alone keep working and drop off "
-"this list after %(days)s days."
-msgstr[0] ""
-"这些成员填写的 QQ 在群成员名单里，没用验证码就绑定了（「老成员免验证」）。"
-"过渡期内，任何人都可以这样认领群里的任意一个 QQ，所以请看一眼：主角色和群里"
-"这个 QQ 是同一个人吗？是的话点「确认归他」（绑定变成「已验证」，从这里消失）；"
-"不是的话就强制解绑。不处理的绑定照常生效，%(days)s 天后从这里消失。"
-
-msgid "In groups"
-msgstr "所在的群"
-
-msgid "Nothing to review."
-msgstr "没有需要复核的绑定。"
 
 msgid "No conflicts right now."
 msgstr "现在没有冲突。"
@@ -1314,3 +1282,42 @@ msgid ""
 "at most %(max)s characters; only Chinese characters, English letters, "
 "digits, spaces and _ - . · ( ) are allowed."
 msgstr "最长 %(max)s 个字；只能用中文、英文字母、数字、空格和 _ - . · ( )。"
+
+msgid "Recent bindings without a code"
+msgstr "最近的免验证绑定"
+
+#, python-format
+msgid "Last %(days)s day, to review"
+msgid_plural "Last %(days)s days, to review"
+msgstr[0] "近 %(days)s 天，待复核"
+
+#, python-format
+msgid "Bindings from the last %(days)s day that took effect without a verification code because the QQ was on a member list the bot reported (\"Trusted (already in group)\"), newest first. This only shows the QQ is in the group, not that it belongs to this member: in the QQ group, check that this QQ's own QQ nickname matches the character (its group nickname may already have been changed by the bot to this binding's name, so it proves nothing). If unsure, ask them in a private QQ message, or leave it. If it matches, click \"Confirm as owner\" (it becomes verified and leaves this list); if it is not them, \"Force unbind\". Rows you leave alone drop off this list after %(days)s day; the binding itself is not affected."
+msgid_plural "Bindings from the last %(days)s days that took effect without a verification code because the QQ was on a member list the bot reported (\"Trusted (already in group)\"), newest first. This only shows the QQ is in the group, not that it belongs to this member: in the QQ group, check that this QQ's own QQ nickname matches the character (its group nickname may already have been changed by the bot to this binding's name, so it proves nothing). If unsure, ask them in a private QQ message, or leave it. If it matches, click \"Confirm as owner\" (it becomes verified and leaves this list); if it is not them, \"Force unbind\". Rows you leave alone drop off this list after %(days)s days; the binding itself is not affected."
+msgstr[0] "最近 %(days)s 天里不填验证码、凭机器人上报的群名单直接生效的绑定（老成员免验证），最新的在前。免验证只能说明这个 QQ 在群里，不能说明 QQ 是本人的：请到 QQ 群里看看这个号自己的 QQ 昵称，和角色对不对得上（群名片可能已经被机器人改成了这条绑定的名字，不能作为依据）。拿不准就私聊问一下，或者先不处理。对得上就点「确认归他」（变成已验证，从这里消失）；不是本人就「强制解绑」。不处理的 %(days)s 天后自动从这里消失，绑定本身不受影响。"
+
+msgid "Groups with this QQ on their member list"
+msgstr "名单里有这个 QQ 的群"
+
+msgid "Not on any managed group's member list right now"
+msgstr "现在不在任何受管群的名单里"
+
+#, python-format
+msgid "No new bindings without a code in the last %(days)s day."
+msgid_plural "No new bindings without a code in the last %(days)s days."
+msgstr[0] "最近 %(days)s 天没有新的免验证绑定。"
+
+msgid "No AA group selected: everyone in this group is left for manual review."
+msgstr "没有选 AA 组，群里的人都判为需人工处理。"
+
+msgid "These role groups have no AA group selected, so everyone in them is left for manual review:"
+msgstr "下面这些身份组小群没有选 AA 组，群里的人都判为需人工处理："
+
+msgid "Fix them on the QQ groups page."
+msgstr "请到「QQ 群」页面修改。"
+
+msgid "Your account has not been given the “QQ binding: member” permission. Contact an admin; being a superuser does not count."
+msgstr "你的账号没有被授予「QQ 绑定 - 成员」权限，请联系管理员；超级管理员身份不算。"
+
+msgid "You are already in one of the groups. Click “Regenerate” to bind right away, without a verification code."
+msgstr "检测到你已经在群里，点「重新生成」即可直接免验证。"

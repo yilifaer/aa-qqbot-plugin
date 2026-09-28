@@ -38,6 +38,28 @@ from .signing import ApiError, error
 
 logger = get_extension_logger(__name__)
 
+# Proxy headers logged next to REMOTE_ADDR (behind nginx or a tunnel that is
+# always 127.0.0.1). For log lines only: they can be forged, so they are
+# never used for authentication, rate limits or any decision.
+# 和 REMOTE_ADDR 一起记进日志的代理头（AA 在 nginx 或隧道后面时，REMOTE_ADDR
+# 永远是 127.0.0.1）。只用于日志：它们可以伪造，绝不用于认证、限速或任何判断。
+_FORWARDED_HEADERS = ("X-Forwarded-For", "X-Real-IP", "CF-Connecting-IP")
+
+
+def _client_for_log(request) -> str:
+    """REMOTE_ADDR plus proxy headers, for log lines only (never trusted).
+    ``!r`` escapes line breaks, so a header cannot forge a log line.
+
+    REMOTE_ADDR 加上代理头，只用于日志（从不信任）。``!r`` 会转义换行，
+    所以请求头伪造不了日志行。
+    """
+    parts = [request.META.get("REMOTE_ADDR", "?")]
+    for name in _FORWARDED_HEADERS:
+        value = request.headers.get(name)
+        if value:
+            parts.append(f"{name}={value[:100]!r}")
+    return " ".join(parts)
+
 MAX_CHECK_QQS = 3000
 EVENTS_DEFAULT_LIMIT = 200
 EVENTS_MAX_LIMIT = 500
@@ -128,7 +150,7 @@ def api_endpoint(view):
                     "qqbot: API %s refused (%s) from %s, key %r",
                     view.__name__,
                     exc.code,
-                    request.META.get("REMOTE_ADDR", "?"),
+                    _client_for_log(request),
                     request.headers.get(signing.HEADER_KEY, "")[:64],
                 )
             else:

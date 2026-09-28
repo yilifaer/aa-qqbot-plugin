@@ -705,12 +705,14 @@ def set_card_override(binding, card, actor) -> Result:
         return Result(True, "card_set", gettext("Group nickname set."))
 
 
-def conflicts() -> list[tuple[str, list[Binding]]]:
-    """QQs with no verified binding and at least two trusted bindings.
+def conflict_qqs() -> list[str]:
+    """The conflicting QQs (one query), sorted: no verified binding and at
+    least two trusted bindings.
 
-    找出没有已验证绑定、且至少有两个老成员免验证绑定的 QQ。
+    冲突中的 QQ（一次查询），已排序：没有已验证绑定、且至少有两个老成员
+    免验证绑定。
     """
-    qqs = list(
+    return list(
         Binding.objects.values("qq")
         .annotate(
             trusted=Count("pk", filter=Q(status=Binding.Status.TRUSTED)),
@@ -720,6 +722,14 @@ def conflicts() -> list[tuple[str, list[Binding]]]:
         .order_by("qq")
         .values_list("qq", flat=True)
     )
+
+
+def conflicts() -> list[tuple[str, list[Binding]]]:
+    """QQs with no verified binding and at least two trusted bindings.
+
+    找出没有已验证绑定、且至少有两个老成员免验证绑定的 QQ。
+    """
+    qqs = conflict_qqs()
     if not qqs:
         return []
     grouped: dict[str, list[Binding]] = {qq: [] for qq in qqs}
@@ -730,6 +740,35 @@ def conflicts() -> list[tuple[str, list[Binding]]]:
     ):
         grouped[b.qq].append(b)
     return [(qq, grouped[qq]) for qq in qqs]
+
+
+# The manage pages list trusted bindings from this many days for review
+# (DECISIONS #23; equal to the default trusted binding window).
+# 管理页列出最近这么多天的免验证绑定供复核（决定 #23；等于默认的过渡期）。
+TRUSTED_REVIEW_DAYS = 30
+
+
+def recent_trusted(now=None, exclude_qqs=()):
+    """Trusted bindings whose QQ was set in the last ``TRUSTED_REVIEW_DAYS``
+    days, newest first (the managers' review list, DECISIONS #23). Read only.
+
+    ``qq_changed_at`` is set both when binding and when moving to another QQ
+    without a code (``created_at`` keeps the first binding's time).
+
+    最近 ``TRUSTED_REVIEW_DAYS`` 天内设成现在这个 QQ 的免验证绑定，最新的在前
+    （给管理员复核的列表，决定 #23）。只读。
+
+    不填验证码绑定和不填验证码换号都会设置 ``qq_changed_at``（``created_at``
+    保留第一次绑定的时间）。
+    """
+    now = now or timezone.now()
+    qs = Binding.objects.filter(
+        status=Binding.Status.TRUSTED,
+        qq_changed_at__gte=now - timedelta(days=TRUSTED_REVIEW_DAYS),
+    )
+    if exclude_qqs:
+        qs = qs.exclude(qq__in=list(exclude_qqs))
+    return qs.order_by("-qq_changed_at", "-pk")
 
 
 # Display states of one binding (services card, manage pages).
@@ -763,6 +802,22 @@ def binding_state(binding: Binding | None) -> str:
     if others:
         return STATE_CONFLICT
     return STATE_TRUSTED
+
+
+def code_not_needed(user, qq, now=None) -> bool:
+    """True when submitting ``qq`` again would bind it without a code: it is
+    in a fresh roster within the trusted binding window, and no other
+    account has any binding on it (someone else's verified binding would
+    make it ``taken``, a trusted one a conflict; then the code is right).
+    Read only; for the hint on the pending card.
+
+    重新提交 ``qq`` 会不会直接免验证绑定：它在过渡期内的有效群名单里，
+    而且别的账号在这个 QQ 上没有任何绑定（别人已验证会得到 ``taken``，
+    别人免验证会变成冲突，这两种情况用验证码才对）。只读；用于待验证卡片上的提示。
+    """
+    if not in_fresh_roster(qq, now):
+        return False
+    return not Binding.objects.filter(qq=qq).exclude(user_id=user.pk).exists()
 
 
 def _recheck_after_user_delete(qq) -> None:

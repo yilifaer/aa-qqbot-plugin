@@ -4,6 +4,8 @@ from allianceauth import hooks
 from allianceauth.services.hooks import MenuItemHook, UrlHook
 
 from . import i18n, urls
+from .core import attention
+from .core.access import has_main_character
 from .service_hook import QQBotService
 
 # Views reachable without an AA login. They authenticate with an HMAC
@@ -20,12 +22,14 @@ PUBLIC_VIEWS = [
 
 
 class QQBotMenuItem(MenuItemHook):
-    """Sidebar entry "QQ 管理", only for QQ managers (DECISIONS.md #18).
+    """Sidebar entry "QQ 管理", only for QQ managers with a main character
+    (DECISIONS.md #18), with a number badge for what needs them (#24).
 
     Members have no entry of their own: everything they do is in the
     "QQ 绑定" card on AA's services page (AA's own "服务" menu entry).
 
-    侧边栏的“QQ 管理”入口，只有 QQ 管理员能看到（DECISIONS.md #18）。
+    侧边栏的“QQ 管理”入口，只有有主角色的 QQ 管理员能看到（DECISIONS.md #18），
+    需要他们处理的事用数字角标显示（#24）。
 
     普通成员没有单独的入口：他们要做的事都在 AA 服务页面上的“QQ 绑定”
     卡片里（也就是 AA 自带的“服务”菜单）。
@@ -40,10 +44,19 @@ class QQBotMenuItem(MenuItemHook):
         )
 
     def render(self, request):
-        if request.user.has_perm("qqbot.manage"):
+        # AA sends users without a main character from every plugin page back
+        # to the dashboard, so the entry would lead nowhere for them.
+        # AA 会把没有主角色的用户从所有插件页面跳回首页，所以对他们不显示这个入口。
+        if request.user.has_perm("qqbot.manage") and has_main_character(request.user):
+            # The number badge, like AA's own group requests entry. The hook
+            # object is shared by all requests: set it every time.
+            # 数字角标，和 AA 自带的「入组申请」一样。hook 对象是所有请求共用的，
+            # 每次都要重新赋值。
+            self.count = attention.attention_counts()["total"] or None
             # qqbot's UI language (``qqbot.i18n``) / qqbot 的界面语言
             with i18n.override():
                 return MenuItemHook.render(self, request)
+        self.count = None
         return ""
 
 

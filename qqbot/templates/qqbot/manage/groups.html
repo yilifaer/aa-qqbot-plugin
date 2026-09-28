@@ -22,7 +22,7 @@
             <table class="table table-striped align-middle">
                 <thead>
                     <tr>
-                        <th>{% translate "Group name" %}</th>
+                        <th>{% translate "Group name" context "qqbot" %}</th>
                         <th>{% translate "Group number" %}</th>
                         <th>{% translate "Type" %}</th>
                         <th>{% translate "Required AA groups" %}</th>
@@ -48,6 +48,9 @@
                                         {% empty %}
                                             <span class="badge text-bg-danger">{% translate "None selected (please edit)" %}</span>
                                         {% endfor %}
+                                        {% if row.misconfigured %}
+                                            <div class="small text-danger qqbot-misconfigured">{% translate "No AA group selected: everyone in this group is left for manual review." %}</div>
+                                        {% endif %}
                                     {% else %}
                                         <span class="text-body-secondary">{% translate "All members" %}</span>
                                     {% endif %}

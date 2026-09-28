@@ -4,6 +4,7 @@ from django.conf import settings
 from django.core.cache import cache
 from django.test import Client, TestCase
 from django.urls import URLPattern, reverse
+from django.utils import timezone
 
 from allianceauth.tests.auth_utils import AuthUtils
 
@@ -180,6 +181,12 @@ class EscapingTests(TestCase):
         b = bind(member, "11111111", status="trusted", nickname=XSS, card_override=XSS)
         bind(other, "11111111", status="trusted", nickname=XSS)
         put_in_roster(group, ["22222222"])
+        # A trusted binding in the review list (not a conflict), with the XSS
+        # group in its "groups" column.
+        # 复核列表里的一个免验证绑定（不是冲突），「群」那一列里有 XSS 群名。
+        m3 = create_member("x3", character_name=XSS)
+        bind(m3, "33333333", status="trusted", nickname=XSS, qq_changed_at=timezone.now())
+        put_in_roster(group, ["33333333"])
         AuditLog.objects.create(action="group", actor_name=XSS, target_name=XSS,
                                 detail={XSS: XSS, "list": [XSS]})
 
