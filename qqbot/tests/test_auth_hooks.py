@@ -7,11 +7,14 @@ get "QQ 管理".
 from django.core.cache import cache
 from django.test import RequestFactory, TestCase
 from django.urls import reverse
+from django.utils import timezone
 
 from allianceauth.tests.auth_utils import AuthUtils
 
 from ..auth_hooks import QQBotMenuItem
-from .utils import MANAGE, create_member, create_user
+from ..core import attention, bindings
+from ..models import QQGroup
+from .utils import MANAGE, bind, create_group, create_member, create_user, put_in_roster
 
 
 def render_menu(user) -> str:
@@ -72,6 +75,86 @@ class MenuItemTests(TestCase):
         r = self.client.get(reverse("services:services"))
         self.assertContains(r, f'href="{self.manage}"')
         self.assertNotContains(r, f'href="{self.my_qq}"')
+
+
+class MenuBadgeTests(TestCase):
+    """The number badge: conflicts + misconfigured role groups (DECISIONS #24).
+
+    数字角标：冲突数 + 配置错误的身份组小群数（决定 #24）。
+    """
+
+    def setUp(self):
+        cache.clear()
+        self.hook = QQBotMenuItem()
+        self.manager = make_manager(create_member("mgr"))
+
+    def render(self, user):
+        request = RequestFactory().get("/dashboard/")
+        request.user = user
+        html = self.hook.render(request)
+        return html, self.hook.count
+
+    def conflict(self, qq="33333333"):
+        bind(create_member(f"a{qq}"), qq, status="trusted")
+        bind(create_member(f"b{qq}"), qq, status="trusted")
+
+    def test_manager_without_main_has_no_entry(self):
+        # AA sends them back to the dashboard from every plugin page.
+        user = make_manager(create_user("nomainmgr", main=False))
+        self.assertEqual(self.render(user), ("", None))
+
+    def test_no_badge_when_nothing_to_do(self):
+        html, count = self.render(self.manager)
+        self.assertIn("QQ 管理", html)
+        self.assertIsNone(count)
+
+    def test_conflict_counts(self):
+        self.conflict()
+        self.assertEqual(self.render(self.manager)[1], 1)
+
+    def test_misconfigured_role_group_counts(self):
+        group = create_group("223456", kind="role", required=["Cap"])
+        group.required_groups.clear()
+        self.assertEqual(self.render(self.manager)[1], 1)
+        # A disabled one does not.
+        QQGroup.objects.filter(pk=group.pk).update(is_active=False)
+        self.assertIsNone(self.render(self.manager)[1])
+
+    def test_both_add_up(self):
+        self.conflict()
+        create_group("223456", kind="role")
+        self.assertEqual(self.render(self.manager)[1], 2)
+
+    def test_not_counted(self):
+        g = create_group("123456")
+        put_in_roster(g, [str(40_000_000 + i) for i in range(5)])  # unbound
+        for i in range(3):  # the trusted review list
+            bind(create_member(f"t{i}"), str(50_000_000 + i), status="trusted",
+                 qq_changed_at=timezone.now())
+        bindings.submit(create_member("p"), "60000000", "p")  # a pending code
+        self.assertIsNone(self.render(self.manager)[1])
+
+    def test_count_does_not_leak_between_requests(self):
+        self.conflict()
+        self.assertEqual(self.render(self.manager)[1], 1)
+        # The same (process-wide) hook object, a member next: no entry, no count.
+        self.assertEqual(self.render(create_member("m")), ("", None))
+
+    def test_badge_on_a_real_page(self):
+        self.conflict()
+        self.client.force_login(self.manager)
+        r = self.client.get(reverse("services:services"))
+        html = r.content.decode()
+        start = html.index(f'href="{reverse("qqbot:manage_index")}"')
+        self.assertRegex(html[start:start + 600], r'class="badge[^"]*">\s*1\s*<')
+
+    def test_counts_are_two_queries(self):
+        for i in range(5):
+            self.conflict(str(70_000_000 + i))
+        create_group("223456", kind="role")
+        with self.assertNumQueries(2):
+            counts = attention.attention_counts()
+        self.assertEqual(counts, {"conflicts": 5, "misconfigured": 1, "total": 6})
 
 
 class ManageLayoutTests(TestCase):

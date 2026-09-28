@@ -10,13 +10,23 @@ from html.parser import HTMLParser
 
 from django.contrib.messages import get_messages
 from django.core.cache import cache
+from django.db import transaction
 from django.test import TestCase
 from django.urls import reverse
 from django.utils import timezone
 
 from ..core import bindings, codes
-from ..models import Binding, BindCode, QQGroup
-from .utils import add_to_groups, bind, create_group, create_member, put_in_roster
+from ..models import Binding, BindCode, Config, QQGroup
+from .utils import (
+    add_to_groups,
+    bind,
+    create_group,
+    create_member,
+    create_user,
+    member_state,
+    no_access_state,
+    put_in_roster,
+)
 
 SERVICES = reverse("services:services")
 BACK = SERVICES + "#qqbot"
@@ -602,6 +612,129 @@ class ManagerButtonTests(MemberCardTestCase):
             card = self.card()
             self.assertIn(f'href="{manage}"', card)
             self.assertIn("QQ 管理", card)
+            self.assertNotIn('id="qqbot-attention"', card)
+
+    def test_attention_badge_on_manage_button(self):
+        from allianceauth.tests.auth_utils import AuthUtils
+
+        from .utils import MANAGE
+
+        AuthUtils.add_permission_to_user_by_name(MANAGE, self.user, disconnect_signals=True)
+        bind(create_member("a"), "33333333", status="trusted")
+        bind(create_member("b"), "33333333", status="trusted")
+        self.role.required_groups.clear()
+        card = self.card()
+        self.assertRegex(card, r'id="qqbot-attention">2<')
+
+
+class SkipCodeHintTests(MemberCardTestCase):
+    """A7: the roster came in after the code was made (T-6).
+
+    A7：名单是在生成验证码之后才上报的（T-6）。
+    """
+
+    HINT = "检测到你已经在群里，点「重新生成」即可直接免验证。"
+
+    def pending(self):
+        _r, card = self.post(SUBMIT, {"qq": QQ, "nickname": "凯拉"})
+        self.assertIsNotNone(page_code(card))
+        self.assertNotIn('id="qqbot-skip-code"', card)
+
+    def test_hint_then_regenerate_binds_without_code(self):
+        self.pending()
+        put_in_roster(self.fixed, [QQ])
+        card = self.card()
+        self.assertIn('id="qqbot-skip-code"', card)
+        self.assertIn(self.HINT, card)
+        _r, card = self.post(SUBMIT, {"regenerate": "1"})
+        b = Binding.objects.get(user=self.user)
+        self.assertEqual((b.qq, b.status), (QQ, "trusted"))
+        self.assertIsNone(bindings.live_code(self.user))
+
+    def test_no_hint_when_it_would_not_work(self):
+        self.pending()
+        config = Config.get_solo()
+        cases = {
+            "stale roster": lambda: put_in_roster(
+                self.fixed, [QQ], now=timezone.now() - timedelta(days=config.roster_max_age_days + 1)
+            ),
+            "window over": lambda: (
+                put_in_roster(self.fixed, [QQ]),
+                QQGroup.objects.filter(pk=self.fixed.pk).update(
+                    created_at=timezone.now() - timedelta(days=config.trusted_window_days + 1)
+                ),
+            ),
+            "window off": lambda: (
+                put_in_roster(self.fixed, [QQ]),
+                Config.objects.filter(pk=config.pk).update(trusted_window_days=0),
+            ),
+            "verified by another": lambda: (
+                put_in_roster(self.fixed, [QQ]), bind(create_member("other1"), QQ),
+            ),
+            "trusted by another": lambda: (
+                put_in_roster(self.fixed, [QQ]),
+                bind(create_member("other2"), QQ, status="trusted"),
+            ),
+        }
+        for name, setup in cases.items():
+            with self.subTest(name):
+                sid = transaction.savepoint()
+                setup()
+                self.assertNotIn('id="qqbot-skip-code"', self.card())
+                transaction.savepoint_rollback(sid)
+
+    def test_hint_when_changing_qq(self):
+        bind(self.user, OTHER_QQ, qq_changed_at=timezone.now() - timedelta(days=5))
+        self.post(SUBMIT, {"qq": QQ, "nickname": "凯拉"})
+        self.assertIsNotNone(bindings.live_code(self.user))
+        put_in_roster(self.fixed, [QQ])
+        self.assertIn('id="qqbot-skip-code"', self.card())
+        self.post(SUBMIT, {"regenerate": "1"})
+        b = Binding.objects.get(user=self.user)
+        self.assertEqual((b.qq, b.status), (QQ, "trusted"))
+
+    def test_hint_in_english(self):
+        from .test_i18n import set_language
+
+        self.pending()
+        put_in_roster(self.fixed, [QQ])
+        set_language(self.client, "en")
+        self.assertIn("Click “Regenerate” to bind right away", self.card())
+
+
+class NoMemberAccessTests(TestCase):
+    """A8: a superuser sees the card without an explicit grant (T-4).
+
+    A8：超级管理员没有被明确授权也能看到卡片（T-4）。
+    """
+
+    TEXT = "你的账号没有被授予「QQ 绑定 - 成员」权限，请联系管理员；超级管理员身份不算。"
+
+    def setUp(self):
+        cache.clear()
+        create_group("100001")
+
+    def test_superuser_without_grant(self):
+        root = create_user("root", superuser=True, state=no_access_state())
+        self.client.force_login(root)
+        card = card_of(self.client.get(SERVICES).content.decode())
+        self.assertIn('id="qqbot-no-access"', card)
+        self.assertIn(self.TEXT, card)
+        self.client.post(SUBMIT, {"qq": QQ, "nickname": "root"})
+        card = card_of(self.client.get(SERVICES).content.decode())
+        self.assertIsNotNone(page_code(card))
+        self.assertIn('id="qqbot-no-access"', card)
+
+    def test_superuser_with_grant(self):
+        root = create_user("root", superuser=True, state=member_state())
+        self.client.force_login(root)
+        card = card_of(self.client.get(SERVICES).content.decode())
+        self.assertNotIn('id="qqbot-no-access"', card)
+
+    def test_member(self):
+        self.client.force_login(create_member("m"))
+        card = card_of(self.client.get(SERVICES).content.decode())
+        self.assertNotIn('id="qqbot-no-access"', card)
 
 
 class CardLengthHintTests(TestCase):

@@ -26,7 +26,7 @@ from django.core.cache import cache
 from django.core.management import call_command
 from django.test import RequestFactory, TestCase, SimpleTestCase, override_settings
 from django.urls import reverse
-from django.utils import translation
+from django.utils import timezone, translation
 from django.utils.translation import get_language_info, trans_real
 
 from .. import checks, i18n
@@ -811,3 +811,103 @@ class SourceScanTests(SimpleTestCase):
             if re.search(r"{%\s*(translate|trans|blocktranslate|blocktrans)\b", text):
                 with self.subTest(template=path.name):
                     self.assertRegex(text, r"{%\s*load\s+[^%]*\bi18n\b")
+
+
+# --------------------------------------------------------------------------
+# Other apps' catalogs must not replace qqbot's texts (A3)
+# 别的应用的翻译不能顶掉 qqbot 的译文（A3）
+# --------------------------------------------------------------------------
+
+
+def write_mo(path, messages):
+    """Write a minimal .mo file (as CPython's Tools/i18n/msgfmt.py does).
+
+    写一个最小的 .mo 文件（照 CPython 的 Tools/i18n/msgfmt.py）。
+    """
+    import array
+    import struct
+
+    items = sorted({"": "Content-Type: text/plain; charset=UTF-8\n", **messages}.items())
+    ids = strs = b""
+    offsets = []
+    for k, v in items:
+        k, v = k.encode(), v.encode()
+        offsets.append((len(ids), len(k), len(strs), len(v)))
+        ids += k + b"\0"
+        strs += v + b"\0"
+    keystart = 7 * 4 + 16 * len(items)
+    valuestart = keystart + len(ids)
+    table = [x for o1, l1, _, _ in offsets for x in (l1, o1 + keystart)]
+    table += [x for _, _, o2, l2 in offsets for x in (l2, o2 + valuestart)]
+    head = struct.pack("Iiiiiii", 0x950412DE, 0, len(items), 7 * 4, 7 * 4 + len(items) * 8, 0, 0)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_bytes(head + array.array("i", table).tobytes() + ids + strs)
+
+
+class CompetingCatalogTests(TestCase):
+    """Another plugin earlier in INSTALLED_APPS translates the same msgids
+    differently (seen on a real AA). LOCALE_PATHS wins over every app, so it
+    stands in for that plugin.
+
+    另一个排在 INSTALLED_APPS 前面的插件对同样的 msgid 有不同的译文（真实 AA
+    上遇到过）。LOCALE_PATHS 优先于所有应用，用它来模拟那个插件。
+    """
+
+    def setUp(self):
+        cache.clear()
+        self.tmp = Path(tempfile.mkdtemp())
+        self.addCleanup(shutil.rmtree, self.tmp, ignore_errors=True)
+        write_mo(
+            self.tmp / "zh_Hans" / "LC_MESSAGES" / "django.mo",
+            {"Group name": "群组名称", "Inactive": "未活跃"},
+        )
+        self.client.force_login(create_manager())
+
+    def test_qqbot_texts_win(self):
+        create_group("123456", name="聊天群")
+        gone = create_member("gone", active=False)
+        bind(gone, QQ_CONFLICT, status="trusted")
+        bind(create_member("other"), QQ_CONFLICT, status="trusted")
+        bind(create_member("gone2", active=False), QQ, status="trusted",
+             qq_changed_at=timezone.now())
+        with override_settings(LOCALE_PATHS=[str(self.tmp)]):
+            with translation.override("zh-hans"):
+                # The stand-in works (a variable, so makemessages does not pick it up).
+                # 模拟生效（用变量，免得 makemessages 把它当成要翻译的文字）。
+                msgid = "Group name"
+                self.assertEqual(translation.gettext(msgid), "群组名称")
+            pages = {
+                reverse("qqbot:manage_groups"): "群名称",
+                reverse("qqbot:manage_bindings"): "已停用",
+                reverse("qqbot:manage_pending"): "已停用",
+            }
+            for url, text in pages.items():
+                with self.subTest(url=url):
+                    r = self.client.get(url)
+                    self.assertContains(r, text)
+                    self.assertNotContains(r, "群组名称")
+                    self.assertNotContains(r, "未活跃")
+
+
+class EffectiveTranslationTests(SimpleTestCase):
+    """Every qqbot text comes out as qqbot's own translation, with Django's
+    and AA's catalogs loaded too.
+
+    加载了 Django 和 AA 的翻译之后，qqbot 的每一条文字得到的仍是 qqbot 自己的译文。
+    """
+
+    def test_effective_translations(self):
+        entries = [e for e in parse_po(PO_FILE) if e["msgid"]]
+        with translation.override("zh-hans"):
+            for e in entries:
+                with self.subTest(msgctxt=e.get("msgctxt"), msgid=e["msgid"]):
+                    if "msgid_plural" in e:
+                        if "msgctxt" in e:
+                            got = translation.npgettext(e["msgctxt"], e["msgid"], e["msgid_plural"], 1)
+                        else:
+                            got = translation.ngettext(e["msgid"], e["msgid_plural"], 1)
+                    elif "msgctxt" in e:
+                        got = translation.pgettext(e["msgctxt"], e["msgid"])
+                    else:
+                        got = translation.gettext(e["msgid"])
+                    self.assertEqual(got, e["msgstr"][0])

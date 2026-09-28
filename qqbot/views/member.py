@@ -33,7 +33,7 @@ from django.views.decorators.http import require_http_methods, require_POST
 
 from allianceauth.services.hooks import get_extension_logger
 
-from ..core import bindings, cards, codes, eligibility
+from ..core import access, attention, bindings, cards, codes, eligibility
 from ..core.access import has_main_character
 from ..core.util import NICKNAME_MAX_LENGTH, mask_qq
 from ..i18n import ui_language_view
@@ -346,6 +346,21 @@ def card_context(request, now=None) -> dict:
         context["badge_label"], context["badge_class"] = _badge(VIEW_NO_MAIN, status)
         return context
 
+    # Only superusers see the card without an explicit grant: has_perm() of
+    # everybody else already means a user / group / state permission, and
+    # superusers do not count for group access (DESIGN.md 4.2 ⑥).
+    # 只有超级管理员会在没有被明确授权时看到卡片：其他人的 has_perm() 本来
+    # 就意味着用户 / 组 / 状态上有这个权限；超级管理员身份不算入群资格
+    # （DESIGN.md 4.2 ⑥）。
+    context["no_member_access"] = (
+        user.is_superuser and user.pk not in access.base_access_user_ids([user.pk])
+    )
+
+    # The number badge on the "QQ Admin" button (DECISIONS #24); managers only.
+    # 「QQ 管理」按钮上的数字角标（决定 #24）；只有管理员才查。
+    if context["is_manager"]:
+        context["attention_total"] = attention.attention_counts()["total"]
+
     config = Config.get_solo()
     status = member_status(user, now)
     binding, live = status.binding, status.live_code
@@ -421,6 +436,10 @@ def card_context(request, now=None) -> dict:
                 "code_qq": mask_qq(live.qq),
                 "code_nickname": live.nickname,
                 "minutes_left": _minutes_left(live.expires_at, now),
+                # The roster may have come in after the code was made:
+                # "Regenerate" then binds without a code.
+                # 名单可能是在生成验证码之后才上报的：这时点「重新生成」就能免验证。
+                "code_not_needed": bindings.code_not_needed(user, live.qq, now),
             }
         )
     if binding is not None:

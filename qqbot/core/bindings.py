@@ -155,20 +155,25 @@ def _trusted_rate_limited(user) -> bool:
 def _last_qq_change(user, existing, qq_n, cooldown: timedelta, now):
     """When the user last changed their QQ, for the rebind cooldown.
 
-    With a binding that is ``qq_changed_at``. Without one, the cooldown of a
-    binding the member removed themselves (``UNBIND``) still runs, so
-    "unbind, then submit another QQ" cannot skip it; binding the *same* QQ
-    again is not a change (an unbind by mistake can be undone at once). The
-    time is kept in that audit row's ``detail``. A manager's forced unbind
-    does not carry it over.
+    With a binding that is ``qq_changed_at``. Without one, the latest unbind
+    within the cooldown decides (DECISIONS #22). After the member's own
+    unbind (``UNBIND``) the cooldown of that binding still runs, so "unbind,
+    then submit another QQ" cannot skip it; binding the *same* QQ again is not
+    a change (an unbind by mistake can be undone at once). The time is kept in
+    that audit row's ``detail``. After a manager's forced unbind
+    (``FORCE_UNBIND``), or after losing the QQ in a conflict or to someone
+    else's code (``CONFLICT_RESOLVED``), there is no cooldown, even if the
+    member unbound themselves before.
 
     用户上一次更换 QQ 的时间，用于计算换绑冷却。
 
-    有绑定时就是它的 ``qq_changed_at``。没有绑定时，如果之前的绑定是成员
-    自己解除的（``UNBIND``），那个绑定的冷却仍然继续计时，所以“先解绑再提交
-    另一个 QQ”绕不过冷却；重新绑定*同一个* QQ 不算更换（误解绑可以马上恢复）。
-    这个时间保存在那条审计日志的 ``detail`` 里。管理员强制解绑不会把冷却
-    带过来。
+    有绑定时就是它的 ``qq_changed_at``。没有绑定时，看冷却期内最近一条解绑
+    类记录（决定 #22）。如果是成员自己解绑（``UNBIND``），那个绑定的冷却仍然
+    继续计时，所以“先解绑再提交另一个 QQ”绕不过冷却；重新绑定*同一个* QQ
+    不算更换（误解绑可以马上恢复）。这个时间保存在那条审计日志的 ``detail``
+    里。如果是管理员强制解绑（``FORCE_UNBIND``），或者 QQ 在冲突中被判给别人、
+    被别人用验证码认领走（``CONFLICT_RESOLVED``），就不冷却，即使之前自己
+    解绑过。
     """
     if existing is not None:
         return existing.qq_changed_at
@@ -176,15 +181,22 @@ def _last_qq_change(user, existing, qq_n, cooldown: timedelta, now):
     # qq_changed_at 一定不晚于解绑时间，所以冷却期之前的解绑记录不用管。
     row = (
         AuditLog.objects.filter(
-            target_user_id=user.pk, action=Action.UNBIND, created_at__gte=now - cooldown
+            target_user_id=user.pk,
+            action__in=(Action.UNBIND, Action.FORCE_UNBIND, Action.CONFLICT_RESOLVED),
+            created_at__gte=now - cooldown,
         )
         .order_by("-id")
-        .values_list("qq", "detail")
+        .values_list("action", "qq", "detail")
         .first()
     )
-    if row is None or row[0] == qq_n:
+    # The latest unbind decides: a manager's forced unbind, or losing the QQ
+    # in a conflict / to someone else's code, ends the cooldown; after the
+    # member's own unbind it keeps running.
+    # 以最近一条解绑记录为准：管理员强制解绑、或者 QQ 在冲突中被判给别人 /
+    # 被别人用验证码认领走，冷却就结束；成员自己解绑时冷却继续计时。
+    if row is None or row[0] != Action.UNBIND or row[1] == qq_n:
         return None
-    detail = row[1]
+    detail = row[2]
     if not isinstance(detail, dict) or not isinstance(detail.get("qq_changed_at"), str):
         return None
     return parse_datetime(detail["qq_changed_at"])
@@ -693,12 +705,14 @@ def set_card_override(binding, card, actor) -> Result:
         return Result(True, "card_set", gettext("Group nickname set."))
 
 
-def conflicts() -> list[tuple[str, list[Binding]]]:
-    """QQs with no verified binding and at least two trusted bindings.
+def conflict_qqs() -> list[str]:
+    """The conflicting QQs (one query), sorted: no verified binding and at
+    least two trusted bindings.
 
-    找出没有已验证绑定、且至少有两个老成员免验证绑定的 QQ。
+    冲突中的 QQ（一次查询），已排序：没有已验证绑定、且至少有两个老成员
+    免验证绑定。
     """
-    qqs = list(
+    return list(
         Binding.objects.values("qq")
         .annotate(
             trusted=Count("pk", filter=Q(status=Binding.Status.TRUSTED)),
@@ -708,6 +722,14 @@ def conflicts() -> list[tuple[str, list[Binding]]]:
         .order_by("qq")
         .values_list("qq", flat=True)
     )
+
+
+def conflicts() -> list[tuple[str, list[Binding]]]:
+    """QQs with no verified binding and at least two trusted bindings.
+
+    找出没有已验证绑定、且至少有两个老成员免验证绑定的 QQ。
+    """
+    qqs = conflict_qqs()
     if not qqs:
         return []
     grouped: dict[str, list[Binding]] = {qq: [] for qq in qqs}
@@ -718,6 +740,35 @@ def conflicts() -> list[tuple[str, list[Binding]]]:
     ):
         grouped[b.qq].append(b)
     return [(qq, grouped[qq]) for qq in qqs]
+
+
+# The manage pages list trusted bindings from this many days for review
+# (DECISIONS #23; equal to the default trusted binding window).
+# 管理页列出最近这么多天的免验证绑定供复核（决定 #23；等于默认的过渡期）。
+TRUSTED_REVIEW_DAYS = 30
+
+
+def recent_trusted(now=None, exclude_qqs=()):
+    """Trusted bindings whose QQ was set in the last ``TRUSTED_REVIEW_DAYS``
+    days, newest first (the managers' review list, DECISIONS #23). Read only.
+
+    ``qq_changed_at`` is set both when binding and when moving to another QQ
+    without a code (``created_at`` keeps the first binding's time).
+
+    最近 ``TRUSTED_REVIEW_DAYS`` 天内设成现在这个 QQ 的免验证绑定，最新的在前
+    （给管理员复核的列表，决定 #23）。只读。
+
+    不填验证码绑定和不填验证码换号都会设置 ``qq_changed_at``（``created_at``
+    保留第一次绑定的时间）。
+    """
+    now = now or timezone.now()
+    qs = Binding.objects.filter(
+        status=Binding.Status.TRUSTED,
+        qq_changed_at__gte=now - timedelta(days=TRUSTED_REVIEW_DAYS),
+    )
+    if exclude_qqs:
+        qs = qs.exclude(qq__in=list(exclude_qqs))
+    return qs.order_by("-qq_changed_at", "-pk")
 
 
 # Display states of one binding (services card, manage pages).
@@ -753,6 +804,42 @@ def binding_state(binding: Binding | None) -> str:
     return STATE_TRUSTED
 
 
+def code_not_needed(user, qq, now=None) -> bool:
+    """True when submitting ``qq`` again would bind it without a code: it is
+    in a fresh roster within the trusted binding window, and no other
+    account has any binding on it (someone else's verified binding would
+    make it ``taken``, a trusted one a conflict; then the code is right).
+    Read only; for the hint on the pending card.
+
+    重新提交 ``qq`` 会不会直接免验证绑定：它在过渡期内的有效群名单里，
+    而且别的账号在这个 QQ 上没有任何绑定（别人已验证会得到 ``taken``，
+    别人免验证会变成冲突，这两种情况用验证码才对）。只读；用于待验证卡片上的提示。
+    """
+    if not in_fresh_roster(qq, now):
+        return False
+    return not Binding.objects.filter(qq=qq).exclude(user_id=user.pk).exists()
+
+
+def _recheck_after_user_delete(qq) -> None:
+    """Tell the bot to recheck ``qq`` once a user's deletion has committed.
+
+    The user is gone by then, so a failure is only logged: it must not turn
+    the delete page into a 500. The daily reconciliation cannot make up for
+    a lost event (the binding is deleted); the bot's next roster check finds
+    the QQ ``NOT_BOUND``.
+
+    用户删除提交之后，通知机器人复查 ``qq``。
+
+    这时用户已经删掉了，所以出错只记日志，不能让删除页面报 500。每天的对账
+    补不回这条事件（绑定已经删了）；机器人下一次巡检时会发现这个 QQ
+    ``NOT_BOUND``。
+    """
+    try:
+        events.emit(Event.Kind.RECHECK, qq)
+    except Exception:
+        logger.exception("qqbot: recheck event after a user deletion failed (%s)", mask_qq(qq))
+
+
 def on_user_deleted(user) -> None:
     """Called from ``pre_delete`` of ``User``: snapshot the QQ and tell the bot.
 
@@ -768,6 +855,8 @@ def on_user_deleted(user) -> None:
         # an older event id invisible to the bot's cursor until after it has
         # moved past it.
         # 等删除提交之后再写事件：批量删除耗时较长时，事件编号不会被机器人的游标跳过。
+        # robust=True on top of the helper's own try/except.
+        # 在辅助函数自己的 try/except 之外，再加 robust=True 双保险。
         qq = binding.qq
-        transaction.on_commit(lambda: events.emit(Event.Kind.RECHECK, qq))
+        transaction.on_commit(lambda: _recheck_after_user_delete(qq), robust=True)
         audit.log(Action.USER_DELETED, qq=binding.qq, target_user=user, status=binding.status)

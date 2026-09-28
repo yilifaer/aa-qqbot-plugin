@@ -1,6 +1,7 @@
 from datetime import timedelta
 from unittest import mock
 
+from django.contrib.auth.models import User
 from django.core.cache import cache
 from django.db import IntegrityError, transaction
 from django.db.models import UniqueConstraint
@@ -332,6 +333,75 @@ class SubmitOtherOutcomesTests(BaseTestCase):
         bindings.unbind(self.user, actor=create_member("boss"), forced=True)
         r = bindings.submit(self.user, "22345678", "凯拉", now=t0 + timedelta(minutes=5))
         self.assertEqual(r.outcome, "trusted")
+
+    def test_forced_unbind_ends_cooldown_even_after_own_unbind(self):
+        """DECISIONS #22: the latest unbind decides."""
+        put_in_roster(self.group, ["12345678", "22345678", "32345678"])
+        boss = create_member("boss")
+        t0 = timezone.now()
+        self.assertEqual(bindings.submit(self.user, "12345678", "凯拉", now=t0).outcome, "trusted")
+        bindings.unbind(self.user, actor=self.user)
+        r = bindings.submit(self.user, "12345678", "凯拉", now=t0 + timedelta(minutes=1))
+        self.assertEqual(r.outcome, "trusted")
+        bindings.unbind(self.user, actor=boss, forced=True)
+        r = bindings.submit(self.user, "22345678", "凯拉", now=t0 + timedelta(minutes=5))
+        self.assertEqual(r.outcome, "trusted")  # b4: cooldown
+        # The new binding starts its own cooldown as usual.
+        r = bindings.submit(self.user, "32345678", "凯拉", now=t0 + timedelta(minutes=10))
+        self.assertEqual(r.outcome, "cooldown")
+
+    def test_forced_unbind_ends_cooldown_code_path(self):
+        put_in_roster(self.group, ["12345678"])
+        t0 = timezone.now()
+        bindings.submit(self.user, "12345678", "凯拉", now=t0)
+        bindings.unbind(self.user, actor=self.user)
+        bindings.submit(self.user, "12345678", "凯拉", now=t0 + timedelta(minutes=1))
+        bindings.unbind(self.user, actor=create_member("boss"), forced=True)
+        r = bindings.submit(self.user, "42345678", "凯拉", now=t0 + timedelta(minutes=5))
+        self.assertEqual(r.outcome, "pending")
+
+    def test_own_unbind_after_forced_unbind_keeps_cooldown(self):
+        put_in_roster(self.group, ["12345678", "22345678", "32345678"])
+        t0 = timezone.now()
+        bindings.submit(self.user, "12345678", "凯拉", now=t0)
+        bindings.unbind(self.user, actor=create_member("boss"), forced=True)
+        self.assertEqual(
+            bindings.submit(self.user, "22345678", "凯拉", now=t0 + timedelta(minutes=1)).outcome,
+            "trusted",
+        )
+        bindings.unbind(self.user, actor=self.user)
+        r = bindings.submit(self.user, "32345678", "凯拉", now=t0 + timedelta(minutes=5))
+        self.assertEqual(r.outcome, "cooldown")
+
+    def own_unbind_first(self, user, qq, t0):
+        # An own unbind of ``qq`` inside the cooldown: binding ``qq`` again is
+        # allowed, but under the old rule any other QQ would wait.
+        # 冷却期内先自己解绑 ``qq`` 一次：再绑 ``qq`` 不受限制，但按旧规则换别的 QQ 要等。
+        bind(user, qq, qq_changed_at=t0)
+        bindings.unbind(user, actor=user)
+
+    def test_losing_conflict_ends_cooldown(self):
+        t0 = timezone.now()
+        other = create_member("bob")
+        self.own_unbind_first(self.user, "12345678", t0)
+        put_in_roster(self.group, ["12345678"])
+        self.assertEqual(bindings.submit(self.user, "12345678", "凯拉", now=t0).outcome, "trusted")
+        winner = bind(other, "12345678", status="trusted")
+        self.assertTrue(bindings.confirm(winner, create_member("boss"), expected_qq="12345678").ok)
+        self.assertFalse(Binding.objects.filter(user=self.user).exists())
+        r = bindings.submit(self.user, "22345678", "凯拉", now=t0 + timedelta(minutes=5))
+        self.assertEqual(r.outcome, "pending")
+
+    def test_losing_qq_to_a_code_ends_cooldown(self):
+        t0 = timezone.now()
+        other = create_member("bob")
+        self.own_unbind_first(self.user, "12345678", t0)
+        bind(self.user, "12345678", status="trusted", qq_changed_at=t0)
+        code = bindings.submit(other, "12345678", "鲍勃", now=t0).code
+        self.assertEqual(bindings.claim("12345678", code, now=t0).outcome, "claimed")
+        self.assertFalse(Binding.objects.filter(user=self.user).exists())
+        r = bindings.submit(self.user, "22345678", "凯拉", now=t0 + timedelta(minutes=5))
+        self.assertEqual(r.outcome, "pending")
 
     def test_unbind_after_cooldown_leaves_no_cooldown(self):
         t0 = timezone.now() - timedelta(hours=30)
@@ -730,6 +800,33 @@ class UserDeletedTests(BaseTestCase):
         self.assertIsNone(entry.target_user)
         self.assertEqual(entry.target_name, "alice")
         self.assertFalse(Binding.objects.exists())
+
+    def test_on_user_deleted_event_failure_is_logged(self):
+        bind(self.user, "12345678")
+        with mock.patch.object(bindings.events, "emit", side_effect=RuntimeError("boom")), \
+                self.assertLogs(bindings.logger, "ERROR") as logs:
+            with self.captureOnCommitCallbacks(execute=True):
+                bindings.on_user_deleted(self.user)
+        self.assertEqual(len(logs.records), 1)
+        self.assertNotIn("12345678", "\n".join(logs.output))
+
+    def test_user_delete_survives_event_failure(self):
+        # The user is already deleted when the event is written; a failure
+        # must be logged, not turned into a 500 on the delete page. The
+        # callbacks only run inside captureOnCommitCallbacks(execute=True).
+        # 写事件时用户已经删掉了；出错只能记日志，不能让删除页面报 500。
+        # 回调只有在 captureOnCommitCallbacks(execute=True) 里才会执行。
+        bind(self.user, "12345678")
+        with mock.patch.object(bindings.events, "emit", side_effect=RuntimeError("boom")) as emit, \
+                self.assertLogs(bindings.logger, "ERROR") as logs:
+            with self.captureOnCommitCallbacks(execute=True):
+                self.user.delete()
+        self.assertEqual(emit.call_count, 1)
+        self.assertEqual(len(logs.records), 1)
+        self.assertNotIn("12345678", "\n".join(logs.output))
+        self.assertFalse(User.objects.filter(pk=self.user.pk).exists())
+        self.assertFalse(Binding.objects.exists())
+        self.assertTrue(audits(A.USER_DELETED).filter(qq="12345678").exists())
 
     def test_on_user_deleted_without_binding(self):
         bindings.on_user_deleted(self.user)

@@ -4,14 +4,14 @@
 Layout of the QQ manager pages (the only qqbot pages: members use the
 "QQ 绑定" card on AA's services page, DECISIONS.md #18). Child templates fill
 `qqbot_title` and `qqbot_body`.
-qqbot's blocks are rendered in qqbot's UI language (English for English
-users, Simplified Chinese otherwise, see qqbot/i18n.py); AA's own menus
-around them stay in the user's language.
+qqbot's blocks are rendered in qqbot's UI language (Simplified Chinese when
+the request language is any Chinese, English otherwise, see qqbot/i18n.py);
+AA's own menus around them stay in the user's language.
 
 QQ 管理员页面的布局（qqbot 只有这些独立页面：成员使用的是 AA 服务页上的
 “QQ 绑定”卡片，见 DECISIONS.md #18）。子模板需要填写 `qqbot_title` 和 `qqbot_body`。
-qqbot 的块用 qqbot 的界面语言渲染（英文用户是英文，其他人是简体中文，见
-qqbot/i18n.py）；外面 AA 自己的菜单仍然是用户的语言。
+qqbot 的块用 qqbot 的界面语言渲染（请求语言是任何一种中文时显示简体中文，
+否则显示英文，见 qqbot/i18n.py）；外面 AA 自己的菜单仍然是用户的语言。
 {% endcomment %}
 
 {% block page_title %}{% qqbot_language as qqbot_lang %}{% language qqbot_lang %}{% block qqbot_title %}{% translate "QQ Admin" %}{% endblock qqbot_title %}{% endlanguage %}{% endblock page_title %}

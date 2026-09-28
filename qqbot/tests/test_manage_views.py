@@ -5,7 +5,9 @@ from unittest import mock
 
 from django.contrib.auth.models import Group
 from django.core.cache import cache
+from django.db import connection
 from django.test import TestCase
+from django.test.utils import CaptureQueriesContext
 from django.urls import reverse
 from django.utils import timezone
 
@@ -49,6 +51,44 @@ class ManagerTestCase(TestCase):
 # --------------------------------------------------------------------------
 # groups
 # --------------------------------------------------------------------------
+
+
+class AttentionTests(ManagerTestCase):
+    """A11: /qqbot/manage/ goes straight to what needs the manager (#24).
+
+    A11：/qqbot/manage/ 直接去需要管理员处理的地方（#24）。
+    """
+
+    INDEX = reverse("qqbot:manage_index")
+
+    def conflict(self):
+        bind(create_member("a"), "33333333", status="trusted")
+        bind(create_member("b"), "33333333", status="trusted")
+
+    def test_index_without_anything(self):
+        self.assertRedirects(self.client.get(self.INDEX), BINDINGS)
+
+    def test_index_with_conflict(self):
+        self.conflict()
+        create_group("223456", kind="role")
+        self.assertRedirects(self.client.get(self.INDEX), PENDING)
+
+    def test_index_with_misconfigured_group_only(self):
+        create_group("223456", kind="role", name="坏掉的小群")
+        self.assertRedirects(self.client.get(self.INDEX), GROUPS)
+        r = self.client.get(GROUPS)
+        self.assertContains(r, "qqbot-misconfigured")
+        self.assertContains(r, "没有选 AA 组，群里的人都判为需人工处理。")
+        self.assertContains(r, reverse("qqbot:manage_group_edit", args=[QQGroup.objects.get().pk]))
+        r = self.client.get(PENDING)
+        self.assertContains(r, 'id="qqbot-misconfigured"')
+        self.assertContains(r, "坏掉的小群")
+
+    def test_disabled_role_group_is_not_flagged(self):
+        create_group("223456", kind="role", is_active=False)
+        self.assertRedirects(self.client.get(self.INDEX), BINDINGS)
+        self.assertNotContains(self.client.get(GROUPS), "qqbot-misconfigured")
+        self.assertNotContains(self.client.get(PENDING), 'id="qqbot-misconfigured"')
 
 
 class GroupCrudTests(ManagerTestCase):
@@ -576,6 +616,129 @@ class PendingTests(ManagerTestCase):
         # Distinct QQs in the header count.
         self.assertEqual(r.context["summary"]["unbound"], 3)
 
+    # ---- recent bindings without a code (A6, DECISIONS #23) ----
+
+    def trusted(self, username, qq, **kw):
+        kw.setdefault("qq_changed_at", timezone.now())
+        return bind(create_member(username, **kw.pop("member", {})), qq, status="trusted", **kw)
+
+    def test_trusted_review_empty(self):
+        r = self.client.get(PENDING)
+        self.assertEqual(r.context["trusted_rows"], [])
+        self.assertContains(r, "最近 30 天没有新的免验证绑定")
+        self.assertEqual(r.context["summary"]["trusted_recent"], 0)
+
+    def test_trusted_review_lists_submitted_binding(self):
+        g = create_group("123456", name="聊天群")
+        put_in_roster(g, ["33333333"])
+        bob = create_member("bob", character_name="Bob Builder")
+        self.assertEqual(core_bindings.submit(bob, "33333333", "鲍勃").outcome, "trusted")
+        b = Binding.objects.get(user=bob)
+        r = self.client.get(PENDING)
+        self.assertEqual([row["binding"].pk for row in r.context["trusted_rows"]], [b.pk])
+        self.assertEqual(r.context["trusted_rows"][0]["groups"], [g])
+        self.assertContains(r, "Bob Builder")
+        self.assertContains(r, "33333333")
+        self.assertContains(r, "聊天群")
+        self.assertContains(r, reverse("qqbot:manage_binding_confirm", args=[b.pk]))
+        self.assertContains(r, 'name="qq" value="33333333"')
+        self.assertContains(r, 'name="back" value="pending"')
+        self.assertContains(r, reverse("qqbot:manage_binding_unbind", args=[b.pk]) + "?back=pending")
+        self.assertEqual(r.context["summary"]["trusted_recent"], 1)
+        self.assertEqual(r.context["summary"]["pending"], 0)
+        # The count card on the bindings page links here.
+        r = self.client.get(BINDINGS)
+        self.assertContains(r, PENDING + "#trusted")
+        self.assertContains(r, "近 30 天，待复核")
+
+    def test_trusted_review_leaves_out(self):
+        now = timezone.now()
+        old = self.trusted("old", "44444444", qq_changed_at=now)
+        Binding.objects.filter(pk=old.pk).update(qq_changed_at=now - timedelta(days=31))
+        bind(create_member("ver"), "55555555", qq_changed_at=now)
+        bind(create_member("nochange"), "66666666", status="trusted")  # qq_changed_at is None
+        self.trusted("c1", "77777777")
+        self.trusted("c2", "77777777")
+        # An inactive group's roster does not count for "groups".
+        inactive = create_group("323456", name="停用群", is_active=False)
+        put_in_roster(inactive, ["88888888"])
+        keep = self.trusted("keep", "88888888")
+        r = self.client.get(PENDING)
+        self.assertEqual([row["binding"].pk for row in r.context["trusted_rows"]], [keep.pk])
+        self.assertEqual(r.context["trusted_rows"][0]["groups"], [])
+        self.assertNotContains(r, "停用群")
+        self.assertContains(r, "现在不在任何受管群的名单里")
+        for qq in ("44444444", "55555555", "66666666"):
+            self.assertNotContains(r, qq)
+        # The conflict only shows in the conflict section.
+        self.assertEqual([c["qq"] for c in r.context["conflicts"]], ["77777777"])
+        self.assertContains(r, 'name="qq" value="77777777"', count=2)
+        self.assertEqual(r.context["summary"]["trusted_recent"], 1)
+
+    def test_trusted_review_order_and_pages(self):
+        now = timezone.now()
+        rows = [self.trusted(f"m{i}", str(50_000_000 + i), qq_changed_at=now - timedelta(minutes=i))
+                for i in range(51)]
+        r = self.client.get(PENDING)
+        page = r.context["trusted_page"]
+        self.assertEqual(page.paginator.count, 51)
+        self.assertEqual([row["binding"].pk for row in r.context["trusted_rows"]][:2],
+                         [rows[0].pk, rows[1].pk])
+        self.assertContains(r, "page=2#trusted")
+        r = self.client.get(PENDING, {"page": 2})
+        self.assertEqual([row["binding"].pk for row in r.context["trusted_rows"]], [rows[50].pk])
+
+    def test_trusted_review_shadowed_has_no_confirm(self):
+        b = self.trusted("bob", "33333333")
+        bind(create_member("owner"), "33333333")
+        r = self.client.get(PENDING)
+        self.assertTrue(r.context["trusted_rows"][0]["shadowed"])
+        self.assertContains(r, "此 QQ 已被别人验证")
+        self.assertNotContains(r, reverse("qqbot:manage_binding_confirm", args=[b.pk]))
+        self.assertContains(r, reverse("qqbot:manage_binding_unbind", args=[b.pk]))
+
+    def test_trusted_review_confirm(self):
+        b = self.trusted("bob", "33333333")
+        r = self.client.post(reverse("qqbot:manage_binding_confirm", args=[b.pk]),
+                             {"qq": "33333333", "back": "pending"})
+        self.assertRedirects(r, PENDING)
+        b.refresh_from_db()
+        self.assertEqual(b.status, "verified")
+        self.assertEqual(self.client.get(PENDING).context["trusted_rows"], [])
+
+    def test_trusted_review_force_unbind(self):
+        b = self.trusted("bob", "33333333")
+        url = reverse("qqbot:manage_binding_unbind", args=[b.pk])
+        # Without the QQ (or with a wrong one) the page is out of date.
+        for data in ({"back": "pending"}, {"qq": "99999999", "back": "pending"}):
+            r = self.client.post(url, data)
+            self.assertRedirects(r, reverse("qqbot:manage_binding", args=[b.pk]))
+            self.assertTrue(Binding.objects.filter(pk=b.pk).exists())
+        r = self.client.post(url, {"qq": "33333333", "back": "pending"})
+        self.assertRedirects(r, PENDING)
+        self.assertFalse(Binding.objects.filter(pk=b.pk).exists())
+        self.assertEqual(self.client.get(PENDING).context["trusted_rows"], [])
+
+    def test_trusted_review_query_count(self):
+        g = create_group("123456")
+        put_in_roster(g, [str(60_000_000 + i) for i in range(21)])
+        self.trusted("first", "60000000")
+        self.client.get(PENDING)  # warm up (Config row, sessions)
+        with CaptureQueriesContext(connection) as small:
+            self.client.get(PENDING)
+        for i in range(1, 21):
+            self.trusted(f"more{i}", str(60_000_000 + i))
+        with CaptureQueriesContext(connection) as big:
+            r = self.client.get(PENDING)
+        self.assertEqual(len(r.context["trusted_page"].object_list), 21)
+        self.assertLessEqual(len(big.captured_queries), len(small.captured_queries) + 2)
+
+    def test_trusted_review_in_english(self):
+        self.trusted("bob", "33333333")
+        r = self.client.get(PENDING, HTTP_ACCEPT_LANGUAGE="en")
+        self.assertContains(r, "Recent bindings without a code")
+        self.assertContains(r, "Groups with this QQ on their member list")
+
 
 # --------------------------------------------------------------------------
 # settings
@@ -628,6 +791,19 @@ class SettingsTests(ManagerTestCase):
         self.assertEqual(
             log.detail["card_format"], {"old": Config.DEFAULT_CARD_FORMAT, "new": "{nickname}"}
         )
+
+    def test_card_format_change_survives_reconcile_failure(self):
+        # The settings are saved before the callback runs: a failure there
+        # is logged, and the manager still gets the normal page back.
+        def broken():
+            raise RuntimeError("boom")
+
+        with mock.patch("qqbot.tasks.queue_reconcile", new=broken), \
+                self.assertLogs("django", "ERROR"):
+            with self.captureOnCommitCallbacks(execute=True):
+                r = self.client.post(SETTINGS, settings_data(card_format="{nickname}"))
+        self.assertRedirects(r, SETTINGS)
+        self.assertEqual(Config.get_solo().card_format, "{nickname}")
 
     def test_card_format_change_refreshes_cards_end_to_end(self):
         create_group("123456")
