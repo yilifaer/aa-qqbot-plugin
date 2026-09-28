@@ -117,7 +117,7 @@ def evaluate_many(groups, qqs, now=None, config=None) -> dict[str, dict[int, Dec
   - QQ 或昵称不合法 → `outcome="invalid"`。
   - QQ 与自己当前绑定相同 → 只更新昵称（`nickname_updated` 或 `unchanged`），写审计 `NICKNAME` 并写 `card` 事件。
   - QQ 已被**别人** `verified` → `outcome="taken"`（提示联系 QQ 管理员）。
-  - 用户已有绑定，且 `qq_changed_at` 还在 `Config.rebind_cooldown_hours` 冷却期内 → `outcome="cooldown"`，附剩余时间。**成员自己解绑后冷却继续有效**：`unbind` 把被删绑定的 `qq_changed_at` 记进审计 `UNBIND` 的 `detail`，没有绑定时取冷却窗口内最近一条 `UNBIND` 的这个时间判断；重新提交刚解绑的同一个 QQ 不算换号；管理员强制解绑（`FORCE_UNBIND`）不延续冷却。
+  - 用户已有绑定，且 `qq_changed_at` 还在 `Config.rebind_cooldown_hours` 冷却期内 → `outcome="cooldown"`，附剩余时间。**成员自己解绑后冷却继续有效**：`unbind` 把被删绑定的 `qq_changed_at` 记进审计 `UNBIND` 的 `detail`，没有绑定时看冷却窗口内最近一条 `UNBIND`/`FORCE_UNBIND`/`CONFLICT_RESOLVED`：是强制解绑或失去 QQ（冲突中被判给别人、被别人用验证码认领走）时不冷却，即使之前自己解绑过（决定 #22）；是 `UNBIND` 时取它记下的这个时间判断；重新提交刚解绑的同一个 QQ 不算换号。
   - `in_fresh_roster(qq)` → 先检查免验证绑定的频率限制（每个用户每小时最多 5 次，缓存计数，与验证码计数分开），超出返回 `outcome="rate_limited"`；否则 **老成员免验证**：新建或替换为 `trusted` 绑定，`verified_via=""`，`verified_at=None`，清空 `card_override`（换号时），设置 `qq_changed_at=now`，作废该用户所有有效验证码。换号时对旧 QQ 写 `recheck` 事件、写审计 `REBIND`，否则写 `BIND`。存在其他 `trusted` 同号绑定时写审计 `CONFLICT`。对新 QQ 调用 `refresh_binding`。返回 `outcome="trusted"` 或 `"conflict"`。
   - 否则 → **待验证**：作废旧验证码，生成新验证码，写审计 `CODE`，返回 `outcome="pending"`，并在结果里带上**明文验证码**和过期时间（明文只出现这一次，页面可以存在会话里）。现有绑定保持不变，等验证码被使用才替换。
   - 频率限制：每个用户每小时最多生成 5 个验证码（用缓存计数），超出返回 `outcome="rate_limited"`。

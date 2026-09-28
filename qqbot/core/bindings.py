@@ -155,20 +155,25 @@ def _trusted_rate_limited(user) -> bool:
 def _last_qq_change(user, existing, qq_n, cooldown: timedelta, now):
     """When the user last changed their QQ, for the rebind cooldown.
 
-    With a binding that is ``qq_changed_at``. Without one, the cooldown of a
-    binding the member removed themselves (``UNBIND``) still runs, so
-    "unbind, then submit another QQ" cannot skip it; binding the *same* QQ
-    again is not a change (an unbind by mistake can be undone at once). The
-    time is kept in that audit row's ``detail``. A manager's forced unbind
-    does not carry it over.
+    With a binding that is ``qq_changed_at``. Without one, the latest unbind
+    within the cooldown decides (DECISIONS #22). After the member's own
+    unbind (``UNBIND``) the cooldown of that binding still runs, so "unbind,
+    then submit another QQ" cannot skip it; binding the *same* QQ again is not
+    a change (an unbind by mistake can be undone at once). The time is kept in
+    that audit row's ``detail``. After a manager's forced unbind
+    (``FORCE_UNBIND``), or after losing the QQ in a conflict or to someone
+    else's code (``CONFLICT_RESOLVED``), there is no cooldown, even if the
+    member unbound themselves before.
 
     用户上一次更换 QQ 的时间，用于计算换绑冷却。
 
-    有绑定时就是它的 ``qq_changed_at``。没有绑定时，如果之前的绑定是成员
-    自己解除的（``UNBIND``），那个绑定的冷却仍然继续计时，所以“先解绑再提交
-    另一个 QQ”绕不过冷却；重新绑定*同一个* QQ 不算更换（误解绑可以马上恢复）。
-    这个时间保存在那条审计日志的 ``detail`` 里。管理员强制解绑不会把冷却
-    带过来。
+    有绑定时就是它的 ``qq_changed_at``。没有绑定时，看冷却期内最近一条解绑
+    类记录（决定 #22）。如果是成员自己解绑（``UNBIND``），那个绑定的冷却仍然
+    继续计时，所以“先解绑再提交另一个 QQ”绕不过冷却；重新绑定*同一个* QQ
+    不算更换（误解绑可以马上恢复）。这个时间保存在那条审计日志的 ``detail``
+    里。如果是管理员强制解绑（``FORCE_UNBIND``），或者 QQ 在冲突中被判给别人、
+    被别人用验证码认领走（``CONFLICT_RESOLVED``），就不冷却，即使之前自己
+    解绑过。
     """
     if existing is not None:
         return existing.qq_changed_at
@@ -176,15 +181,22 @@ def _last_qq_change(user, existing, qq_n, cooldown: timedelta, now):
     # qq_changed_at 一定不晚于解绑时间，所以冷却期之前的解绑记录不用管。
     row = (
         AuditLog.objects.filter(
-            target_user_id=user.pk, action=Action.UNBIND, created_at__gte=now - cooldown
+            target_user_id=user.pk,
+            action__in=(Action.UNBIND, Action.FORCE_UNBIND, Action.CONFLICT_RESOLVED),
+            created_at__gte=now - cooldown,
         )
         .order_by("-id")
-        .values_list("qq", "detail")
+        .values_list("action", "qq", "detail")
         .first()
     )
-    if row is None or row[0] == qq_n:
+    # The latest unbind decides: a manager's forced unbind, or losing the QQ
+    # in a conflict / to someone else's code, ends the cooldown; after the
+    # member's own unbind it keeps running.
+    # 以最近一条解绑记录为准：管理员强制解绑、或者 QQ 在冲突中被判给别人 /
+    # 被别人用验证码认领走，冷却就结束；成员自己解绑时冷却继续计时。
+    if row is None or row[0] != Action.UNBIND or row[1] == qq_n:
         return None
-    detail = row[1]
+    detail = row[2]
     if not isinstance(detail, dict) or not isinstance(detail.get("qq_changed_at"), str):
         return None
     return parse_datetime(detail["qq_changed_at"])
