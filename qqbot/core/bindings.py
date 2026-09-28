@@ -765,6 +765,26 @@ def binding_state(binding: Binding | None) -> str:
     return STATE_TRUSTED
 
 
+def _recheck_after_user_delete(qq) -> None:
+    """Tell the bot to recheck ``qq`` once a user's deletion has committed.
+
+    The user is gone by then, so a failure is only logged: it must not turn
+    the delete page into a 500. The daily reconciliation cannot make up for
+    a lost event (the binding is deleted); the bot's next roster check finds
+    the QQ ``NOT_BOUND``.
+
+    用户删除提交之后，通知机器人复查 ``qq``。
+
+    这时用户已经删掉了，所以出错只记日志，不能让删除页面报 500。每天的对账
+    补不回这条事件（绑定已经删了）；机器人下一次巡检时会发现这个 QQ
+    ``NOT_BOUND``。
+    """
+    try:
+        events.emit(Event.Kind.RECHECK, qq)
+    except Exception:
+        logger.exception("qqbot: recheck event after a user deletion failed (%s)", mask_qq(qq))
+
+
 def on_user_deleted(user) -> None:
     """Called from ``pre_delete`` of ``User``: snapshot the QQ and tell the bot.
 
@@ -780,10 +800,8 @@ def on_user_deleted(user) -> None:
         # an older event id invisible to the bot's cursor until after it has
         # moved past it.
         # 等删除提交之后再写事件：批量删除耗时较长时，事件编号不会被机器人的游标跳过。
-        # robust: the user is already deleted by then; a failure is only
-        # logged (the daily reconciliation catches it), never a 500.
-        # robust：这时用户已经删掉了；写事件失败只记日志（每天的对账会兜底），
-        # 不会让删除用户的页面报 500。
+        # robust=True on top of the helper's own try/except.
+        # 在辅助函数自己的 try/except 之外，再加 robust=True 双保险。
         qq = binding.qq
-        transaction.on_commit(lambda: events.emit(Event.Kind.RECHECK, qq), robust=True)
+        transaction.on_commit(lambda: _recheck_after_user_delete(qq), robust=True)
         audit.log(Action.USER_DELETED, qq=binding.qq, target_user=user, status=binding.status)

@@ -134,7 +134,7 @@ def evaluate_many(groups, qqs, now=None, config=None) -> dict[str, dict[int, Dec
 - 已知限制：号主还在群里时，冲突的 QQ 在新鲜名单里，任何一方提交都只会得到 `trusted`/`conflict`，拿不到验证码；因此这类冲突只能由管理员确认或强制解绑来解决，管理页不能引导成员「用验证码胜出」。
 - `set_nickname(user, nickname)`、`set_card_override(binding, card, actor)`（空串表示清除；按 60 字节校验）：写审计并刷新。
 - `conflicts() -> list[tuple[qq, list[Binding]]]`：没有 `verified`、且 `trusted` 绑定数 ≥ 2 的 QQ。
-- `on_user_deleted(user)`：在 `pre_delete` 时调用：写 `recheck` 事件和审计 `USER_DELETED`（快照 QQ）。
+- `on_user_deleted(user)`：在 `pre_delete` 时调用：写 `recheck` 事件和审计 `USER_DELETED`（快照 QQ）。`recheck` 事件在删除事务提交后写（`on_commit(..., robust=True)`）；写入失败只记 ERROR 日志（QQ 打码），不影响删除；漏掉的这条靠机器人下一次巡检发现 `NOT_BOUND`（每日对账补不回来，绑定已经删了）。
 
 ### 3.10 `qqbot/tests/utils.py`
 - `create_member(username, *, corp_ticker="IGC", character_name=None, state_perm=True, active=True)`：用 `AuthUtils` 创建带主角色的用户，把 `basic_access` 挂到用户的 state 上（与生产配置一致）。

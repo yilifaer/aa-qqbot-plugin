@@ -801,16 +801,32 @@ class UserDeletedTests(BaseTestCase):
         self.assertEqual(entry.target_name, "alice")
         self.assertFalse(Binding.objects.exists())
 
-    def test_on_user_deleted_event_failure_does_not_raise(self):
-        # The user is already deleted when the event is written; a failure
-        # must be logged, not turned into a 500 on the delete page.
+    def test_on_user_deleted_event_failure_is_logged(self):
         bind(self.user, "12345678")
         with mock.patch.object(bindings.events, "emit", side_effect=RuntimeError("boom")), \
-                self.assertLogs("django", "ERROR"):
+                self.assertLogs(bindings.logger, "ERROR") as logs:
+            with self.captureOnCommitCallbacks(execute=True):
+                bindings.on_user_deleted(self.user)
+        self.assertEqual(len(logs.records), 1)
+        self.assertNotIn("12345678", "\n".join(logs.output))
+
+    def test_user_delete_survives_event_failure(self):
+        # The user is already deleted when the event is written; a failure
+        # must be logged, not turned into a 500 on the delete page. The
+        # callbacks only run inside captureOnCommitCallbacks(execute=True).
+        # 写事件时用户已经删掉了；出错只能记日志，不能让删除页面报 500。
+        # 回调只有在 captureOnCommitCallbacks(execute=True) 里才会执行。
+        bind(self.user, "12345678")
+        with mock.patch.object(bindings.events, "emit", side_effect=RuntimeError("boom")) as emit, \
+                self.assertLogs(bindings.logger, "ERROR") as logs:
             with self.captureOnCommitCallbacks(execute=True):
                 self.user.delete()
+        self.assertEqual(emit.call_count, 1)
+        self.assertEqual(len(logs.records), 1)
+        self.assertNotIn("12345678", "\n".join(logs.output))
         self.assertFalse(User.objects.filter(pk=self.user.pk).exists())
         self.assertFalse(Binding.objects.exists())
+        self.assertTrue(audits(A.USER_DELETED).filter(qq="12345678").exists())
 
     def test_on_user_deleted_without_binding(self):
         bindings.on_user_deleted(self.user)
