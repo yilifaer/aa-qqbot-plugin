@@ -10,7 +10,7 @@
 - 成员离开联盟、账号被停用、换了主角色，AA 都会记下来，机器人下次来取时就知道了。
 
 当前版本：**1.0.1**，更新内容见 [`CHANGELOG.md`](../CHANGELOG.md)。
-需要 Alliance Auth 5.x（5.2 及以上）、Python 3.10 及以上。
+需要 Alliance Auth 5.2～5.5（每个版本都有自动测试）、Python 3.10 及以上。
 
 ---
 
@@ -100,7 +100,7 @@
 
 ### 准备
 
-- 一个已经能正常使用的 **Alliance Auth 5.2 或更高的 5.x**；Redis、celery worker 和 celery beat 都在正常运行。
+- 一个已经能正常使用的 **Alliance Auth 5.2～5.5**；Redis、celery worker 和 celery beat 都在正常运行。
 - 服务器上要有 `git`：运行 `git --version`，如果提示找不到，用有 sudo 权限的账号执行 `sudo apt install git`。
 - **不需要**额外安装其他 apt 软件包：本插件只依赖 AA 本身（`mysqlclient` 等在安装 AA 时已经装好）。
 - **先备份数据库。** 官方安装方式用的是 MariaDB/MySQL，例如（数据库名、用户名以 `local.py` 里 `DATABASES` 的写法为准）：
@@ -136,7 +136,7 @@ pip show allianceauth django-sri django-esi aa-qqbot | grep -E '^(Name|Version)'
 
 （没装过本插件时会多一行 `WARNING: Package(s) not found: aa-qqbot`，这是正常的。）
 
-- `allianceauth` 必须是 **5.2 或以上的 5.x**。如果是 4.x（或 5.0、5.1），**先不要装本插件**：
+- `allianceauth` 必须是 **5.2～5.5**。如果是 4.x（或 5.0、5.1），**先不要装本插件**：
   pip 会顺带把整个 AA 升级到最新的 5.x，而 AA 的大版本升级有自己的步骤。请先按 AA 官方文档升级 AA。
 - 如果 `allianceauth` 是 5.2.x 或 5.3.x，而 `django-sri` 是 `1.x`，先运行 `pip install "django-sri<1"`（原因见[常见问题](#9-常见问题)）。
 - 如果 `allianceauth` 是 5.2.x～5.4.x，而 `django-esi` 是 `10.x`，先运行 `pip install "django-esi<10"`（原因同样见[常见问题](#9-常见问题)）。

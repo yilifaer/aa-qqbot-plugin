@@ -14,7 +14,7 @@ This is a complete rewrite of [QQMonitor](https://github.com/Leitowow/QQMonitor)
 
 ## Requirements
 
-- Alliance Auth 5.x (5.2 or later)
+- Alliance Auth 5.2, 5.3, 5.4 or 5.5 (each is tested)
 - Python 3.10+
 
 ## Installation

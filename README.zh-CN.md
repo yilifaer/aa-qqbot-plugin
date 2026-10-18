@@ -14,7 +14,7 @@ Alliance Auth 的 QQ 群成员管理插件。成员在 AA 的「服务」页绑�
 
 ## 环境要求
 
-- Alliance Auth 5.x（5.2 及以上）
+- Alliance Auth 5.2、5.3、5.4 或 5.5（每个版本都有自动测试）
 - Python 3.10+
 
 ## 安装

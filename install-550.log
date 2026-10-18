@@ -1,0 +1,2 @@
+/bin/bash: line 9: venv-550/bin/pip: No such file or directory
+exit 127
