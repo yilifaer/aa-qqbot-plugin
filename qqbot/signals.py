@@ -73,13 +73,22 @@ def _safe(func, *args, **kwargs):
 def _never_raise(receiver_func):
     """Signal receivers must never raise into the sender.
 
+    The receiver runs in its own savepoint: AA 5.3+ saves a character's
+    affiliation inside one transaction, and on PostgreSQL a failed query
+    swallowed here would otherwise leave that transaction aborted.
+
     信号接收器绝不能把异常抛给发送方。
+
+    接收器在自己的保存点里运行：AA 5.3 起在一个事务里保存角色的归属，
+    在 PostgreSQL 上，如果这里吞掉一个失败的查询而不回滚到保存点，
+    那个事务就会处于中止状态，AA 后面的语句全部失败。
     """
 
     @functools.wraps(receiver_func)
     def wrapper(*args, **kwargs):
         try:
-            receiver_func(*args, **kwargs)
+            with transaction.atomic():
+                receiver_func(*args, **kwargs)
         except Exception:
             logger.exception("qqbot: signal receiver %s failed", receiver_func.__name__)
 

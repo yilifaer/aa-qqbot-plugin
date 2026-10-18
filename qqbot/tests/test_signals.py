@@ -4,7 +4,7 @@ from contextlib import contextmanager
 from unittest import mock
 
 from django.contrib.auth.models import Group, Permission, User
-from django.db import connection
+from django.db import connection, transaction
 from django.test import TestCase
 
 from allianceauth.authentication.models import State, UserProfile
@@ -231,6 +231,30 @@ class UserSignalTests(ScheduleTestCase):
             state_changed.send(sender=UserProfile, user=self.user, state=None)
 
         self.assertEqual(self.scheduled(many), [user_key(self.user)])
+
+
+class ReceiverSavepointTests(TestCase):
+    def test_failed_query_leaves_the_senders_transaction_usable(self):
+        """AA 5.3+ saves an affiliation update in one transaction. A query
+        that fails in a qqbot receiver is rolled back to the receiver's own
+        savepoint, so the sender can carry on (on PostgreSQL the whole
+        transaction would otherwise be aborted).
+
+        AA 5.3 起在一个事务里保存角色归属。qqbot 接收器里失败的查询只回滚到
+        接收器自己的保存点，发送方可以继续（否则在 PostgreSQL 上整个事务都会中止）。
+        """
+
+        @signals._never_raise
+        def broken(**kwargs):
+            with connection.cursor() as cursor:
+                cursor.execute("SELECT * FROM qqbot_no_such_table")
+
+        with self.assertLogs(signals.logger, "ERROR"):
+            with transaction.atomic():
+                broken()
+                # The sender's next query still works.
+                # 发送方接下来的查询仍然正常。
+                self.assertEqual(User.objects.filter(username="nobody").count(), 0)
 
 
 class UserDeleteTests(TestCase):
