@@ -15,3 +15,5 @@ local.py*
 koishi.yml*
 HANDOFF/
 v1-legacy-fix/
+*.log
+dump.rdb

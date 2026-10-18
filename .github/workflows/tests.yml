@@ -14,12 +14,23 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        python: ["3.10", "3.11", "3.12", "3.13"]
-        aa: ["aa52", "aa5"]
+        python: ["3.10", "3.11", "3.12", "3.13", "3.14"]
+        aa: ["aa52", "aa55"]
         include:
           - aa: aa52
             aa-label: "5.2.*"
-          - aa: aa5
+          - aa: aa55
+            aa-label: "5.5.*"
+          # The releases in between, on one python.
+          - python: "3.12"
+            aa: aa53
+            aa-label: "5.3.*"
+          - python: "3.12"
+            aa: aa54
+            aa-label: "5.4.*"
+          # Early warning for AA releases after 5.5.
+          - python: "3.12"
+            aa: aa5
             aa-label: "latest 5.x"
     services:
       redis:
@@ -43,8 +54,16 @@ jobs:
       - run: tox -e py-${{ matrix.aa }}
 
   mariadb:
-    name: py3.12 / AA latest 5.x / MariaDB
+    name: py3.12 / AA ${{ matrix.aa-label }} / MariaDB
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - aa: aa52
+            aa-label: "5.2.*"
+          - aa: aa55
+            aa-label: "5.5.*"
     services:
       redis:
         image: redis:7
@@ -80,11 +99,19 @@ jobs:
           sudo apt-get install -y default-libmysqlclient-dev build-essential pkg-config gettext
       - run: python -m pip install --upgrade pip tox
       # Includes qqbot/tests/test_core_concurrency.py (skipped on SQLite).
-      - run: tox -e py-aa5-mysql
+      - run: tox -e py-${{ matrix.aa }}-mysql
 
   postgres:
-    name: py3.12 / AA latest 5.x / PostgreSQL
+    name: py3.12 / AA ${{ matrix.aa-label }} / PostgreSQL
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - aa: aa52
+            aa-label: "5.2.*"
+          - aa: aa55
+            aa-label: "5.5.*"
     services:
       redis:
         image: redis:7
@@ -118,4 +145,4 @@ jobs:
           sudo apt-get install -y default-libmysqlclient-dev build-essential pkg-config gettext
       - run: python -m pip install --upgrade pip tox
       # Includes qqbot/tests/test_core_concurrency.py (skipped on SQLite).
-      - run: tox -e py-aa5-postgres
+      - run: tox -e py-${{ matrix.aa }}-postgres

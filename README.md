@@ -14,7 +14,7 @@ This is a complete rewrite of [QQMonitor](https://github.com/Leitowow/QQMonitor)
 
 ## Requirements
 
-- Alliance Auth 5.x (5.2 or later)
+- Alliance Auth 5.2, 5.3, 5.4 or 5.5 (each is tested)
 - Python 3.10+
 
 ## Installation
@@ -24,7 +24,7 @@ Run everything inside AA's virtual environment, in the `myauth` directory.
 1. Install the plugin:
 
 ```bash
-pip install git+https://github.com/yilifaer/aa-qqbot-plugin.git@v1.0.0
+pip install git+https://github.com/yilifaer/aa-qqbot-plugin.git@v1.0.1
 ```
 
 2. Generate a secret for the bot. Keep the output; you need it in the next step and for the bot:
@@ -75,11 +75,11 @@ After step 6, members see a card titled "QQ binding" on the Services page. QQ ma
 ## Upgrade
 
 ```bash
-pip install --upgrade --force-reinstall --no-deps git+https://github.com/yilifaer/aa-qqbot-plugin.git@v1.0.0
+pip install --upgrade --force-reinstall --no-deps git+https://github.com/yilifaer/aa-qqbot-plugin.git@v1.0.1
 python manage.py migrate
 ```
 
-Then restart AA. For a newer release, replace `v1.0.0` with its tag; [CHANGELOG.md](CHANGELOG.md) lists the versions.
+Then restart AA. For a newer release, replace `v1.0.1` with its tag; [CHANGELOG.md](CHANGELOG.md) lists the versions.
 
 ## Uninstall
 
@@ -113,6 +113,10 @@ Start AA.
 - On AA 5.2/5.3, if every page fails with an error mentioning `sri_static`, run this and restart:
   ```bash
   pip install "django-sri<1"
+  ```
+- On AA 5.2–5.4, if AA stops starting with `ModuleNotFoundError: No module named 'httpx'` (pip upgraded `django-esi` to 10.x, which only AA 5.5 supports), run this and restart, or upgrade AA to 5.5:
+  ```bash
+  pip install "django-esi<10"
   ```
 - Superusers do not get group access automatically; their card then says so. Test with a normal member account.
 - Language: the QQ binding card and the QQ Admin pages are in Chinese for users whose AA language is Chinese, and in English for everyone else. Members who never picked a language get their browser's language; anyone can pick a language in AA's language menu (AA remembers it). The default group rules text is in Chinese; edit it under QQ Admin → Settings.

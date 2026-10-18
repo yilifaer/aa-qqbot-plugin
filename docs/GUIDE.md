@@ -9,8 +9,8 @@
 - QQ 机器人（Koishi，另一个仓库）来问 AA：「这个 QQ 能不能进这个群？群名片该叫什么？」；
 - 成员离开联盟、账号被停用、换了主角色，AA 都会记下来，机器人下次来取时就知道了。
 
-当前版本：**1.0.0**，更新内容见 [`CHANGELOG.md`](../CHANGELOG.md)。
-需要 Alliance Auth 5.x（5.2 及以上）、Python 3.10 及以上。
+当前版本：**1.0.1**，更新内容见 [`CHANGELOG.md`](../CHANGELOG.md)。
+需要 Alliance Auth 5.2～5.5（每个版本都有自动测试）、Python 3.10 及以上。
 
 ---
 
@@ -100,7 +100,7 @@
 
 ### 准备
 
-- 一个已经能正常使用的 **Alliance Auth 5.2 或更高的 5.x**；Redis、celery worker 和 celery beat 都在正常运行。
+- 一个已经能正常使用的 **Alliance Auth 5.2～5.5**；Redis、celery worker 和 celery beat 都在正常运行。
 - 服务器上要有 `git`：运行 `git --version`，如果提示找不到，用有 sudo 权限的账号执行 `sudo apt install git`。
 - **不需要**额外安装其他 apt 软件包：本插件只依赖 AA 本身（`mysqlclient` 等在安装 AA 时已经装好）。
 - **先备份数据库。** 官方安装方式用的是 MariaDB/MySQL，例如（数据库名、用户名以 `local.py` 里 `DATABASES` 的写法为准）：
@@ -131,14 +131,15 @@ cd /home/allianceserver/myauth
 确认 AA 的版本：
 
 ```bash
-pip show allianceauth django-sri aa-qqbot | grep -E '^(Name|Version)'
+pip show allianceauth django-sri django-esi aa-qqbot | grep -E '^(Name|Version)'
 ```
 
 （没装过本插件时会多一行 `WARNING: Package(s) not found: aa-qqbot`，这是正常的。）
 
-- `allianceauth` 必须是 **5.2 或以上的 5.x**。如果是 4.x（或 5.0、5.1），**先不要装本插件**：
+- `allianceauth` 必须是 **5.2～5.5**。如果是 4.x（或 5.0、5.1），**先不要装本插件**：
   pip 会顺带把整个 AA 升级到最新的 5.x，而 AA 的大版本升级有自己的步骤。请先按 AA 官方文档升级 AA。
 - 如果 `allianceauth` 是 5.2.x 或 5.3.x，而 `django-sri` 是 `1.x`，先运行 `pip install "django-sri<1"`（原因见[常见问题](#9-常见问题)）。
+- 如果 `allianceauth` 是 5.2.x～5.4.x，而 `django-esi` 是 `10.x`，先运行 `pip install "django-esi<10"`（原因同样见[常见问题](#9-常见问题)）。
 - 如果显示了 `aa-qqbot`、版本是 **0.x**（例如 `0.2.0`）：这台 AA 装过本仓库的旧版（只有 QQ 号 + 昵称的那个版本）。
   可以直接往下装，新版会建立自己的数据表；旧版的绑定数据不会被导入（决定 #5），全员重新绑定。
   **第 3 步之前**，先把 `local.py` 里旧版加的内容删掉：`INSTALLED_APPS` 里的 `"qqbot"`（否则会报
@@ -148,12 +149,12 @@ pip show allianceauth django-sri aa-qqbot | grep -E '^(Name|Version)'
 ### 第 1 步：安装插件
 
 ```bash
-pip install git+https://github.com/yilifaer/aa-qqbot-plugin.git@v1.0.0
+pip install git+https://github.com/yilifaer/aa-qqbot-plugin.git@v1.0.1
 ```
 
-- 最后一行出现 `Successfully installed aa-qqbot-1.0.0` 就装好了（可能还会列出其他包，是 AA 缺的依赖）。
+- 最后一行出现 `Successfully installed aa-qqbot-1.0.1` 就装好了（可能还会列出其他包，是 AA 缺的依赖）。
 - 提示 `Cannot find command 'git'`：先安装 git（见「准备」），或者改用不需要 git 的写法：
-  `pip install https://github.com/yilifaer/aa-qqbot-plugin/archive/refs/tags/v1.0.0.zip`
+  `pip install https://github.com/yilifaer/aa-qqbot-plugin/archive/refs/tags/v1.0.1.zip`
 - 注意：包名是 `aa-qqbot`，只能用上面的 GitHub 地址安装。**不要**运行 `pip install qqbot`：
   PyPI 上的 `qqbot` 是另一个无关的项目，会覆盖本插件的代码。
 
@@ -306,7 +307,7 @@ sudo supervisorctl status             # 每一行都应该是 RUNNING
 
 ### 用 Docker 安装的 AA
 
-把 `git+https://github.com/yilifaer/aa-qqbot-plugin.git@v1.0.0` 加进 `conf/requirements.txt`，第 3 步那段写进 `conf/local.py`，
+把 `git+https://github.com/yilifaer/aa-qqbot-plugin.git@v1.0.1` 加进 `conf/requirements.txt`，第 3 步那段写进 `conf/local.py`，
 然后按 AA 的 Docker 文档重新构建镜像，并在容器里执行 `python manage.py check` 和 `python manage.py migrate`。
 
 ---
@@ -352,7 +353,7 @@ QQBOT_API_KEYS = {
 
 注意：
 
-- **要用超级管理员账号改 State**：AA 5.4 里只有 `change_state` 权限的 staff 打开 State 编辑页时，权限一栏是只读的。
+- **要用超级管理员账号改 State**：AA 5.2～5.5 里只有 `change_state` 权限的 staff 打开 State 编辑页时，权限一栏是只读的。
 - **不要去「Authentication」→「Permissions」列表页里找**：那里只按权限代码搜索（AA 的 `PermissionAdmin` 只搜 `codename`），
   要搜 `basic_access` / `manage`；搜「QQ」只会搜到旧版 qqmonitor 的权限。
 
@@ -437,7 +438,7 @@ python manage.py qqbot_reconcile
 
 ```bash
 # 在 AA 虚拟环境里、myauth 目录下（见第 2 节第 0 步）
-pip install --upgrade --force-reinstall --no-deps git+https://github.com/yilifaer/aa-qqbot-plugin.git@v1.0.0   # 升级到新版本时把 v1.0.0 换成新版本号
+pip install --upgrade --force-reinstall --no-deps git+https://github.com/yilifaer/aa-qqbot-plugin.git@v1.0.1   # 升级到新版本时把 v1.0.1 换成新版本号
 pip freeze | grep aa-qqbot
 python manage.py check
 python manage.py migrate
@@ -454,7 +455,7 @@ sudo supervisorctl restart myauth:
   `--no-deps` 表示不去动 AA 和其他依赖。
 - `pip freeze | grep aa-qqbot` 会显示 `aa-qqbot @ git+https://…@<提交号>`，可以确认装的是哪一次提交；
   `pip show aa-qqbot` 显示版本号。更新内容见 [`CHANGELOG.md`](../CHANGELOG.md)，里面如果提到新的设置项，按说明加进 `local.py`。
-- 不用 git 时，把地址换成 `https://github.com/yilifaer/aa-qqbot-plugin/archive/refs/tags/v1.0.0.zip`，其余相同。
+- 不用 git 时，把地址换成 `https://github.com/yilifaer/aa-qqbot-plugin/archive/refs/tags/v1.0.1.zip`，其余相同。
 
 ---
 
@@ -520,6 +521,7 @@ sudo supervisorctl restart myauth:
 | 刚装完就有 `qqbot.E003` | 忘了把「这里换成生成的密钥」换成真正的密钥 | 填入第 2 节第 2 步生成的密钥 |
 | 重启后网页打不开，日志里有 `NameError: name 'crontab' is not defined` | `local.py` 开头没有 `from .base import *` | 在 aa-qqbot 那段前面加一行 `from celery.schedules import crontab` |
 | 日志里有 `NameError: name 'APPS_WITH_PUBLIC_VIEWS' is not defined` | `local.py` 里没有这个变量 | 在 aa-qqbot 那段前面加一行 `APPS_WITH_PUBLIC_VIEWS = []` |
+| AA 起不来，日志里有 `ModuleNotFoundError: No module named 'httpx'` | AA 5.2～5.4 用的是 `httpx`，而 2026-10 发布的 `django-esi` 10.x（AA 5.5 要求的版本）改用了 `httpx2`。升级别的包时 pip 可能顺带把 `django-esi` 升到了 10.x | `pip install "django-esi<10"`，然后重启；或者把 AA 升到 5.5。本插件的升级命令带 `--no-deps`，不会引起这个问题 |
 | 所有 AA 页面都报错，错误信息里有 `sri_static` | AA 5.2.x / 5.3.x 没有限制 `django-sri` 的版本，而 2026-09 发布的 `django-sri` 1.0 删掉了 AA 页面要用的 `sri_static` 标签 | `pip install "django-sri<1"`，然后重启。AA 5.4 及以上已自带这个限制，最简单的办法是把 AA 升到 5.4 |
 | 「服务」页没有「QQ 绑定」卡片 | 账号没有「QQ 绑定 - 成员」权限，或者装完没重启 | 第 4 节；`sudo supervisorctl restart myauth:` |
 | 左侧菜单没有「QQ 管理」 | 没有「QQ 绑定 - 管理员」权限；或者账号没有主角色（1.0.0b5 起没有主角色的管理员不显示这个菜单，因为点进去也会被 AA 跳回首页） | 第 4 节；在 AA 首页添加角色并设为主角色 |
@@ -527,6 +529,8 @@ sudo supervisorctl restart myauth:
 | 超级管理员能看到卡片，但显示「目前没有你可以加入的群」（1.0.0b5 起卡片上方会直接提示原因） | 超级管理员**不会**自动获得入群资格 | 让这个账号所在的状态（例如 Member）带上成员权限，或者用普通成员账号测试 |
 | 老成员填了 QQ 也拿到验证码 | 这个群添加到 AA 已经超过「老成员免验证过渡期」（默认 30 天）；或者机器人还没上报过这个群的完整名单，或名单已超过有效期（默认 7 天） | 先让机器人巡检一次再通知老成员绑定（第 2 节第 7 步）；机器人上报名单之后，卡片会提示他点「重新生成」直接免验证。树莓派上还没有机器人时，用 [`docs/TESTING.md`](TESTING.md) 里的「模拟机器人」 |
 | 后台删用户时提示「你的账号没有权限删除以下类型的对象：QQ binding / QQ 绑定」 | 1.0.0b4 的问题 | 升级到 1.0.0b5；临时办法：先在「QQ 管理」里强制解绑再删 |
+| AA 5.2.0 / 5.3.0：后台删某些用户（多半是处理过入组申请的人，例如组长、QQ 管理员）时页面报 500，日志里有 `TypeError: __str__ returned non-string` | AA 5.2.0 / 5.3.0 自己的问题（入组申请记录 `RequestLog` 的显示函数返回了数字），5.3.1 已修复；用户没有被删掉，QQ 绑定也没动 | 把 AA 升到 5.3.1 或更高；临时办法：在服务器上运行 `python manage.py shell -c "from django.contrib.auth.models import User; User.objects.get(username='这里换成用户名').delete()"`，QQ 绑定会照常一起删除并通知机器人 |
+| AA 5.2.0：成员换了军团或联盟后，群名片里的简称一直是旧的 | AA 5.2.0 更新角色归属时，如果中途查询 ESI 出错，会留下新的军团编号和旧的简称（5.3 起改成一次保存，已修复）；入群资格按编号判断，不受影响 | 把 AA 升到 5.3 或更高；或者在后台「Characters」列表里选中这个角色，执行 AA 自带的更新角色动作 |
 | 后台删用户时提示没有权限删除其他类型的对象（通知、角色归属、ESI token 等） | 非超级管理员要有确认页列出的每一种删除权限 | 第 5 节「删除 AA 用户」 |
 | 点「服务」或「QQ 管理」被跳回首页，顶部红字「只有主要角色才能执行这个操作。在下面添加一个」 | 账号没设主角色：AA 5.x 在 qqbot 的代码运行之前就把这样的用户从「服务」页和所有插件页面跳回 `/dashboard/` | 在首页添加角色并设为主角色。这期间成员自己不能解绑、改昵称，需要时由 QQ 管理员强制解绑 |
 | 机器人收到 `302` 或登录网页 | `APPS_WITH_PUBLIC_VIEWS` 里没有 `"qqbot"`（`qqbot.E001`） | 在 `local.py` 里**追加**，然后重启 |
@@ -535,7 +539,7 @@ sudo supervisorctl restart myauth:
 | 机器人收到 `401` 或 `503` 的 JSON | 密钥或签名问题 | 看 `error` 字段，对照 [`API.md`](../API.md) 第 6 节 |
 | celery worker 日志一直报 `unregistered task qqbot.tasks.reconcile` | 装完没重启 worker；或者卸载后数据库里的定时任务还在 | 重启；卸载时见第 8 节第 3 步 |
 | 每日对账好像没在 04:17 运行 | 时间是 UTC，北京时间是 12:17 | 正常；想改时间就改 `crontab(...)` 里的 `hour` |
-| 升级后好像没变化 | 版本号没变时 `pip install -U` 不会重新安装 | 用第 7 节带 `--force-reinstall --no-deps` 的命令 |
+| 升级后好像没变化 | 版本号没变时 `pip install -U` 不会重新安装；或者装完没重启 AA | 用第 7 节带 `--force-reinstall --no-deps` 的命令，然后重启。装的是哪一版，看「QQ 绑定」卡片最下面靠右的小字，或「QQ 管理」→「设置」标题栏右边（1.0.1 起） |
 | 报错 `Application labels aren't unique, duplicates: qqbot` | `local.py` 里有两处把 `"qqbot"` 加进 `INSTALLED_APPS`（通常是旧版 0.x 留下的） | 删掉旧的那一处，只保留第 2 节第 3 步那一段 |
 | 以前装过旧版（0.x）：`local.py` 里有 `QQBOT_GROUP_CHAT`、`QQBOT_PING_GROUP`，数据库里有 `qqbot_qqbinding` 表 | 旧版留下的设置和数据，新版不再使用 | 删掉 `local.py` 里这两行；装好新版后（`qqbot` 还在 `INSTALLED_APPS` 里）运行 `python manage.py shell -c "from django.apps import apps; from django.contrib.contenttypes.models import ContentType; live = {m._meta.model_name for m in apps.get_app_config('qqbot').get_models()}; print(ContentType.objects.filter(app_label='qqbot').exclude(model__in=live).delete())"` 清理旧版的权限（只删 qqbot 里已经不存在的类型）；旧表可以在 `python manage.py dbshell` 里执行 `DROP TABLE qqbot_qqbinding;` 删除（先备份） |
 | `migrate` 报 `table "qqbot_…" already exists`（MySQL 是 `Table 'qqbot_…' already exists`） | 这台 AA 装过 1.0.0b1 之前的开发测试版（`1.0.0.dev0`），数据表已经建好了 | 运行 `python manage.py migrate qqbot 0001_v1_initial --fake`，再运行 `python manage.py migrate`，然后重启 |
