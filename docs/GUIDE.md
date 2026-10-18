@@ -131,7 +131,7 @@ cd /home/allianceserver/myauth
 确认 AA 的版本：
 
 ```bash
-pip show allianceauth django-sri aa-qqbot | grep -E '^(Name|Version)'
+pip show allianceauth django-sri django-esi aa-qqbot | grep -E '^(Name|Version)'
 ```
 
 （没装过本插件时会多一行 `WARNING: Package(s) not found: aa-qqbot`，这是正常的。）
@@ -139,6 +139,7 @@ pip show allianceauth django-sri aa-qqbot | grep -E '^(Name|Version)'
 - `allianceauth` 必须是 **5.2 或以上的 5.x**。如果是 4.x（或 5.0、5.1），**先不要装本插件**：
   pip 会顺带把整个 AA 升级到最新的 5.x，而 AA 的大版本升级有自己的步骤。请先按 AA 官方文档升级 AA。
 - 如果 `allianceauth` 是 5.2.x 或 5.3.x，而 `django-sri` 是 `1.x`，先运行 `pip install "django-sri<1"`（原因见[常见问题](#9-常见问题)）。
+- 如果 `allianceauth` 是 5.2.x～5.4.x，而 `django-esi` 是 `10.x`，先运行 `pip install "django-esi<10"`（原因同样见[常见问题](#9-常见问题)）。
 - 如果显示了 `aa-qqbot`、版本是 **0.x**（例如 `0.2.0`）：这台 AA 装过本仓库的旧版（只有 QQ 号 + 昵称的那个版本）。
   可以直接往下装，新版会建立自己的数据表；旧版的绑定数据不会被导入（决定 #5），全员重新绑定。
   **第 3 步之前**，先把 `local.py` 里旧版加的内容删掉：`INSTALLED_APPS` 里的 `"qqbot"`（否则会报
@@ -520,6 +521,7 @@ sudo supervisorctl restart myauth:
 | 刚装完就有 `qqbot.E003` | 忘了把「这里换成生成的密钥」换成真正的密钥 | 填入第 2 节第 2 步生成的密钥 |
 | 重启后网页打不开，日志里有 `NameError: name 'crontab' is not defined` | `local.py` 开头没有 `from .base import *` | 在 aa-qqbot 那段前面加一行 `from celery.schedules import crontab` |
 | 日志里有 `NameError: name 'APPS_WITH_PUBLIC_VIEWS' is not defined` | `local.py` 里没有这个变量 | 在 aa-qqbot 那段前面加一行 `APPS_WITH_PUBLIC_VIEWS = []` |
+| AA 起不来，日志里有 `ModuleNotFoundError: No module named 'httpx'` | AA 5.2～5.4 用的是 `httpx`，而 2026-10 发布的 `django-esi` 10.x（AA 5.5 要求的版本）改用了 `httpx2`。升级别的包时 pip 可能顺带把 `django-esi` 升到了 10.x | `pip install "django-esi<10"`，然后重启；或者把 AA 升到 5.5。本插件的升级命令带 `--no-deps`，不会引起这个问题 |
 | 所有 AA 页面都报错，错误信息里有 `sri_static` | AA 5.2.x / 5.3.x 没有限制 `django-sri` 的版本，而 2026-09 发布的 `django-sri` 1.0 删掉了 AA 页面要用的 `sri_static` 标签 | `pip install "django-sri<1"`，然后重启。AA 5.4 及以上已自带这个限制，最简单的办法是把 AA 升到 5.4 |
 | 「服务」页没有「QQ 绑定」卡片 | 账号没有「QQ 绑定 - 成员」权限，或者装完没重启 | 第 4 节；`sudo supervisorctl restart myauth:` |
 | 左侧菜单没有「QQ 管理」 | 没有「QQ 绑定 - 管理员」权限；或者账号没有主角色（1.0.0b5 起没有主角色的管理员不显示这个菜单，因为点进去也会被 AA 跳回首页） | 第 4 节；在 AA 首页添加角色并设为主角色 |

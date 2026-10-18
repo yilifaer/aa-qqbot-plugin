@@ -114,6 +114,10 @@ Start AA.
   ```bash
   pip install "django-sri<1"
   ```
+- On AA 5.2–5.4, if AA stops starting with `ModuleNotFoundError: No module named 'httpx'` (pip upgraded `django-esi` to 10.x, which only AA 5.5 supports), run this and restart, or upgrade AA to 5.5:
+  ```bash
+  pip install "django-esi<10"
+  ```
 - Superusers do not get group access automatically; their card then says so. Test with a normal member account.
 - Language: the QQ binding card and the QQ Admin pages are in Chinese for users whose AA language is Chinese, and in English for everyone else. Members who never picked a language get their browser's language; anyone can pick a language in AA's language menu (AA remembers it). The default group rules text is in Chinese; edit it under QQ Admin → Settings.
 

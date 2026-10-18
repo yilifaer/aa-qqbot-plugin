@@ -114,6 +114,10 @@ python manage.py shell -c "from django.contrib.contenttypes.models import Conten
   ```bash
   pip install "django-sri<1"
   ```
+- AA 5.2～5.4 启动时报 `ModuleNotFoundError: No module named 'httpx'`（pip 把 `django-esi` 升到了只有 AA 5.5 才支持的 10.x）时，执行下面这条后重启，或者把 AA 升到 5.5：
+  ```bash
+  pip install "django-esi<10"
+  ```
 - 超级管理员不会自动获得入群资格（这时卡片会直接提示），测试时请用普通成员账号。
 - 界面语言：「QQ 绑定」卡片和「QQ 管理」页面在用户的 AA 语言是中文时显示中文，其他语言都显示英文（卡片叫 "QQ binding"，菜单叫 "QQ Admin"）。没选过语言的成员按浏览器语言显示，浏览器是英文就会看到英文；让他在 AA 的语言菜单里选「简体中文」即可（AA 会记住）。改 `LANGUAGE_CODE` 没用，因为 Django 先看浏览器的语言。
 
