@@ -33,6 +33,7 @@ from django.views.decorators.http import require_http_methods, require_POST
 
 from allianceauth.services.hooks import get_extension_logger
 
+from .. import __version__
 from ..core import access, attention, bindings, cards, codes, eligibility
 from ..core.access import has_main_character
 from ..core.util import NICKNAME_MAX_LENGTH, mask_qq
@@ -339,6 +340,9 @@ def card_context(request, now=None) -> dict:
         "nickname_help": nickname_help(),
         "nickname_max_length": NICKNAME_MAX_LENGTH,
         "card_max_bytes": cards.CARD_MAX_BYTES,
+        # Shown in small print at the bottom of the card.
+        # 在卡片底部用小字显示。
+        "qqbot_version": __version__,
     }
     if not context["has_main"]:
         status = MemberStatus()

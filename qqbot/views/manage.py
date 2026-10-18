@@ -26,7 +26,7 @@ from django.views.decorators.http import require_http_methods, require_POST
 
 from allianceauth.services.hooks import get_extension_logger
 
-from .. import tasks
+from .. import __version__, tasks
 from ..core import attention, audit, bindings, cards, eligibility, events
 from ..core.roster import fresh_roster_cutoff, unbound_roster
 from ..i18n import ui_language_view
@@ -634,6 +634,7 @@ def settings_view(request):
             form=form,
             placeholders=cards.PLACEHOLDERS,
             example_card=cards.preview_card(request.user, gettext("Nickname"), config),
+            qqbot_version=__version__,
         ),
     )
 

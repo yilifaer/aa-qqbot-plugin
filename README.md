@@ -24,7 +24,7 @@ Run everything inside AA's virtual environment, in the `myauth` directory.
 1. Install the plugin:
 
 ```bash
-pip install git+https://github.com/yilifaer/aa-qqbot-plugin.git@v1.0.0
+pip install git+https://github.com/yilifaer/aa-qqbot-plugin.git@v1.0.1
 ```
 
 2. Generate a secret for the bot. Keep the output; you need it in the next step and for the bot:
@@ -75,11 +75,11 @@ After step 6, members see a card titled "QQ binding" on the Services page. QQ ma
 ## Upgrade
 
 ```bash
-pip install --upgrade --force-reinstall --no-deps git+https://github.com/yilifaer/aa-qqbot-plugin.git@v1.0.0
+pip install --upgrade --force-reinstall --no-deps git+https://github.com/yilifaer/aa-qqbot-plugin.git@v1.0.1
 python manage.py migrate
 ```
 
-Then restart AA. For a newer release, replace `v1.0.0` with its tag; [CHANGELOG.md](CHANGELOG.md) lists the versions.
+Then restart AA. For a newer release, replace `v1.0.1` with its tag; [CHANGELOG.md](CHANGELOG.md) lists the versions.
 
 ## Uninstall
 

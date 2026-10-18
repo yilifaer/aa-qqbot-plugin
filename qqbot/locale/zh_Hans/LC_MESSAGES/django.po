@@ -1331,3 +1331,7 @@ msgstr "最近一次绑定/换号"
 
 msgid "After a forced unbind, this member needs a verification code to bind the same QQ again, and only the real owner can use one."
 msgstr "强制解绑后，这个人再绑同一个 QQ 必须用验证码（只有真号主能用）。"
+
+#, python-format
+msgid "Plugin version: aa-qqbot %(version)s"
+msgstr "插件版本：aa-qqbot %(version)s"

@@ -5,7 +5,10 @@
 
 {% block manage_body %}
     <div class="card mb-3">
-        <div class="card-header fw-bold">{% translate "Settings" %}</div>
+        <div class="card-header d-flex flex-wrap justify-content-between align-items-center gap-2">
+            <span class="fw-bold">{% translate "Settings" %}</span>
+            <span class="small text-body-secondary" id="qqbot-version">{% blocktranslate with version=qqbot_version %}Plugin version: aa-qqbot {{ version }}{% endblocktranslate %}</span>
+        </div>
         <div class="card-body">
             {% if form.errors %}
                 <div class="alert alert-danger">{% translate "Not saved: fix the fields marked in red below, then save again." %}</div>

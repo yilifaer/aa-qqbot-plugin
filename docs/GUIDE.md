@@ -9,7 +9,7 @@
 - QQ 机器人（Koishi，另一个仓库）来问 AA：「这个 QQ 能不能进这个群？群名片该叫什么？」；
 - 成员离开联盟、账号被停用、换了主角色，AA 都会记下来，机器人下次来取时就知道了。
 
-当前版本：**1.0.0**，更新内容见 [`CHANGELOG.md`](../CHANGELOG.md)。
+当前版本：**1.0.1**，更新内容见 [`CHANGELOG.md`](../CHANGELOG.md)。
 需要 Alliance Auth 5.x（5.2 及以上）、Python 3.10 及以上。
 
 ---
@@ -148,12 +148,12 @@ pip show allianceauth django-sri aa-qqbot | grep -E '^(Name|Version)'
 ### 第 1 步：安装插件
 
 ```bash
-pip install git+https://github.com/yilifaer/aa-qqbot-plugin.git@v1.0.0
+pip install git+https://github.com/yilifaer/aa-qqbot-plugin.git@v1.0.1
 ```
 
-- 最后一行出现 `Successfully installed aa-qqbot-1.0.0` 就装好了（可能还会列出其他包，是 AA 缺的依赖）。
+- 最后一行出现 `Successfully installed aa-qqbot-1.0.1` 就装好了（可能还会列出其他包，是 AA 缺的依赖）。
 - 提示 `Cannot find command 'git'`：先安装 git（见「准备」），或者改用不需要 git 的写法：
-  `pip install https://github.com/yilifaer/aa-qqbot-plugin/archive/refs/tags/v1.0.0.zip`
+  `pip install https://github.com/yilifaer/aa-qqbot-plugin/archive/refs/tags/v1.0.1.zip`
 - 注意：包名是 `aa-qqbot`，只能用上面的 GitHub 地址安装。**不要**运行 `pip install qqbot`：
   PyPI 上的 `qqbot` 是另一个无关的项目，会覆盖本插件的代码。
 
@@ -306,7 +306,7 @@ sudo supervisorctl status             # 每一行都应该是 RUNNING
 
 ### 用 Docker 安装的 AA
 
-把 `git+https://github.com/yilifaer/aa-qqbot-plugin.git@v1.0.0` 加进 `conf/requirements.txt`，第 3 步那段写进 `conf/local.py`，
+把 `git+https://github.com/yilifaer/aa-qqbot-plugin.git@v1.0.1` 加进 `conf/requirements.txt`，第 3 步那段写进 `conf/local.py`，
 然后按 AA 的 Docker 文档重新构建镜像，并在容器里执行 `python manage.py check` 和 `python manage.py migrate`。
 
 ---
@@ -437,7 +437,7 @@ python manage.py qqbot_reconcile
 
 ```bash
 # 在 AA 虚拟环境里、myauth 目录下（见第 2 节第 0 步）
-pip install --upgrade --force-reinstall --no-deps git+https://github.com/yilifaer/aa-qqbot-plugin.git@v1.0.0   # 升级到新版本时把 v1.0.0 换成新版本号
+pip install --upgrade --force-reinstall --no-deps git+https://github.com/yilifaer/aa-qqbot-plugin.git@v1.0.1   # 升级到新版本时把 v1.0.1 换成新版本号
 pip freeze | grep aa-qqbot
 python manage.py check
 python manage.py migrate
@@ -454,7 +454,7 @@ sudo supervisorctl restart myauth:
   `--no-deps` 表示不去动 AA 和其他依赖。
 - `pip freeze | grep aa-qqbot` 会显示 `aa-qqbot @ git+https://…@<提交号>`，可以确认装的是哪一次提交；
   `pip show aa-qqbot` 显示版本号。更新内容见 [`CHANGELOG.md`](../CHANGELOG.md)，里面如果提到新的设置项，按说明加进 `local.py`。
-- 不用 git 时，把地址换成 `https://github.com/yilifaer/aa-qqbot-plugin/archive/refs/tags/v1.0.0.zip`，其余相同。
+- 不用 git 时，把地址换成 `https://github.com/yilifaer/aa-qqbot-plugin/archive/refs/tags/v1.0.1.zip`，其余相同。
 
 ---
 
@@ -535,7 +535,7 @@ sudo supervisorctl restart myauth:
 | 机器人收到 `401` 或 `503` 的 JSON | 密钥或签名问题 | 看 `error` 字段，对照 [`API.md`](../API.md) 第 6 节 |
 | celery worker 日志一直报 `unregistered task qqbot.tasks.reconcile` | 装完没重启 worker；或者卸载后数据库里的定时任务还在 | 重启；卸载时见第 8 节第 3 步 |
 | 每日对账好像没在 04:17 运行 | 时间是 UTC，北京时间是 12:17 | 正常；想改时间就改 `crontab(...)` 里的 `hour` |
-| 升级后好像没变化 | 版本号没变时 `pip install -U` 不会重新安装 | 用第 7 节带 `--force-reinstall --no-deps` 的命令 |
+| 升级后好像没变化 | 版本号没变时 `pip install -U` 不会重新安装；或者装完没重启 AA | 用第 7 节带 `--force-reinstall --no-deps` 的命令，然后重启。装的是哪一版，看「QQ 绑定」卡片最下面靠右的小字，或「QQ 管理」→「设置」标题栏右边（1.0.1 起） |
 | 报错 `Application labels aren't unique, duplicates: qqbot` | `local.py` 里有两处把 `"qqbot"` 加进 `INSTALLED_APPS`（通常是旧版 0.x 留下的） | 删掉旧的那一处，只保留第 2 节第 3 步那一段 |
 | 以前装过旧版（0.x）：`local.py` 里有 `QQBOT_GROUP_CHAT`、`QQBOT_PING_GROUP`，数据库里有 `qqbot_qqbinding` 表 | 旧版留下的设置和数据，新版不再使用 | 删掉 `local.py` 里这两行；装好新版后（`qqbot` 还在 `INSTALLED_APPS` 里）运行 `python manage.py shell -c "from django.apps import apps; from django.contrib.contenttypes.models import ContentType; live = {m._meta.model_name for m in apps.get_app_config('qqbot').get_models()}; print(ContentType.objects.filter(app_label='qqbot').exclude(model__in=live).delete())"` 清理旧版的权限（只删 qqbot 里已经不存在的类型）；旧表可以在 `python manage.py dbshell` 里执行 `DROP TABLE qqbot_qqbinding;` 删除（先备份） |
 | `migrate` 报 `table "qqbot_…" already exists`（MySQL 是 `Table 'qqbot_…' already exists`） | 这台 AA 装过 1.0.0b1 之前的开发测试版（`1.0.0.dev0`），数据表已经建好了 | 运行 `python manage.py migrate qqbot 0001_v1_initial --fake`，再运行 `python manage.py migrate`，然后重启 |

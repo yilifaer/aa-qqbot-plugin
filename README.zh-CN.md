@@ -24,7 +24,7 @@ Alliance Auth 的 QQ 群成员管理插件。成员在 AA 的「服务」页绑�
 1. 安装插件：
 
 ```bash
-pip install git+https://github.com/yilifaer/aa-qqbot-plugin.git@v1.0.0
+pip install git+https://github.com/yilifaer/aa-qqbot-plugin.git@v1.0.1
 ```
 
 2. 生成机器人密钥。记下输出的这一串，下一步要用，之后还要交给机器人那边：
@@ -75,11 +75,11 @@ sudo supervisorctl restart myauth:
 ## 升级
 
 ```bash
-pip install --upgrade --force-reinstall --no-deps git+https://github.com/yilifaer/aa-qqbot-plugin.git@v1.0.0
+pip install --upgrade --force-reinstall --no-deps git+https://github.com/yilifaer/aa-qqbot-plugin.git@v1.0.1
 python manage.py migrate
 ```
 
-然后重启 AA。升级到更新的版本时，把 `v1.0.0` 换成新版本号；各版本见 [CHANGELOG.md](CHANGELOG.md)。
+然后重启 AA。升级到更新的版本时，把 `v1.0.1` 换成新版本号；各版本见 [CHANGELOG.md](CHANGELOG.md)。
 
 ## 卸载
 

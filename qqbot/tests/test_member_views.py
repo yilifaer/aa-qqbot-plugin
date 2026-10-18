@@ -11,12 +11,14 @@ from html.parser import HTMLParser
 from django.contrib.messages import get_messages
 from django.core.cache import cache
 from django.db import transaction
-from django.test import TestCase
+from django.test import RequestFactory, TestCase
 from django.urls import reverse
 from django.utils import timezone
 
+from .. import __version__
 from ..core import bindings, codes
 from ..models import Binding, BindCode, Config, QQGroup
+from ..service_hook import QQBotService
 from .utils import (
     add_to_groups,
     bind,
@@ -597,6 +599,34 @@ class OldPageTests(MemberCardTestCase):
         r = self.client.get(MY_QQ)
         self.assertEqual(r.status_code, 302)
         self.assertEqual(r["Location"], BACK)
+
+
+class VersionTests(MemberCardTestCase):
+    """The plugin version in small print at the bottom of the card, in
+    every view (the footer is not always there).
+
+    卡片底部用小字显示插件版本，每种视图都有（页脚不是每次都有）。
+    """
+
+    def assert_version(self, card):
+        self.assertIn(f'id="qqbot-version">aa-qqbot {__version__}<', card)
+
+    def test_every_view(self):
+        self.assert_version(self.card())  # unbound
+        self.post(SUBMIT, {"qq": QQ, "nickname": "凯拉"})
+        self.assert_version(self.card())  # pending
+        self.post(CANCEL)
+        bind(self.user, QQ)
+        self.assert_version(self.card())  # bound
+
+    def test_no_main_character(self):
+        # AA sends users without a main character to the dashboard first;
+        # render the card directly to check its fallback view.
+        # AA 会先把没有主角色的用户跳回首页；这里直接渲染卡片，检查兜底视图。
+        request = RequestFactory().get(SERVICES)
+        request.user = create_user("nomain", main=False, state=member_state())
+        request.session = {}
+        self.assert_version(QQBotService().render_services_ctrl(request))
 
 
 class ManagerButtonTests(MemberCardTestCase):

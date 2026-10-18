@@ -11,6 +11,7 @@ from django.test.utils import CaptureQueriesContext
 from django.urls import reverse
 from django.utils import timezone
 
+from .. import __version__
 from ..core import bindings as core_bindings
 from ..models import AuditLog, Binding, BindCode, Config, Event, QQGroup
 from ..views import manage
@@ -786,6 +787,12 @@ def settings_data(**kw):
 
 
 class SettingsTests(ManagerTestCase):
+    def test_shows_plugin_version(self):
+        r = self.client.get(SETTINGS)
+        self.assertContains(r, f"插件版本：aa-qqbot {__version__}")
+        r = self.client.get(SETTINGS, HTTP_ACCEPT_LANGUAGE="en")
+        self.assertContains(r, f"Plugin version: aa-qqbot {__version__}")
+
     def test_page_shows_example_card(self):
         r = self.client.get(SETTINGS)
         self.assertContains(r, "{corp_ticker}")
