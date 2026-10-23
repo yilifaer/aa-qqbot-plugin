@@ -51,7 +51,7 @@ CELERYBEAT_SCHEDULE["qqbot_reconcile"] = {
 }
 ```
 
-The key id (`koishi-1` above) is not a secret, but it should not be easy to guess.
+The key id is not a secret, but do not make it easy to guess: add a few random characters, e.g. `koishi-7f3a` (`koishi-1` here is only an example).
 
 4. Check the configuration, then migrate:
 
@@ -112,16 +112,16 @@ What the plugin keeps about people, who can see it and for how long:
 | Data | Who can see it | How long |
 |---|---|---|
 | Bindings: QQ number, nickname, status, group nickname set by a manager | the member (QQ partly masked); QQ managers and superusers (in full) | until unbind; deleted with the AA user |
-| Verification code requests: the QQ typed (it may be someone else's), the nickname and a hash of the code | only the member, for their own pending code (not shown to managers) | 7 days after the code expired, was used or was cancelled; deleted with the AA user |
-| Member lists reported by the bot: the QQ of everyone in a managed group, **including people without an AA account** | QQ managers (the "not bound" list) | until the bot's next full report for that group, or until the group is deleted |
+| Verification code requests: the QQ typed (it may be someone else's), the nickname and a hash of the code | the member sees their own pending code; QQ managers never see the code, but the QQ typed appears in the audit log ("Generate verification code") | 7 days after the code expired, was used or was cancelled; deleted with the AA user |
+| Member lists reported by the bot: the QQ of everyone in a managed group, **including people without an AA account** | QQ managers (the "QQ numbers in a group but not bound" list under "Needs attention") | until the bot's next full report for that group, or until the group is deleted; a disabled group gets no more reports and keeps its last list (not shown in the UI) until the group is deleted |
 | Event outbox: change type and QQ | the bot | 30 days |
-| Audit log: who did what to which QQ (usernames, nicknames, QQ of applicants and of other claimants) | QQ managers, superusers | forever by default, also after the AA user is deleted |
-| Session data: the code, QQ and nickname the member just typed | the member | until the card shows that the code is gone, or the session ends |
-| Log lines: usernames and masked QQ numbers; for refused API calls the IP address, the proxy headers (`X-Forwarded-For`, `X-Real-IP`, `CF-Connecting-IP`) and the key id if it is configured | admins who can read AA's log files | as set in your logging configuration |
+| Audit log: who did what to which QQ (usernames, including other claimants and the winner of a conflict; nicknames; the QQ before a change; the QQ of applicants who used someone else's code) | QQ managers, superusers | forever by default, also after the AA user is deleted |
+| Session data: the code, QQ and nickname the member just typed | the member | until the card shows that the code is gone, or the session ends; the result message of an action is removed the next time the member opens the Services page, and is not shown after 5 minutes |
+| Log lines: usernames and masked QQ numbers; for refused API calls the IP address, the proxy headers (`X-Forwarded-For`, `X-Real-IP`, `CF-Connecting-IP`) and the key id if it is configured; at most one line per error code and source address per minute (wrong-method requests, answered with 405, are throttled the same way) | admins who can read AA's log files | as set in your logging configuration |
 
 Events and old codes are deleted only when the daily reconcile runs (the `qqbot_reconcile` entry from step 3, or `python manage.py qqbot_reconcile`).
 
-What leaves AA: for each QQ the bot asks about, AA answers with the decision and, for bound members, the group nickname (corporation ticker, character name, nickname). What the bot keeps is outside this plugin.
+What leaves AA: for each QQ the bot asks about, AA answers with the decision and, for bound members, the group nickname (corporation ticker, character name, nickname). The events API also gives the bot the change type and QQ of every binding change (kept 30 days). What the bot keeps is outside this plugin.
 
 **Limit the audit log.** Optional, in `local.py`:
 
@@ -129,20 +129,23 @@ What leaves AA: for each QQ the bot asks about, AA answers with the decision and
 QQBOT_AUDIT_RETENTION_DAYS = 365  # default 0: keep forever
 ```
 
-The daily reconcile then deletes audit log entries older than that many days. The minimum is 30 (1-29 count as 30) because the rebind cooldown reads the audit log. `python manage.py check` reports `qqbot.W003` when the value is neither 0 nor a whole number of at least 30; a value that is not a whole number, or is below 0, is ignored and the log is kept forever. Deleting an entry also ends the restriction it recorded: a member whose QQ a manager force-unbound needs a verification code to bind it again only as long as that entry exists.
+The daily reconcile then deletes audit log entries older than that many days (`python manage.py qqbot_reconcile` prints how many it deleted). The minimum is 30 (1-29 count as 30) because the rebind cooldown reads the audit log. `python manage.py check` reports `qqbot.W003` when the value is neither 0 nor a whole number of at least 30; a value that is not a whole number, or is below 0, is ignored and the log is kept forever. Deleting an entry also ends the restriction it recorded: a member whose QQ a manager force-unbound needs a verification code to bind it again only as long as that entry exists.
 
-**Deletion requests.** First remove the binding: the member unbinds, a QQ manager force-unbinds, or the AA user is deleted (the binding is deleted with the user). Then, in AA's virtual environment:
+**Deletion requests.** First remove every binding of that QQ and of that user: the member unbinds, a QQ manager force-unbinds, or the AA user is deleted (the binding is deleted with the user). Then, in AA's virtual environment:
 
 ```bash
 python manage.py qqbot_erase --qq 12345678 --user some-username --dry-run
 python manage.py qqbot_erase --qq 12345678 --user some-username
 ```
 
-- Give `--qq` and / or `--user` (the AA username; it also works after the AA user was deleted, because the audit log keeps usernames).
-- `--dry-run` only shows what would change. Otherwise the command asks you to type `yes`; `--noinput` skips the question.
-- It refuses while a binding for that QQ or that user exists.
-- In one transaction it anonymises the audit log entries about the person, clears them as the actor of the entries they made, replaces their QQ or username in the details of other entries by `[erased]`, and deletes their verification codes, events and member list entries.
-- Afterwards the rebind cooldown and the force-unbind restriction no longer know this person, because both are read from the audit log.
+- Give `--qq` and / or `--user` (the AA username; it also works after the AA user was deleted, because the audit log keeps usernames). At least one is required. `--user` matches the saved username, so if a deleted account once had the same username, its entries match too.
+- `--dry-run` only shows what would change, and lists other accounts that have entries on that QQ (see below). Otherwise the command asks you to type `yes`; `--noinput` skips the question.
+- It refuses while any binding exists for that QQ or that user, including another account's binding of the same QQ (for example the other side of a conflict, or someone who claimed it); the error lists them. Remove those bindings first.
+- In one transaction it anonymises the audit log entries about the person (their AA account or username is the target, or the entry is on that QQ without a target account): the QQ, the target and the details are cleared. Entries in which the person acted show `[erased]` as the actor.
+- Entries on that QQ that belong to other accounts (for example someone who claimed the QQ without a code and was force-unbound by a manager) are kept unchanged, including the QQ: they record what those accounts did, and they keep that account's force-unbind restriction and rebind cooldown working. If one of those accounts is in fact the same person, run the command again with `--user` as well.
+- In other entries only the fields that name the person are replaced by `[erased]`: other claimants' usernames, the winner of a conflict, and the QQ of an applicant who used someone else's code.
+- It deletes the person's verification code requests, the event outbox entries for that QQ and the member list entries for that QQ. If any event was deleted, it adds one "recheck all" event (without any QQ) so the bot re-checks all groups promptly; no waiting is needed.
+- Afterwards the rebind cooldown and the force-unbind restriction no longer know about this person, because both are read from the audit log.
 - It does not delete the AA user, log files, database backups or what the bot stored. If the person is still in a managed QQ group, the bot reports the QQ again with its next full member list.
 
 ## More

@@ -138,4 +138,5 @@ class ReconcileTests(TestCase):
         out = StringIO()
         call_command("qqbot_reconcile", stdout=out)
         self.assertIn("写出 2 条事件", out.getvalue())
+        self.assertIn("0 old audit log entries", out.getvalue())
         self.assertEqual(Event.objects.count(), 2)

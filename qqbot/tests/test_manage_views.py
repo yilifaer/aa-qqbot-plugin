@@ -484,6 +484,19 @@ class BindingDetailTests(ManagerTestCase):
         self.assertEqual(self.binding.card_override, "")
         self.assertFalse(AuditLog.objects.filter(action=AuditLog.Action.CARD).exists())
 
+    def test_too_long_card_on_stale_page_says_stale(self):
+        """The stale-page check comes before the length check, so a page
+        re-rendered for a too-long card cannot hide a rebind."""
+        url = reverse("qqbot:manage_binding_card", args=[self.binding.pk])
+        Binding.objects.filter(pk=self.binding.pk).update(
+            qq="55555555", verified_qq="55555555"
+        )
+        r = self.client.post(url, {"card": "长" * 21, "qq": "11111111"}, follow=True)
+        self.assertRedirects(r, self.url)
+        self.assertContains(r, "页面上的信息已经过时")
+        self.assertNotContains(r, "群名片太长")
+        self.assertFalse(AuditLog.objects.filter(action=AuditLog.Action.CARD).exists())
+
     def test_card_override_too_long_rejected(self):
         url = reverse("qqbot:manage_binding_card", args=[self.binding.pk])
         r = self.client.post(url, {"card": "长" * 21, "qq": "11111111"})  # 63 bytes

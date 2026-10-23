@@ -12,7 +12,7 @@ from django.core.management.base import CommandError
 from django.test import TestCase
 from django.utils import timezone
 
-from ..core import audit, codes, privacy
+from ..core import audit, bindings, codes, privacy
 from ..models import AuditLog, BindCode, Event, RosterEntry
 from .utils import bind, create_group, create_member, put_in_roster
 
@@ -62,6 +62,8 @@ class EraseTests(TestCase):
                                   target_user=self.bob, others=["alice", "carol"])
         self.applicant = audit.log(Action.CLAIM_FAILED, qq=BOB_QQ, target_user=self.bob,
                                    reason="qq_mismatch", applicant_qq=QQ)
+        # Same text under keys that do not name a person: must stay.
+        # 同样的文字出现在不指向某个人的键下：必须保留。
         self.nested = audit.log(Action.GROUP, actor=self.bob, op="update",
                                 changed={"seen": [QQ, {"by": "alice"}, 12345678, "alice2"]})
         self.unrelated = audit.log(Action.CARD, actor=self.bob, qq=BOB_QQ, target_user=self.bob,
@@ -139,44 +141,50 @@ class EraseTests(TestCase):
         self.assertEqual(snapshot(), before)
         self.assertIn(
             "3 audit log entries about the person (anonymised), 3 entries they made "
-            "(actor cleared), 3 other entries",
+            "(actor shown as [erased]), 2 other entries that name them",
             out,
         )
+        self.assertIn("0 entries on this QQ about other accounts (kept)", out)
         self.assertIn("2 verification codes, 1 events and 1 member list entries", out)
         self.assertIn("Dry run", out)
 
     def test_erase_anonymises_audit_log(self):
         out = erase("--qq", QQ, "--user", "alice", "--noinput")
         self.assertIn("Done", out)
-        for entry in (self.bound, self.claim, self.nickname):
+        for entry, actor_name in ((self.bound, "[erased]"), (self.claim, ""),
+                                  (self.nickname, "[erased]")):
             with self.subTest(action=entry.action):
                 row = self.row(entry)
                 self.assertEqual(
                     (row.qq, row.target_user_id, row.target_name, row.detail),
                     ("", None, "", {"erased": True}),
                 )
-                self.assertEqual((row.actor_id, row.actor_name), (None, ""))
+                # "[erased]", not "": an empty actor reads as "Bot / system".
+                # 用 "[erased]" 而不是空：空的操作者会显示成“机器人 / 系统”。
+                self.assertEqual((row.actor_id, row.actor_name), (None, actor_name))
                 self.assertEqual(row.action, entry.action)
         # Entries alice made about others: only the actor goes.
         # alice 对别人做的操作：只去掉操作者。
         acted = self.row(self.acted)
-        self.assertEqual((acted.actor_id, acted.actor_name), (None, ""))
+        self.assertEqual((acted.actor_id, acted.actor_name), (None, "[erased]"))
         self.assertEqual((acted.qq, acted.target_user_id, acted.target_name),
                          (BOB_QQ, self.bob.pk, "bob"))
-        # Her QQ / username inside other entries' details (exact matches only).
-        # 其他记录详情里她的 QQ / 用户名（只替换完全相同的值）。
+        # Her QQ / username in the fields of other entries that name a person
+        # (exact matches only); the same text elsewhere stays.
+        # 其他记录里指向某个人的字段中她的 QQ / 用户名（只替换完全相同的值）；
+        # 别处同样的文字保留。
         self.assertEqual(self.row(self.conflict).detail["others"], ["[erased]", "carol"])
         self.assertEqual(self.row(self.conflict).actor_name, "bob")
         self.assertEqual(self.row(self.applicant).detail["applicant_qq"], "[erased]")
         self.assertEqual(
             self.row(self.nested).detail["changed"],
-            {"seen": ["[erased]", {"by": "[erased]"}, 12345678, "alice2"]},
+            {"seen": [QQ, {"by": "alice"}, 12345678, "alice2"]},
         )
         unrelated = self.row(self.unrelated)
         self.assertEqual(unrelated.detail, {"old": "", "new": f"{QQ} alice"})
         self.assertEqual((unrelated.actor_name, unrelated.qq), ("bob", BOB_QQ))
         self.assertEqual(AuditLog.objects.count(), 8)  # nothing deleted / 一条都没删
-        self.assertFalse(AuditLog.objects.filter(qq=QQ).exists())
+        self.assertFalse(AuditLog.objects.filter(qq=QQ).exists())  # all were about her
         self.assertFalse(AuditLog.objects.filter(target_user=self.alice).exists())
         self.assertFalse(AuditLog.objects.filter(actor=self.alice).exists())
         self.assertFalse(AuditLog.objects.filter(actor_name="alice").exists())
@@ -184,8 +192,14 @@ class EraseTests(TestCase):
     def test_erase_deletes_codes_events_roster(self):
         out = erase("--qq", QQ, "--user", "alice", "--noinput")
         self.assertEqual(set(BindCode.objects.values_list("pk", flat=True)), {self.bob_code.pk})
-        self.assertEqual(set(Event.objects.values_list("pk", flat=True)),
-                         {self.bob_event.pk, self.all_event.pk})
+        self.assertFalse(Event.objects.filter(qq=QQ).exists())
+        self.assertTrue(Event.objects.filter(pk__in=[self.bob_event.pk, self.all_event.pk])
+                        .count() == 2)
+        # The deleted QQ event is replaced by one "recheck all" without a QQ.
+        # 删掉的 QQ 事件换成一条不带 QQ 的“全部重查”。
+        new = Event.objects.exclude(pk__in=[self.bob_event.pk, self.all_event.pk])
+        self.assertEqual(list(new.values_list("kind", "qq")), [(Event.Kind.RECHECK_ALL, "")])
+        self.assertIn("recheck all", out)
         self.assertEqual(list(RosterEntry.objects.values_list("qq", flat=True)), [BOB_QQ])
         self.assertIn("2 verification codes, 1 events and 1 member list entries", out)
         self.assertIn("next full member list", out)
@@ -196,14 +210,17 @@ class EraseTests(TestCase):
 
     def test_erase_by_qq_only(self):
         out = erase("--qq", QQ, "--noinput")
-        # Entries found by QQ; her own bind also loses its actor (she acted on
-        # herself). The nickname entry (user only) and her actions on others
-        # need --user.
-        # 按 QQ 找到的记录；她自己的绑定记录同时去掉操作者（她对自己操作）。
-        # 只关联用户的改昵称记录，以及她对别人的操作，需要 --user。
+        # Without --user, entries on the QQ that name an account as target
+        # are kept (they may be another account's); the command lists them.
+        # 不给 --user 时，这个 QQ 上以某个账号为目标的记录会保留（可能是别的
+        # 账号的），命令会把它们列出来。
         bound = self.row(self.bound)
-        self.assertEqual((bound.detail, bound.actor_id, bound.actor_name),
-                         ({"erased": True}, None, ""))
+        self.assertEqual((bound.qq, bound.target_name, bound.detail, bound.actor_name),
+                         (QQ, "alice", {"status": "trusted"}, "alice"))
+        self.assertIn("Kept: entries on this QQ about other accounts: alice", out)
+        self.assertIn("1 entries on this QQ about other accounts (kept)", out)
+        # The entry on the QQ without a target is about her.
+        # 这个 QQ 上没有目标账号的记录是关于她的。
         self.assertEqual(self.row(self.claim).detail, {"erased": True})
         self.assertEqual(self.row(self.nickname).detail, {"old": "old nick", "new": "new nick"})
         self.assertEqual(self.row(self.acted).actor_name, "alice")
@@ -212,6 +229,62 @@ class EraseTests(TestCase):
         self.assertTrue(BindCode.objects.filter(pk=self.alice_code.pk).exists())
         self.assertFalse(BindCode.objects.filter(qq=QQ).exists())
         self.assertIn("next full member list", out)
+
+    def test_other_accounts_on_the_qq_are_kept(self):
+        """mallory claimed alice's QQ and was force-unbound: that history and
+        mallory's force-unbind restriction stay; only alice's name goes."""
+        mallory = create_member("mallory")
+        manager = create_member("mgr")
+        claim = audit.log(Action.BIND, actor=mallory, qq=QQ, target_user=mallory,
+                          status="trusted")
+        forced = audit.log(Action.FORCE_UNBIND, actor=manager, qq=QQ, target_user=mallory)
+        lost = audit.log(Action.CONFLICT_RESOLVED, qq=QQ, target_user=mallory,
+                         reason="conflict", winner="alice", via="code")
+        self.assertTrue(bindings._force_unbound_before(mallory, QQ))
+        out = erase("--qq", QQ, "--user", "alice", "--noinput")
+        for entry in (claim, forced):
+            row = self.row(entry)
+            self.assertEqual((row.qq, row.target_user_id, row.target_name, row.actor_id),
+                             (QQ, mallory.pk, "mallory", entry.actor_id))
+            self.assertEqual(row.detail, entry.detail)
+        row = self.row(lost)
+        self.assertEqual((row.qq, row.target_name), (QQ, "mallory"))
+        self.assertEqual(row.detail, {"reason": "conflict", "winner": "[erased]", "via": "code"})
+        self.assertTrue(bindings._force_unbound_before(mallory, QQ))
+        self.assertIn("Kept: entries on this QQ about other accounts: mallory", out)
+        self.assertIn("3 entries on this QQ about other accounts (kept)", out)
+
+    def test_common_usernames_do_not_touch_other_fields(self):
+        """A username such as "admin" or a QQ equal to a group id is only
+        replaced where a field names a person."""
+        group_row = audit.log(Action.GROUP, actor=self.bob, op="update", via="admin",
+                              group_id=int(QQ), name="Main", qq_text=QQ)
+        conflict = audit.log(Action.CONFLICT, actor=self.bob, qq=BOB_QQ, target_user=self.bob,
+                             others=["admin"])
+        erase("--qq", QQ, "--user", "admin", "--noinput")
+        self.assertEqual(self.row(group_row).detail,
+                         {"op": "update", "via": "admin", "group_id": int(QQ), "name": "Main",
+                          "qq_text": QQ})
+        self.assertEqual(self.row(conflict).detail["others"], ["[erased]"])
+
+    def test_no_recheck_all_without_deleted_events(self):
+        before = Event.objects.count()
+        erase("--user", "alice", "--noinput")
+        self.assertEqual(Event.objects.count(), before)
+
+    def test_unbind_then_erase_still_reaches_the_bot(self):
+        """Erasing right after an unbind deletes the unfetched recheck, but
+        the bot still gets a "recheck all" to poll."""
+        dave = create_member("dave")
+        bind(dave, "45678901")
+        bindings.unbind(dave)
+        self.assertTrue(Event.objects.filter(qq="45678901").exists())
+        cursor = Event.objects.order_by("-pk").values_list("pk", flat=True).first()
+        erase("--qq", "45678901", "--user", "dave", "--noinput")
+        self.assertFalse(Event.objects.filter(qq="45678901").exists())
+        self.assertTrue(
+            Event.objects.filter(pk__gt=cursor, kind=Event.Kind.RECHECK_ALL).exists()
+        )
 
     def test_erase_by_user_only(self):
         out = erase("--user", "alice", "--noinput")
@@ -237,7 +310,7 @@ class EraseTests(TestCase):
         self.assertIn('No Alliance Auth user is called "carol"', out)
         row = self.row(gone)
         self.assertEqual((row.qq, row.target_name, row.actor_name, row.detail),
-                         ("", "", "", {"erased": True}))
+                         ("", "", "[erased]", {"erased": True}))
         self.assertEqual(self.row(self.conflict).detail["others"], ["alice", "[erased]"])
 
     def test_confirmation_yes(self):
@@ -289,6 +362,6 @@ class EraseTests(TestCase):
         # 再运行一次：已经没有要做的了。
         self.assertEqual(
             privacy.erase(person),
-            {"audit_about": 0, "audit_actor": 0, "audit_mentions": 0,
+            {"audit_about": 0, "audit_actor": 0, "audit_mentions": 0, "audit_kept": 0,
              "codes": 0, "events": 0, "roster": 0},
         )

@@ -1,27 +1,32 @@
 """Erase one person's personal data (``python manage.py qqbot_erase``).
 
 The person is given by a QQ number and / or an AA username. Nothing is done
-while a binding exists for that QQ or that user: it must be unbound (or the
-AA user deleted) first, so the bot has already been told. Audit log entries
-are kept but anonymised, so the log still shows what happened to whom else.
+while a binding exists for that QQ or that user: it must be removed first.
+Audit log entries about the person are anonymised. Entries on the same QQ
+that belong to other accounts (for example someone who claimed it and was
+force-unbound) are kept, because they record what those accounts did and
+keep their force-unbind restriction and cooldown working; only the fields
+that name the person are cleared from them.
 
 删除某一个人的个人数据（``python manage.py qqbot_erase``）。
 
 用 QQ 号和 / 或 AA 用户名指定这个人。只要这个 QQ 或这个用户还有绑定，就什么
-都不做：必须先解绑（或者删除这个 AA 用户），这样机器人已经收到通知。审计日志
-保留，但会匿名化，这样日志里仍然看得到其他人身上发生过什么。
+都不做：必须先去掉绑定。关于这个人的审计日志会被匿名化。同一个 QQ 上属于其他
+账号的记录（例如认领过这个 QQ、后来被强制解绑的人）会保留，因为它们记录的是
+那些账号做过什么，并且让那些账号的强制解绑限制和换绑冷却继续有效；只把其中
+指向这个人的字段清掉。
 """
 
 from dataclasses import dataclass
 
 from django.contrib.auth.models import User
 from django.db import transaction
-from django.db.models import F, Q
+from django.db.models import Q
 
 from allianceauth.services.hooks import get_extension_logger
 
 from ..models import AuditLog, Binding, BindCode, Event, RosterEntry
-from . import locks
+from . import events, locks
 
 logger = get_extension_logger(__name__)
 
@@ -32,6 +37,24 @@ ERASED = "[erased]"
 # Audit log entries read per query while looking for the QQ / username.
 # 查找 QQ / 用户名时，每次查询读取的审计日志条数。
 AUDIT_CHUNK_SIZE = 1000
+
+# Detail keys that name another person in an entry about someone else
+# (written in core/bindings.py): other claimants, the winner of a conflict,
+# and the QQ of an applicant who used someone else's code. Only these are
+# cleared: other keys (via, op, status, group ids ...) may hold the same
+# text by chance and must stay.
+# 在关于别人的记录里指向另一个人的 detail 键（在 core/bindings.py 里写入）：
+# 其他认领者、冲突中胜出的人、拿别人验证码申请的人的 QQ。只清这几个键：其他键
+# （via、op、status、群号……）可能碰巧是同样的文字，必须保留。
+USERNAME_KEYS = ("others", "winner")
+QQ_KEYS = ("applicant_qq",)
+# Only these actions write the keys above.
+# 只有这些操作会写上面的键。
+MENTION_ACTIONS = (
+    AuditLog.Action.CONFLICT,
+    AuditLog.Action.CONFLICT_RESOLVED,
+    AuditLog.Action.CLAIM_FAILED,
+)
 
 # The whole detail of an audit log entry about the person.
 # 关于这个人的审计日志，detail 整个换成这个。
@@ -88,33 +111,53 @@ def _any(*parts):
 
 
 def _about_q(person: Person) -> Q:
-    """Audit log entries about the person.
+    """Audit log entries about the person: their AA user or username is the
+    target, or the entry is on their QQ and has no target account. Entries on
+    the QQ about other accounts are not included (see the module docstring).
 
-    关于这个人的审计日志。
+    关于这个人的审计日志：目标是他的 AA 用户或用户名，或者记录在他的 QQ 上、
+    并且没有目标账号。这个 QQ 上关于其他账号的记录不算在内（见模块说明）。
     """
     return _any(
-        Q(qq=person.qq) if person.qq else None,
         Q(target_user_id=person.user.pk) if person.user else None,
         Q(target_name=person.username) if person.username else None,
+        Q(qq=person.qq, target_user__isnull=True, target_name="") if person.qq else None,
     )
 
 
 def _actor_q(person: Person) -> Q:
-    """Audit log entries in which the person acted: by their user or
-    username, and entries about the person in which the target acted on
-    themselves (e.g. their own bind, found by ``--qq`` alone).
+    """Audit log entries in which the person acted.
 
-    这个人作为操作者的审计日志：按他的用户或用户名找到的记录，以及关于这个人、
-    并且是目标用户自己操作的记录（例如他自己的绑定记录，只给 ``--qq`` 时也能找到）。
+    这个人作为操作者的审计日志。
     """
-    self_acted = Q(actor_id=F("target_user_id")) | (
-        Q(actor_name=F("target_name")) & ~Q(actor_name="")
-    )
     return _any(
         Q(actor_id=person.user.pk) if person.user else None,
         Q(actor_name=person.username) if person.username else None,
-        _about_q(person) & self_acted,
     )
+
+
+def _other_accounts_q(person: Person) -> Q:
+    """Entries on the person's QQ about other accounts (kept as they are).
+
+    这个人的 QQ 上关于其他账号的记录（原样保留）。
+    """
+    if not person.qq:
+        return Q(pk__in=[])
+    return Q(qq=person.qq) & ~_about_q(person)
+
+
+def other_accounts(person: Person) -> list[str]:
+    """Usernames of the other accounts with entries on the person's QQ.
+
+    在这个人的 QQ 上有记录的其他账号的用户名。
+    """
+    names = (
+        AuditLog.objects.filter(_other_accounts_q(person))
+        .exclude(target_name="")
+        .values_list("target_name", flat=True)
+        .distinct()
+    )
+    return sorted(set(names))
 
 
 def _codes(person: Person):
@@ -151,53 +194,52 @@ def bindings_for(person: Person):
     )
 
 
-def _scrub(value, needles):
-    """``value`` with every string equal to one of ``needles`` replaced by
-    :data:`ERASED`, recursively in dicts and lists. Returns
-    ``(new_value, changed)``.
+def _scrub(detail, person: Person):
+    """``detail`` with the person's username / QQ replaced by :data:`ERASED`
+    under :data:`USERNAME_KEYS` / :data:`QQ_KEYS` only (lists included).
+    Returns ``(new_detail, changed)``.
 
-    把 ``value`` 里每个等于 ``needles`` 之一的字符串换成 ``ERASED``（会递归
-    处理字典和列表）。返回 ``(新值, 是否有改动)``。
+    只在 ``USERNAME_KEYS`` / ``QQ_KEYS`` 这几个键下（包括列表）把这个人的
+    用户名 / QQ 换成 ``ERASED``。返回 ``(新的 detail, 是否有改动)``。
     """
-    if isinstance(value, str):
-        return (ERASED, True) if value in needles else (value, False)
-    if isinstance(value, dict):
-        changed = False
-        out = {}
-        for key, item in value.items():
-            out[key], hit = _scrub(item, needles)
-            changed = changed or hit
-        return out, changed
-    if isinstance(value, list):
-        changed = False
-        out = []
-        for item in value:
-            new, hit = _scrub(item, needles)
-            out.append(new)
-            changed = changed or hit
-        return out, changed
-    return value, False
+    if not isinstance(detail, dict):
+        return detail, False
+    out = dict(detail)
+    changed = False
+    for keys, needle in ((USERNAME_KEYS, person.username), (QQ_KEYS, person.qq)):
+        if not needle:
+            continue
+        for key in keys:
+            value = out.get(key)
+            if value == needle:
+                out[key] = ERASED
+                changed = True
+            elif isinstance(value, list) and needle in value:
+                out[key] = [ERASED if item == needle else item for item in value]
+                changed = True
+    return out, changed
 
 
 def _mentions(person: Person) -> list[tuple[int, object]]:
-    """``(pk, new detail)`` of the other audit log entries whose detail holds
-    the person's QQ or username.
+    """``(pk, new detail)`` of the other audit log entries whose detail names
+    the person (see :data:`USERNAME_KEYS`, :data:`QQ_KEYS`).
 
-    detail 里含有这个人的 QQ 或用户名的其他审计日志：``(pk, 新的 detail)``。
+    detail 里指向这个人的其他审计日志：``(pk, 新的 detail)``（见
+    ``USERNAME_KEYS``、``QQ_KEYS``）。
     """
-    needles = {s for s in (person.qq, person.username) if s}
-    # Checked in Python, not with a database text search: how JSON text is
-    # stored (escaped or not) differs between database backends.
-    # 在 Python 里检查，不用数据库的文本搜索：不同数据库保存 JSON 文本的方式
-    # （是否转义）不一样。
+    # Checked in Python, not with a database JSON lookup: JSON containment
+    # is not available on every supported database.
+    # 在 Python 里检查，不用数据库的 JSON 查询：不是每个支持的数据库都能做
+    # JSON 包含查询。
     rows = (
-        AuditLog.objects.exclude(_about_q(person))
+        AuditLog.objects.filter(action__in=MENTION_ACTIONS)
+        .exclude(_about_q(person))
         .order_by("pk")
         .values_list("pk", "detail")
     )
     found = []
     for pk, detail in rows.iterator(chunk_size=AUDIT_CHUNK_SIZE):
-        new, changed = _scrub(detail, needles)
+        new, changed = _scrub(detail, person)
         if changed:
             found.append((pk, new))
     return found
@@ -223,6 +265,7 @@ def preview(person: Person) -> dict:
         "audit_about": AuditLog.objects.filter(_about_q(person)).count(),
         "audit_actor": AuditLog.objects.filter(_actor_q(person)).count(),
         "audit_mentions": len(_mentions(person)),
+        "audit_kept": AuditLog.objects.filter(_other_accounts_q(person)).count(),
         "codes": _codes(person).count(),
         "events": _events(person).count(),
         "roster": _roster(person).count(),
@@ -231,13 +274,15 @@ def preview(person: Person) -> dict:
 
 def erase(person: Person) -> dict:
     """Anonymise the person's audit log entries and delete their codes,
-    events and member list entries, all in one transaction. Returns the
+    events and member list entries, all in one transaction. Entries on the
+    QQ about other accounts are only counted (``audit_kept``). Returns the
     counts (same keys as :func:`preview`).
 
     Raises :class:`StillBound` (and changes nothing) when a binding exists.
 
     匿名化这个人的审计日志，并删除他的验证码、事件和群成员名单记录，全部在
-    一个事务里完成。返回各项数量（键和 ``preview`` 相同）。
+    一个事务里完成。这个 QQ 上关于其他账号的记录只计数（``audit_kept``）。
+    返回各项数量（键和 ``preview`` 相同）。
 
     还有绑定时抛出 ``StillBound``，不做任何修改。
     """
@@ -252,8 +297,11 @@ def erase(person: Person) -> dict:
         # 这两步都要读关于这个人的记录，所以要在修改这些记录之前执行。
         mentions = _mentions(person)
         counts = {
+            "audit_kept": AuditLog.objects.filter(_other_accounts_q(person)).count(),
+            # ERASED, not "": an empty actor is shown as "Bot / system".
+            # 用 ERASED 而不是空字符串：空的操作者会显示成“机器人 / 系统”。
             "audit_actor": AuditLog.objects.filter(_actor_q(person)).update(
-                actor=None, actor_name=""
+                actor=None, actor_name=ERASED
             ),
         }
         counts["audit_about"] = AuditLog.objects.filter(_about_q(person)).update(
@@ -264,6 +312,13 @@ def erase(person: Person) -> dict:
             AuditLog.objects.filter(pk=pk).update(detail=detail)
         counts["codes"], _ = _codes(person).delete()
         counts["events"], _ = _events(person).delete()
+        if counts["events"]:
+            # A deleted event may be the unbind notice the bot has not
+            # fetched yet; one "recheck all" (it carries no QQ) makes the
+            # bot check every group again soon instead.
+            # 删掉的事件里可能有机器人还没取走的解绑通知；改发一条“全部重查”
+            # （不带 QQ），让机器人尽快把所有群重新检查一遍。
+            events.emit(Event.Kind.RECHECK_ALL)
         counts["roster"], _ = _roster(person).delete()
     # Counts only: the log must not keep the QQ or the username.
     # 只记数量：日志里不能留下 QQ 或用户名。

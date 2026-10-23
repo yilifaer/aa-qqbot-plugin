@@ -136,6 +136,13 @@ class RoutingTests(ApiTestCase):
             self.assertError(r, 405, "method_not_allowed")
             self.assertEqual(r["Allow"], "POST")
 
+    def test_repeated_405_logged_once(self):
+        """Wrong-method requests come before authentication: throttled too."""
+        for _ in range(5):
+            self.assertError(self.client.get(url("health")), 405, "method_not_allowed")
+        self.assertEqual(self.logger.info.call_count, 1)
+        self.assertIn("method_not_allowed", self.logger.info.call_args.args)
+
     def test_other_methods_405(self):
         self.assertError(self.client.put(url("health")), 405, "method_not_allowed")
         self.assertError(self.client.delete(url("health")), 405, "method_not_allowed")

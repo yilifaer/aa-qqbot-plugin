@@ -209,7 +209,10 @@ def api_endpoint(view):
                         _client_for_log(request),
                         _key_for_log(request),
                     )
-            else:
+            elif exc.status != 405 or _refusal_log_due(request, exc.code):
+                # A wrong method is answered before authentication, so anyone
+                # can send it: throttled like the refusals above.
+                # 请求方法不对时在认证之前就回答了，谁都能发：和上面的拒绝一样限流。
                 logger.info("qqbot: API %s answered %s: %s", view.__name__, exc.code, exc.message)
             return _error_response(exc)
         except Exception:

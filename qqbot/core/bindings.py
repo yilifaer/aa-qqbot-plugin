@@ -38,8 +38,8 @@ CODE_RATE_LIMIT = 5  # codes per user ... / 每个用户最多生成这么多个
 CODE_RATE_WINDOW = 3600  # ... per this many seconds / ……在这么多秒之内
 # 每个用户在每个时间窗口内，免验证码（老成员免验证）绑定或换 QQ 的次数上限
 TRUSTED_RATE_LIMIT = 5  # code-free (trusted) binds / QQ changes per user per window
-# 每个用户在每个时间窗口内，最多被告知这么多次“这个 QQ 已被绑定”
-TAKEN_RATE_LIMIT = 5  # "already bound" answers per user per window
+# 每个用户在每个时间窗口内，最多能提交这么多个不同的 QQ 号
+QQ_TRY_LIMIT = 5  # different QQ numbers a user may submit per window
 
 # Lazy: translated into the language of the request that shows them.
 # 惰性翻译：显示时才按当前请求的语言翻译。
@@ -154,28 +154,53 @@ def _trusted_rate_limited(user) -> bool:
     return _count(f"qqbot:trusted:{user.pk}", TRUSTED_RATE_LIMIT)
 
 
-def _taken_key(user) -> str:
-    return f"qqbot:taken:{user.pk}"
+def _qq_tries_key(user) -> str:
+    return f"qqbot:qq-tries:{user.pk}"
 
 
-def _taken_rate_limited(user) -> bool:
-    """True when the user has already been told "taken" as often as allowed.
-    Only looks at the counter, never counts.
+def _qq_try_limited(user, qq_n, now) -> bool:
+    """Record ``qq_n`` as tried by ``user``; True when the user has already
+    tried ``QQ_TRY_LIMIT`` other QQ numbers in the current window. Trying the
+    same QQ again never counts. Callers hold the user's lock, so the
+    read-modify-write below is not racy.
 
-    用户被告知“已被绑定”的次数是否已达上限。只查看计数器，不计数。
+    记下 ``user`` 试过 ``qq_n``；如果这个用户在当前时间窗口内已经试过
+    ``QQ_TRY_LIMIT`` 个别的 QQ 号，返回 True。重复提交同一个 QQ 不会再计数。
+    调用方已经持有这个用户的锁，所以下面的“读-改-写”不会有并发问题。
     """
-    return cache.get(_taken_key(user), 0) >= TAKEN_RATE_LIMIT
+    key = _qq_tries_key(user)
+    start = now.timestamp()
+    tried = cache.get(key)
+    if isinstance(tried, dict) and isinstance(tried.get("qqs"), list):
+        start = tried.get("start", start)
+        qqs = tried["qqs"]
+    else:
+        qqs = []
+    if qq_n in qqs:
+        return False
+    if len(qqs) >= QQ_TRY_LIMIT:
+        return True
+    left = int(start + CODE_RATE_WINDOW - now.timestamp())
+    if left > 0:
+        cache.set(key, {"start": start, "qqs": qqs + [qq_n]}, left)
+    else:
+        cache.set(key, {"start": now.timestamp(), "qqs": [qq_n]}, CODE_RATE_WINDOW)
+    return False
 
 
 def _force_unbound_before(user, qq_n) -> bool:
     """True when a QQ manager has force-unbound ``qq_n`` from this user before
     (DECISIONS #25): binding it again needs a verification code, which only
     the real owner of the QQ can use. Other users and other QQs are not
-    affected; the audit log is permanent, so this is too.
+    affected. It lasts as long as the audit entry: forever, unless
+    QQBOT_AUDIT_RETENTION_DAYS prunes it or ``qqbot_erase`` anonymises this
+    user's entries (``qqbot_erase`` for the QQ's owner keeps it).
 
     QQ 管理员以前是否从这个用户手里强制解绑过 ``qq_n``（决定 #25）：是的话，
     他再绑这个 QQ 必须用验证码，而验证码只有真号主能用。别人、别的 QQ 都不受
-    影响；审计记录是永久的，所以这条限制也是永久的。
+    影响。这条限制和那条审计记录一样长久：永久有效，除非 QQBOT_AUDIT_RETENTION_DAYS
+    把记录清理掉，或者 ``qqbot_erase`` 匿名化了这个用户的记录（对这个 QQ 的号主
+    运行 ``qqbot_erase`` 时会保留它）。
     """
     return AuditLog.objects.filter(
         action=Action.FORCE_UNBIND, target_user_id=user.pk, qq=qq_n
@@ -324,23 +349,27 @@ def submit(user, qq, nickname, now=None) -> SubmitResult:
             )
 
         # "Taken" tells the member that a QQ belongs to another account, so
-        # trying many QQs would map out who is in the alliance. Every "taken"
-        # answer counts one attempt; once the limit is reached, every other
-        # QQ, free or taken, gets this same generic answer, so it no longer
-        # shows which is which. Only peek here: this check must not count.
+        # trying many QQs would map out who is in the alliance. Each user may
+        # try only QQ_TRY_LIMIT different QQ numbers per window, whatever the
+        # answer; after that every new QQ, free or taken, gets this same
+        # answer, so probing becomes very slow. Retrying the same QQ (or a
+        # nickname change above) never counts.
         # “已被绑定”会告诉成员某个 QQ 属于别的账号，一个个试下去就能摸清
-        # 联盟里有哪些人。每次回答“已被绑定”都记一次；到达上限后，其他任何
-        # QQ（不管空闲还是已被绑定）都得到这同一个笼统的回答，再也分不出
-        # 哪个是哪个。这里只查看计数器，不计数。
-        if _taken_rate_limited(user):
+        # 联盟里有哪些人。每个用户在每个时间窗口内只能试 QQ_TRY_LIMIT 个
+        # 不同的 QQ 号，不管得到什么回答；超过之后，任何新的 QQ（不管空闲
+        # 还是已被绑定）都得到这同一个回答，这样一个个试会非常慢。重复提交
+        # 同一个 QQ（以及上面的只改昵称）不计数。
+        if _qq_try_limited(user, qq_n, now):
             return SubmitResult(
                 False, "rate_limited",
-                gettext("Too many attempts. Please try again later."),
+                gettext(
+                    "Too many different QQ numbers tried (at most %(limit)d per hour). "
+                    "Please try again later."
+                ) % {"limit": QQ_TRY_LIMIT},
             )
         if Binding.objects.filter(qq=qq_n, status=Binding.Status.VERIFIED).exclude(
             user_id=user.pk
         ).exists():
-            _count(_taken_key(user), TAKEN_RATE_LIMIT)
             return SubmitResult(False, "taken", str(MSG_TAKEN))
 
         cooldown = timedelta(hours=config.rebind_cooldown_hours)

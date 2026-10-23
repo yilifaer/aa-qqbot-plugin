@@ -227,59 +227,79 @@ class SubmitOtherOutcomesTests(BaseTestCase):
         r = bindings.submit(self.user, "12345678", "凯拉")
         self.assertEqual(r.outcome, "pending")
 
-    def exhaust_taken(self, user=None):
-        """Get "taken" TAKEN_RATE_LIMIT times (bob has verified 12345678)."""
-        bind(create_member("bob"), "12345678")
-        for i in range(bindings.TAKEN_RATE_LIMIT):
-            r = bindings.submit(user or self.user, "12345678", "凯拉")
-            self.assertEqual(r.outcome, "taken", i)
+    def exhaust_tries(self, user=None, first="12345678"):
+        """Try QQ_TRY_LIMIT different QQs: ``first`` (bob has verified it,
+        so "taken") and then free ones."""
+        user = user or self.user
+        if not Binding.objects.filter(qq="12345678").exists():
+            bind(create_member("bob"), "12345678")
+        qqs = [first] + [f"2234567{i}" for i in range(bindings.QQ_TRY_LIMIT - 1)]
+        for qq in qqs:
+            r = bindings.submit(user, qq, "凯拉")
+            self.assertNotEqual(r.outcome, "rate_limited", qq)
+        return qqs
 
-    def test_taken_is_rate_limited(self):
-        """Once the limit is reached, a taken QQ and a free QQ look the same."""
-        self.exhaust_taken()
-        self.assertEqual(cache.get(f"qqbot:taken:{self.user.pk}"), bindings.TAKEN_RATE_LIMIT)
-        taken = bindings.submit(self.user, "12345678", "凯拉")
-        free = bindings.submit(self.user, "22345678", "凯拉")
+    def test_qq_tries_are_limited(self):
+        """Once the limit is reached, a new taken QQ and a new free QQ look the same."""
+        self.exhaust_tries()
+        bind(create_member("dave"), "13345678")
+        taken = bindings.submit(self.user, "13345678", "凯拉")
+        free = bindings.submit(self.user, "32345670", "凯拉")
         self.assertEqual((taken.ok, taken.outcome), (False, "rate_limited"))
         self.assertEqual((free.ok, free.outcome), (False, "rate_limited"))
         self.assertEqual(taken.message, free.message)
         self.assertNotIn("QQ 管理员", taken.message)
         self.assertIsNone(free.code)
-        self.assertFalse(BindCode.objects.exists())
-        self.assertFalse(Binding.objects.filter(user=self.user).exists())
-        # the checks above only peek: the counter did not move
-        self.assertEqual(cache.get(f"qqbot:taken:{self.user.pk}"), bindings.TAKEN_RATE_LIMIT)
+        self.assertFalse(BindCode.objects.filter(qq__in=["13345678", "32345670"]).exists())
 
-    def test_taken_rate_limit_also_hides_roster_qqs(self):
+    def test_qq_try_limit_also_hides_roster_qqs(self):
         """A QQ that would bind without a code gets the same answer."""
-        self.exhaust_taken()
+        self.exhaust_tries()
         put_in_roster(self.group, ["32345678"])
         r = bindings.submit(self.user, "32345678", "凯拉")
         self.assertEqual((r.ok, r.outcome), (False, "rate_limited"))
         self.assertFalse(Binding.objects.filter(user=self.user).exists())
 
-    def test_taken_rate_limit_is_per_user_and_expires(self):
-        self.exhaust_taken()
-        self.assertEqual(bindings.submit(self.user, "12345678", "凯拉").outcome, "rate_limited")
+    def test_retrying_the_same_qq_never_counts(self):
+        """A member retrying one taken QQ learns nothing new and is not blocked."""
+        bind(create_member("bob"), "12345678")
+        for i in range(bindings.QQ_TRY_LIMIT * 2):
+            self.assertEqual(bindings.submit(self.user, "12345678", "凯拉").outcome, "taken", i)
+        self.assertEqual(bindings.submit(self.user, "22345678", "凯拉").outcome, "pending")
+
+    def test_already_tried_qqs_still_work_after_the_limit(self):
+        """Regenerating the code for a QQ tried earlier is not a new guess."""
+        qqs = self.exhaust_tries()
+        r = bindings.submit(self.user, qqs[-1], "凯拉")
+        self.assertEqual((r.ok, r.outcome), (True, "pending"))
+        self.assertEqual(bindings.submit(self.user, qqs[0], "凯拉").outcome, "taken")
+
+    def test_qq_try_limit_is_per_user_and_expires(self):
+        self.exhaust_tries()
+        self.assertEqual(bindings.submit(self.user, "32345670", "凯拉").outcome, "rate_limited")
         carol = create_member("carol")
         self.assertEqual(bindings.submit(carol, "12345678", "卡罗").outcome, "taken")
-        self.assertEqual(bindings.submit(carol, "22345678", "卡罗").outcome, "pending")
+        self.assertEqual(bindings.submit(carol, "32345670", "卡罗").outcome, "pending")
         cache.clear()  # the window is over
-        self.assertEqual(bindings.submit(self.user, "12345678", "凯拉").outcome, "taken")
-        self.assertEqual(bindings.submit(self.user, "22345678", "凯拉").outcome, "pending")
+        self.assertEqual(bindings.submit(self.user, "32345670", "凯拉").outcome, "pending")
 
-    def test_only_taken_answers_count(self):
-        """Free QQs (pending / trusted) never use up the "taken" allowance."""
-        put_in_roster(self.group, ["32345678"])
-        self.assertEqual(bindings.submit(self.user, "22345678", "凯拉").outcome, "pending")
-        self.assertEqual(bindings.submit(self.user, "32345678", "凯拉").outcome, "trusted")
-        self.assertIsNone(cache.get(f"qqbot:taken:{self.user.pk}"))
+    def test_qq_try_window_is_fixed(self):
+        """The window starts at the first try; later tries do not extend it."""
+        start = timezone.now()
+        bindings.submit(self.user, "22345670", "凯拉", now=start)
+        later = start + timedelta(minutes=30)
+        bindings.submit(self.user, "22345671", "凯拉", now=later)
+        tried = cache.get(f"qqbot:qq-tries:{self.user.pk}")
+        self.assertEqual(tried["qqs"], ["22345670", "22345671"])
+        self.assertEqual(tried["start"], start.timestamp())
+        ttl = cache.ttl(f"qqbot:qq-tries:{self.user.pk}")
+        self.assertLessEqual(ttl, bindings.CODE_RATE_WINDOW)
 
-    def test_taken_rate_limit_keeps_nickname_updates(self):
+    def test_qq_try_limit_keeps_nickname_updates(self):
         """Changing only the nickname of the current QQ is no guess at others."""
         bind(self.user, "52345678", nickname="旧")
-        self.exhaust_taken()
-        self.assertEqual(bindings.submit(self.user, "12345678", "凯拉").outcome, "rate_limited")
+        self.exhaust_tries()
+        self.assertEqual(bindings.submit(self.user, "32345670", "凯拉").outcome, "rate_limited")
         r = bindings.submit(self.user, "52345678", "新")
         self.assertEqual((r.ok, r.outcome), (True, "nickname_updated"))
         self.assertEqual(bindings.submit(self.user, "52345678", "新").outcome, "unchanged")

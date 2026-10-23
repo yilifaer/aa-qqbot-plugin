@@ -448,9 +448,16 @@ class AfterCommitTests(TestCase):
         self.assertFalse(User.objects.get(pk=self.user.pk).is_active)
 
     def test_receiver_failure_never_propagates(self):
+        from ..service_hook import logger as service_logger
+
+        # AA calls the service hook's sync_nickname on the character save;
+        # its failure log is expected too (and kept out of the test output).
+        # AA 在保存角色时会调用服务钩子的 sync_nickname；它的失败日志也是预期的
+        # （同时不让它出现在测试输出里）。
         with mock.patch.object(
             signals, "schedule_refresh_user", side_effect=RuntimeError("boom")
-        ), self.assertLogs(signals.logger, "ERROR") as logs:
+        ), self.assertLogs(signals.logger, "ERROR") as logs, \
+                self.assertLogs(service_logger, "ERROR"):
             self.user.is_active = False
             self.user.save()
             state_changed.send(sender=UserProfile, user=self.user, state=None)

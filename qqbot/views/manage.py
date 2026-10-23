@@ -30,7 +30,7 @@ from .. import __version__, tasks
 from ..core import attention, audit, bindings, cards, eligibility, events
 from ..core.roster import fresh_roster_cutoff, unbound_roster
 from ..i18n import ui_language_view
-from ..models import AuditLog, Binding, Config, QQGroup, RosterEntry
+from ..models import AuditLog, Binding, Config, QQGroup, RosterEntry, normalize_qq
 from .manage_forms import (
     AuditFilterForm,
     BindingFilterForm,
@@ -435,6 +435,14 @@ def binding_detail(request, pk):
 @ui_language_view
 def binding_card(request, pk):
     binding = _get_binding(pk)
+    # Also checked before the form: an invalid card re-renders the page with
+    # the binding's current QQ, so the next attempt would no longer be
+    # recognised as coming from a stale page.
+    # 在校验表单之前也检查一次：群名片无效时页面会用绑定当前的 QQ 重新显示，
+    # 下一次提交就认不出是来自过期的页面了。
+    if normalize_qq(request.POST.get("qq", "")) != binding.qq:
+        _message(request, bindings.Result(False, "qq_changed", str(bindings.MSG_QQ_CHANGED)))
+        return redirect("qqbot:manage_binding", pk=binding.pk)
     if request.POST.get("action") == "clear":
         form = CardOverrideForm({"card": ""})
     else:
@@ -692,6 +700,9 @@ DETAIL_KEY_LABELS = {
     "roster_max_age_days": _("Member list max age (days)"),
     "trusted_window_days": _("Trusted binding window (days)"),
     "rebind_cooldown_hours": _("Change QQ cooldown (hours)"),
+    # Written by qqbot_erase (core/privacy.py).
+    # 由 qqbot_erase 写入（core/privacy.py）。
+    "erased": _("Personal data erased"),
 }
 DETAIL_VALUE_LABELS = {
     "create": _("Created"),
