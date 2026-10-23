@@ -1080,11 +1080,13 @@ class LockOrderTests(BaseTestCase):
         self.assertEqual(bindings.claim("12345678", r.code).outcome, "claimed")
         self.assertLockOrder(self.user, {"12345678", "11111111"})
 
-    def test_claim_mismatch_takes_no_qq_lock(self):
+    def test_claim_mismatch_same_order(self):
+        """The QQ locks come before the code row even when the code turns out
+        to be for another QQ (qqbot_erase locks the QQ, then code rows)."""
         r = bindings.submit(self.user, "12345678", "凯拉")
         self.calls.clear()
         self.assertEqual(bindings.claim("22345678", r.code).outcome, "qq_mismatch")
-        self.assertEqual(self.kinds(), ["user"])
+        self.assertLockOrder(self.user, {"22345678"})
 
     def test_unbind_cancel_nickname(self):
         bind(self.user, "12345678")

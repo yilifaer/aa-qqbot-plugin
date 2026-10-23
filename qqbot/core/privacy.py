@@ -20,6 +20,7 @@ that name the person are cleared from them.
 from dataclasses import dataclass
 
 from django.contrib.auth.models import User
+from django.core.cache import cache
 from django.db import transaction
 from django.db.models import Q
 
@@ -27,6 +28,7 @@ from allianceauth.services.hooks import get_extension_logger
 
 from ..models import AuditLog, Binding, BindCode, Event, RosterEntry
 from . import events, locks
+from .bindings import _qq_tries_key
 
 logger = get_extension_logger(__name__)
 
@@ -320,6 +322,16 @@ def erase(person: Person) -> dict:
             # （不带 QQ），让机器人尽快把所有群重新检查一遍。
             events.emit(Event.Kind.RECHECK_ALL)
         counts["roster"], _ = _roster(person).delete()
+    if person.user is not None:
+        # The QQ numbers this user tried on the card (QQ try limit); they
+        # would expire within an hour anyway. A cache error must not fail
+        # the command after the database part is done.
+        # 这个用户在卡片上试过的 QQ 号（QQ 尝试次数限制）；本来一小时内也会过期。
+        # 数据库部分已经完成，缓存出错不能让命令失败。
+        try:
+            cache.delete(_qq_tries_key(person.user))
+        except Exception:
+            logger.exception("qqbot erase: could not clear the QQ try list")
     # Counts only: the log must not keep the QQ or the username.
     # 只记数量：日志里不能留下 QQ 或用户名。
     logger.info(

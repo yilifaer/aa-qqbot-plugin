@@ -543,18 +543,24 @@ def claim(qq, text, now=None) -> ClaimResult:
 
 def _claim(qq_n, code_hash, now) -> ClaimResult:
     with transaction.atomic():
-        # Find the code's owner without locking the code row, so the user
-        # lock can be taken first (same order as submit / unbind).
-        # 先不锁验证码行，只查出验证码属于哪个用户，这样可以先拿用户锁
-        # （和 submit / unbind 的加锁顺序相同）。
+        # Find the code's owner without locking the code row, so the locks
+        # can be taken in the usual order: user, then QQs, then rows (as in
+        # submit / unbind / qqbot_erase, which locks the QQ and then deletes
+        # other users' code rows for it).
+        # 先不锁验证码行，只查出验证码属于哪个用户，这样可以按通常的顺序加锁：
+        # 先用户，再 QQ，最后数据行（和 submit / unbind / qqbot_erase 一样；
+        # qqbot_erase 会先锁 QQ，再删除别的用户为这个 QQ 申请的验证码行）。
         owner = list(
             BindCode.objects.filter(code_hash=code_hash).values_list("user_id", flat=True)[:1]
         )
         if not owner:
             return ClaimResult(False, "code_invalid", "验证码不存在。", qq=qq_n)
         locks.lock_user(owner[0])
+        # The owner's current QQ cannot change while we hold the user lock.
+        # 持有用户锁期间，这个用户当前的 QQ 不会变。
+        locks.lock_qqs(qq_n, _current_qq(owner[0]))
         bc = BindCode.objects.select_for_update().filter(code_hash=code_hash).first()
-        if bc is None:
+        if bc is None or bc.user_id != owner[0]:
             return ClaimResult(False, "code_invalid", "验证码不存在。", qq=qq_n)
         if bc.used_at is not None or bc.invalidated_at is not None:
             return ClaimResult(False, "code_used", "验证码已使用或已作废。", qq=qq_n)
@@ -572,7 +578,6 @@ def _claim(qq_n, code_hash, now) -> ClaimResult:
                 False, "qq_mismatch", "申请人的 QQ 与验证码登记的 QQ 不一致，验证码已作废。",
                 qq=qq_n,
             )
-        locks.lock_qqs(qq_n, _current_qq(bc.user_id))
         updated = BindCode.objects.filter(
             pk=bc.pk, used_at__isnull=True, invalidated_at__isnull=True
         ).update(used_at=now)

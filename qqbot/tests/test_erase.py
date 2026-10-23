@@ -7,6 +7,7 @@ from datetime import timedelta
 from io import StringIO
 from unittest import mock
 
+from django.core.cache import cache
 from django.core.management import call_command
 from django.core.management.base import CommandError
 from django.test import TestCase
@@ -266,6 +267,20 @@ class EraseTests(TestCase):
                          {"op": "update", "via": "admin", "group_id": int(QQ), "name": "Main",
                           "qq_text": QQ})
         self.assertEqual(self.row(conflict).detail["others"], ["[erased]"])
+
+    def test_clears_the_users_qq_try_list(self):
+        bindings.submit(self.alice, "45678901", "凯拉")
+        key = f"qqbot:qq-tries:{self.alice.pk}"
+        self.assertIsNotNone(cache.get(key))
+        erase("--user", "alice", "--noinput")
+        self.assertIsNone(cache.get(key))
+
+    def test_cache_error_does_not_fail_erase(self):
+        with mock.patch.object(privacy.cache, "delete", side_effect=RuntimeError("down")), \
+                self.assertLogs(privacy.logger, "ERROR"):
+            out = erase("--user", "alice", "--noinput")
+        self.assertIn("Done", out)
+        self.assertEqual(self.row(self.nickname).detail, {"erased": True})
 
     def test_no_recheck_all_without_deleted_events(self):
         before = Event.objects.count()
