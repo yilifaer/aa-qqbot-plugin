@@ -6,7 +6,7 @@ A QQ group membership plugin for Alliance Auth. Members bind their QQ number on 
 
 This is a complete rewrite of [QQMonitor](https://github.com/Leitowow/QQMonitor). No code is shared with it and its bindings are not imported, so everyone binds again.
 
-- Members already in a group: enter your QQ number, no code needed (during the first 30 days after the group is added; configurable)
+- Members already in a group: enter your QQ number, no code needed (during the first 30 days after the group is added; configurable as "Trusted binding window (days)" under QQ Admin → Settings)
 - New members: get a one-time code and put it in the QQ join request
 - QQ managers handle groups, bindings and conflicts on the "QQ Admin" page in the sidebar
 

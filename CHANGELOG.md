@@ -21,7 +21,7 @@
   - 新的可选设置 `QQBOT_AUDIT_RETENTION_DAYS`：每日对账时删除早于这么多天的操作记录。默认 `0`，永久保留，和以前一样；最少 30 天（换绑冷却要读操作记录）。
     填 1–29，或者不是整数、小于 0 的值时，`python manage.py check` 会报新的警告 `qqbot.W003`。设置之后，
     「被强制解绑的 QQ，再绑时必须用验证码」的限制（决定 #25）只在那条强制解绑记录还在的时候有效。每日对账的日志里多了清理掉的旧操作记录条数，
-    手动运行 `python manage.py qqbot_reconcile` 时也会显示（设置了 `QQBOT_AUDIT_RETENTION_DAYS` 才会有）。
+    手动运行 `python manage.py qqbot_reconcile` 时也会显示（没设置 `QQBOT_AUDIT_RETENTION_DAYS` 时是 0 条）。
   - README 和 GUIDE 新增「数据保护」：保存了哪些个人数据、谁能看到、保留多久、哪些数据会离开 AA、怎么处理删除请求。
 - 连不上消息队列（broker）时，修改群名片格式不再在网页请求里直接重算所有绑定：设置照常保存，只记一条错误日志，
   群名片由下一次每日对账，或手动运行 `python manage.py qqbot_reconcile` 时更新（决定 #30）。
@@ -82,7 +82,7 @@
 ## [1.0.0b5] - 2026-09-28
 
 - 修复：绑定过 QQ 的用户在 AA 后台删不掉（超级管理员也不行，单个删和批量删都不行）。现在删除 AA 用户会一并删除他的 QQ 绑定，
-  并通知机器人复查（操作记录里显示「账号已删除」），不需要先解绑。非超级管理员需要 `auth | user | Can delete user`，
+  并通知机器人复查（操作记录里显示「账号删除」），不需要先解绑。非超级管理员需要 `auth | user | Can delete user`，
   外加删除确认页列出的其他删除权限（常见的有 `notifications | notification`、`authentication | character ownership`、
   `authentication | ownership record`、`esi | token`、`groupmanagement | group request`；QQ 绑定不需要单独授权），详见 GUIDE 第 5 节。
   QQ 绑定本身在后台仍然只能看、不能删。
