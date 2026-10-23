@@ -1,15 +1,17 @@
 # aa-qqbot 分步安装说明
 
+[English](GUIDE.en.md) | 简体中文
+
 > 简版安装步骤见 [README](../README.zh-CN.md)。这里是给第一次安装的人看的分步说明，以及常见问题。
 
 [Alliance Auth](https://gitlab.com/allianceauth/allianceauth)（AA）的 QQ 绑定插件：
 **只让 AA 认可的人留在联盟的 QQ 群里。**
 
 - 成员在 AA 里绑定自己的 QQ 号；
-- QQ 机器人（Koishi，另一个仓库）来问 AA：「这个 QQ 能不能进这个群？群名片该叫什么？」；
+- QQ 机器人（Koishi 插件 [koishi-plugin-aaqqbot](https://github.com/yilifaer/Koishi-AAqqbot-plugin)，另一个仓库）来问 AA：「这个 QQ 能不能进这个群？群名片该叫什么？」；
 - 成员离开联盟、账号被停用、换了主角色，AA 都会记下来，机器人下次来取时就知道了。
 
-当前版本：**1.0.1**，更新内容见 [`CHANGELOG.md`](../CHANGELOG.md)。
+当前版本：**1.1.0**，更新内容见 [`CHANGELOG.md`](../CHANGELOG.md)。
 需要 Alliance Auth 5.2～5.5（每个版本都有自动测试）、Python 3.10 及以上。
 
 ---
@@ -26,7 +28,8 @@
 8. [卸载](#8-卸载)
 9. [常见问题](#9-常见问题)
 10. [安全须知](#10-安全须知)
-11. [开发与测试](#11-开发与测试)
+11. [数据保护](#11-数据保护)
+12. [开发与测试](#12-开发与测试)
 
 装好以后在树莓派测试 AA 上逐项点一遍：[`docs/TESTING.md`（树莓派测试清单）](TESTING.md)。
 
@@ -48,7 +51,7 @@
 - 添加、修改、停用 QQ 群，分「固定群」（所有成员都能进）和「身份组小群」（只有指定 AA 组的人能进）；
 - 查看所有绑定，修改某人的群名片，确认绑定，强制解绑；
 - 处理「冲突」（同一个 QQ 被两个账号认领）和「群里有但没绑定」的 QQ；
-- 在「待处理」里复核最近 30 天的免验证绑定，发现冒领别人 QQ 的可以直接强制解绑（强制解绑后，这个人再绑同一个 QQ 必须用验证码，只有真号主能用）；
+- 在「待处理」里复核最近 30 天的免验证绑定（「设置」里的免验证过渡期设得比 30 天长时，按过渡期的天数），发现冒领别人 QQ 的可以直接强制解绑（强制解绑后，这个人再绑同一个 QQ 必须用验证码，只有真号主能用）；
 - 修改入群须知、群名片格式、验证码有效期、群成员名单有效期、换绑冷却等设置；
 - 查看操作记录。
 
@@ -149,12 +152,12 @@ pip show allianceauth django-sri django-esi aa-qqbot | grep -E '^(Name|Version)'
 ### 第 1 步：安装插件
 
 ```bash
-pip install git+https://github.com/yilifaer/aa-qqbot-plugin.git@v1.0.1
+pip install git+https://github.com/yilifaer/aa-qqbot-plugin.git@v1.1.0
 ```
 
-- 最后一行出现 `Successfully installed aa-qqbot-1.0.1` 就装好了（可能还会列出其他包，是 AA 缺的依赖）。
+- 最后一行出现 `Successfully installed aa-qqbot-1.1.0` 就装好了（可能还会列出其他包，是 AA 缺的依赖）。
 - 提示 `Cannot find command 'git'`：先安装 git（见「准备」），或者改用不需要 git 的写法：
-  `pip install https://github.com/yilifaer/aa-qqbot-plugin/archive/refs/tags/v1.0.1.zip`
+  `pip install https://github.com/yilifaer/aa-qqbot-plugin/archive/refs/tags/v1.1.0.zip`
 - 注意：包名是 `aa-qqbot`，只能用上面的 GitHub 地址安装。**不要**运行 `pip install qqbot`：
   PyPI 上的 `qqbot` 是另一个无关的项目，会覆盖本插件的代码。
 
@@ -216,6 +219,7 @@ CELERYBEAT_SCHEDULE["qqbot_reconcile"] = {
 | `QQBOT_API_RATE_LIMIT` | `120` | 每个密钥每分钟最多请求多少次；`0` 表示不限制 |
 | `QQBOT_API_MAX_SKEW` | `300` | 机器人和 AA 的时间最多可以差多少秒 |
 | `QQBOT_API_MAX_BODY` | `262144` | 一次请求最大多少字节（256 KB） |
+| `QQBOT_AUDIT_RETENTION_DAYS` | `0` | 操作记录（审计日志）保留多少天，每日对账时删除更早的；`0` 表示永久保留（1.1.0 起）。最少 30 天，填 1–29 按 30 天算，因为换绑冷却要读操作记录；被删除的记录所记录的限制（例如被强制解绑后必须用验证码）也随之失效。见第 11 节 |
 
 ### 第 4 步：检查配置
 
@@ -236,6 +240,7 @@ python manage.py check
 | `qqbot.E004` | 有密钥编号格式不对（有空格、中文，或超过 64 个字符），机器人用它发的请求会一直被拒绝 | 改成 `koishi-1` 这样的英文名字，机器人那边同步修改 |
 | `qqbot.W001` | 缓存不是 Redis 这类多进程共享的缓存。AA 本身就要求 Redis 缓存，所以基本不会出现 | 检查 `local.py` 有没有改过 `CACHES` |
 | `qqbot.W002` | `CELERYBEAT_SCHEDULE` 里没有每日对账任务，每日对账不会自动运行 | 按第 3 步加上 `CELERYBEAT_SCHEDULE["qqbot_reconcile"]` 那几行。如果是在后台「Periodic tasks」里手动添加的，可以忽略 |
+| `qqbot.W003` | `QQBOT_AUDIT_RETENTION_DAYS` 既不是 0，也不是不小于 30 的整数（1.1.0 起）。填 1–29 会按 30 天处理；不是整数（例如写成了字符串 `"365"`）或小于 0 时被忽略，操作记录永久保留 | 改成 `0`（永久保留）或不小于 30 的整数，例如 `365`；不打算限制保留时间就删掉这一行 |
 
 ### 第 5 步：建立数据表
 
@@ -307,7 +312,7 @@ sudo supervisorctl status             # 每一行都应该是 RUNNING
 
 ### 用 Docker 安装的 AA
 
-把 `git+https://github.com/yilifaer/aa-qqbot-plugin.git@v1.0.1` 加进 `conf/requirements.txt`，第 3 步那段写进 `conf/local.py`，
+把 `git+https://github.com/yilifaer/aa-qqbot-plugin.git@v1.1.0` 加进 `conf/requirements.txt`，第 3 步那段写进 `conf/local.py`，
 然后按 AA 的 Docker 文档重新构建镜像，并在容器里执行 `python manage.py check` 和 `python manage.py migrate`。
 
 ---
@@ -318,6 +323,8 @@ sudo supervisorctl status             # 每一行都应该是 RUNNING
 
 1. AA 的 `local.py` 里的 `QQBOT_API_KEYS`；
 2. 机器人（Koishi）的插件配置。
+
+密钥编号不是秘密，但也不要让人容易猜到。
 
 **不停机换密钥**：先在 `QQBOT_API_KEYS` 里**加上**新密钥（旧的先留着）→ 重启 AA → 机器人改用新密钥 →
 确认机器人正常后，再把旧密钥删掉并重启 AA。例如过渡期间：
@@ -374,7 +381,7 @@ QQBOT_API_KEYS = {
 | 页面 | 地址 | 谁能看 |
 |---|---|---|
 | QQ 绑定卡片（绑定、验证码、群号、改昵称、换绑、解绑） | 左侧菜单「服务（Services）」→「QQ 绑定」卡片，地址 `/services/`。成员没有单独的页面，也没有单独的菜单项；旧地址 `/qqbot/` 会自动跳到这张卡片 | 成员 |
-| QQ 管理（群、已绑定成员、待处理、设置、操作记录） | 左侧菜单「QQ 管理」（只有有主角色的管理员看得到），或 QQ 绑定卡片底部的「QQ 管理」按钮，地址 `/qqbot/manage/`。「待处理」里还有最近 30 天的免验证绑定，给管理员复核 | QQ 管理员 |
+| QQ 管理（群、已绑定成员、待处理、设置、操作记录） | 左侧菜单「QQ 管理」（只有有主角色的管理员看得到），或 QQ 绑定卡片底部的「QQ 管理」按钮，地址 `/qqbot/manage/`。「待处理」里还有最近 30 天的免验证绑定（过渡期设得比 30 天长时按过渡期的天数，1.1.0 起），给管理员复核 | QQ 管理员 |
 | Django 后台 | `/admin/` 里的「QQ 绑定」 | 超级管理员（绑定和操作记录在后台只能看不能改，改动请走前台；删除 AA 用户时绑定会跟着删除，见下） |
 
 **红色数字**：侧边栏「QQ 管理」旁边和卡片上「QQ 管理」按钮上的红色数字 = 冲突的 QQ 数 + 没选 AA 组的启用中身份组小群数，
@@ -405,6 +412,8 @@ python manage.py qqbot_reconcile
   确认页顶部如果提示「你的账号没有权限删除以下类型的对象：…」，就照着把列出的删除权限补给这个账号
   （用超级管理员账号在后台「用户」或「组」里加）。QQ 绑定不需要单独授权（1.0.0b5 起）。
 
+**改群名片格式**：在「QQ 管理」→「设置」里改了群名片格式后，插件把「重新计算所有人的群名片」交给 Celery 后台去做。连不上消息队列（broker，一般是 Redis）时，1.1.0 起不会再在这次网页请求里直接计算（原来会）：设置已经保存，日志里会有一条 `qqbot: could not queue reconcile` 错误，群名片等下一次每日对账，或者在服务器上手动运行 `python manage.py qqbot_reconcile` 时再更新。在 Django 后台改 Config 也一样。
+
 **同步昵称动作**：后台「Users」列表的动作「Sync nicknames for selected QQ binding accounts」会立刻重算所选用户的群名片并通知机器人，
 可以放心用；这个英文名字是 AA 生成的，改不了。
 
@@ -420,13 +429,13 @@ python manage.py qqbot_reconcile
 
 ## 6. 机器人那边怎么接
 
-机器人（Koishi 插件）在另一个仓库。写机器人或管理机器人的人需要这 4 样东西：
+机器人是 Koishi 插件 [koishi-plugin-aaqqbot](https://github.com/yilifaer/Koishi-AAqqbot-plugin)（[npm](https://www.npmjs.com/package/koishi-plugin-aaqqbot)），在另一个仓库。写机器人或管理机器人的人需要这 4 样东西：
 
 1. **接口地址**：AA 的网址加 `/qqbot/api/v1/`，例如 `https://auth.example.com/qqbot/api/v1/`。
    AA 装在子路径下时要带上前缀，例如 `https://example.com/auth/qqbot/api/v1/`。
 2. **密钥编号**：`QQBOT_API_KEYS` 里的名字，例如 `koishi-1`。
 3. **密钥**：第 2 节第 2 步生成的那一串。请当面给，或者用密码管理器交接；不要发在群里、聊天记录、截图或 issue 里。
-4. **接口文档**：本仓库的 [`API.md`](../API.md)；新开 Koishi 项目时先读 [`KOISHI_START.md`](../KOISHI_START.md)，再读 `API.md`。
+4. **接口文档**：本仓库的 [`API.md`](../API.md)。[`KOISHI_START.md`](../KOISHI_START.md) 是当初写 Koishi 插件时的开工说明，现在只作背景参考。
 
 机器人第一次连上后应该先调用 `health`：返回 `ok: true`、`config_ok: true` 就说明网络、密钥和签名都通了。
 
@@ -438,7 +447,7 @@ python manage.py qqbot_reconcile
 
 ```bash
 # 在 AA 虚拟环境里、myauth 目录下（见第 2 节第 0 步）
-pip install --upgrade --force-reinstall --no-deps git+https://github.com/yilifaer/aa-qqbot-plugin.git@v1.0.1   # 升级到新版本时把 v1.0.1 换成新版本号
+pip install --upgrade --force-reinstall --no-deps git+https://github.com/yilifaer/aa-qqbot-plugin.git@v1.1.0   # 升级到新版本时把 v1.1.0 换成新版本号
 pip freeze | grep aa-qqbot
 python manage.py check
 python manage.py migrate
@@ -455,7 +464,7 @@ sudo supervisorctl restart myauth:
   `--no-deps` 表示不去动 AA 和其他依赖。
 - `pip freeze | grep aa-qqbot` 会显示 `aa-qqbot @ git+https://…@<提交号>`，可以确认装的是哪一次提交；
   `pip show aa-qqbot` 显示版本号。更新内容见 [`CHANGELOG.md`](../CHANGELOG.md)，里面如果提到新的设置项，按说明加进 `local.py`。
-- 不用 git 时，把地址换成 `https://github.com/yilifaer/aa-qqbot-plugin/archive/refs/tags/v1.0.1.zip`，其余相同。
+- 不用 git 时，把地址换成 `https://github.com/yilifaer/aa-qqbot-plugin/archive/refs/tags/v1.1.0.zip`，其余相同。
 
 ---
 
@@ -533,6 +542,10 @@ sudo supervisorctl restart myauth:
 | AA 5.2.0：成员换了军团或联盟后，群名片里的简称一直是旧的 | AA 5.2.0 更新角色归属时，如果中途查询 ESI 出错，会留下新的军团编号和旧的简称（5.3 起改成一次保存，已修复）；入群资格按编号判断，不受影响 | 把 AA 升到 5.3 或更高；或者在后台「Characters」列表里选中这个角色，执行 AA 自带的更新角色动作 |
 | 后台删用户时提示没有权限删除其他类型的对象（通知、角色归属、ESI token 等） | 非超级管理员要有确认页列出的每一种删除权限 | 第 5 节「删除 AA 用户」 |
 | 点「服务」或「QQ 管理」被跳回首页，顶部红字「只有主要角色才能执行这个操作。在下面添加一个」 | 账号没设主角色：AA 5.x 在 qqbot 的代码运行之前就把这样的用户从「服务」页和所有插件页面跳回 `/dashboard/` | 在首页添加角色并设为主角色。这期间成员自己不能解绑、改昵称，需要时由 QQ 管理员强制解绑 |
+| 改了群名片格式，群名片没变；日志里有 `qqbot: could not queue reconcile` | 重新计算所有人的群名片要交给 Celery 后台，而 AA 连不上消息队列（broker，一般是 Redis）。1.1.0 起这时只记错误日志，不会在网页请求里直接算；设置本身已经保存 | 修好 Redis / celery 的连接，然后在服务器上运行 `python manage.py qqbot_reconcile`，或者等下一次每日对账 |
+| 成员看到「尝试太频繁，请稍后再试」（英文 "Too many attempts. Please try again later."） | 填别人已经绑定的 QQ 时会提示「该 QQ 已被绑定」，同一个成员每小时最多被这样告知 5 次（1.1.0 起）；达到上限后，他再填任何别的 QQ（不管空闲还是已被绑定）都得到这同一句话，这样没人能靠一个个试 QQ 摸清联盟里有哪些人。填自己当前的 QQ 不受影响 | 等一小时（从第一次被告知「已被绑定」算起）再试；确实需要这个 QQ 的话，联系 QQ 管理员 |
+| 日志里有 `qqbot: API … refused (…) from …` 警告 | 接口请求被拒绝了（401、413、429 或 503）：密钥或签名不对、时间差太大、请求太大、太频繁，或 AA 这边没配好 | 对照 [`API.md`](../API.md) 第 6 节看括号里的错误代码。日志里只会写已配置过的密钥编号（没带写 `(none)`，没配置过的写 `(unknown key id)`），同一个错误代码、同一个来源地址每分钟最多记一行（1.1.0 起）；AA 在 nginx 或隧道后面时来源地址是代理的地址，那就是每个错误代码每分钟一行，真正的客户端看后面的 `X-Forwarded-For` 等代理头 |
+| 有人要求删除他的个人数据 | 插件保存了哪些数据、保留多久，见第 11 节 | 第 11.4 节：先让他解绑（或强制解绑、删除 AA 用户），再运行 `python manage.py qqbot_erase --qq <QQ> --user <用户名>`；先加 `--dry-run` 看看会改动什么 |
 | 机器人收到 `302` 或登录网页 | `APPS_WITH_PUBLIC_VIEWS` 里没有 `"qqbot"`（`qqbot.E001`） | 在 `local.py` 里**追加**，然后重启 |
 | 机器人收到 `400` 网页（Bad Request） | 机器人访问用的地址（例如树莓派的局域网 IP）不在 `ALLOWED_HOSTS` 里 | 机器人用 `SITE_URL` 里的域名访问；或者在 `local.py` 末尾加 `ALLOWED_HOSTS += ["192.168.x.x"]`（换成实际 IP）后重启 |
 | 机器人收到 `301` | 网址末尾少了 `/`，或者用 http 访问了只允许 https 的站 | 网址以 `/` 结尾，用 https |
@@ -555,10 +568,103 @@ sudo supervisorctl restart myauth:
 - 「真的把人踢出群」的开关只在机器人那边；AA 网页上的任何操作都不会直接踢人。
 - 正式环境必须用 HTTPS，并保持 `DEBUG = False`。
 - 截图、issue、聊天记录里不要出现真实的群号、QQ 号、服务器地址。
+- 插件保存了哪些个人数据、保留多久、收到删除请求怎么办，见第 11 节。
 
 ---
 
-## 11. 开发与测试
+## 11. 数据保护
+
+本节回答三件事：插件保存了哪些关于人的数据、谁能看到、保留多久；哪些数据会离开 AA；收到「请删除我的数据」时怎么处理。
+简版见 [README](../README.zh-CN.md#数据保护)。
+
+### 11.1 保存了什么、谁能看到、保留多久
+
+| 数据 | 存在哪里 | 涉及谁 | 谁能看到 | 保留多久 |
+|---|---|---|---|---|
+| QQ 号、昵称、状态（已验证 / 老成员免验证）、管理员指定的群名片、绑定时间 | 绑定 | 成员 | 成员本人在卡片里看到自己的 QQ（部分打码）；QQ 管理员在「QQ 管理」里看到完整 QQ；超级管理员还能在 Django 后台只读查看 | 解绑为止；删除 AA 用户时一并删除 |
+| 申请验证码时填的 QQ（**可能是别人的 QQ**）、昵称、验证码的哈希（不存明文） | 验证码申请 | 成员，以及被填写了 QQ 的人 | 只有成员本人能在卡片里看到自己待验证的验证码；管理员页面和 Django 后台都不显示 | 验证码过期、被使用或被作废 7 天后删除（只在每日对账运行时）；删除 AA 用户时一并删除 |
+| 机器人上报的每个受管群的完整成员名单：群里所有人的 QQ | 群成员名单 | 成员**和没有 AA 账号的群成员** | QQ 管理员，在「待处理」的「未绑定」列表里看到完整 QQ | 到机器人下一次上报这个群的完整名单为止（名单里没有的 QQ 随即删除），或者这个群被删除为止 |
+| 每次变更的类型和 QQ | 事件发件箱 | 成员 | 机器人（`events` 接口） | 30 天（只在每日对账运行时删除） |
+| 谁在什么时候对哪个 QQ 做了什么：操作者和目标用户的用户名、QQ；详情里可能有昵称的新旧值、换绑前的 QQ、其他认领者的用户名、拿别人验证码来申请的人的 QQ | 操作记录（审计日志） | 成员、管理员，以及外人 | QQ 管理员（「QQ 管理」→「操作记录」和绑定详情页）；超级管理员（Django 后台，只读） | 默认永久，删除 AA 用户后也保留（记录里另存了一份用户名）；设了 `QQBOT_AUDIT_RETENTION_DAYS` 就在每日对账时删除更早的 |
+| 成员刚填写的验证码明文、QQ、昵称 | AA 的 session（默认存数据库，并用缓存加速） | 成员 | 只显示给成员本人 | 到卡片发现验证码已经失效（过期、取消或用掉）为止，或者 session 结束为止；操作结果提示最多保留 5 分钟 |
+| 用户名、打码的 QQ 号；被拒绝的接口请求还有来源 IP、代理头和密钥编号 | AA 的日志文件 | 成员、调用接口的人 | 能读 AA 日志文件的管理员 | 按 AA 的日志配置（日志轮转） |
+
+要点：
+
+- **事件和过期的验证码只在每日对账运行时才会删除**（第 2 节第 3 步的 `qqbot_reconcile` 定时任务，或手动运行 `python manage.py qqbot_reconcile`）。没有安排每日对账的站点，这两种数据会一直累积（`python manage.py check` 会报 `qqbot.W002`）。
+- 群成员名单里有**没有 AA 账号的人**的 QQ：他们不在任何绑定里，也没有自己能操作的地方；要删除只能用第 11.4 节的命令（`--qq` 就够了）。机器人下一次上报该群的完整名单时，已经退群的人才会从名单里消失。
+- 操作记录里的 QQ 和用户名是明文。QQ 管理员和超级管理员能看到，数据库备份里也有。
+
+### 11.2 哪些数据离开 AA
+
+- 机器人问到某个 QQ（`check`、`claim`）时，AA 回答**判定结果和原因**；已绑定成员还会给出**群名片**（军团简称、角色名、昵称）。
+- 机器人取事件（`events`）时，拿到变更类型和 QQ。
+- 机器人向 AA 上报群成员名单（QQ）和入群申请的 QQ 与验证信息原文。AA 只从原文里找验证码，不保存原文。
+- 机器人那边保存了什么、保存多久，由机器人（[koishi-plugin-aaqqbot](https://github.com/yilifaer/Koishi-AAqqbot-plugin)）自己决定，不在本插件管辖范围；收到删除请求时也要去那边处理。
+
+### 11.3 限制操作记录的保留时间（可选）
+
+操作记录默认永久保留。想限制的话，在 `local.py` 里加一行（第 2 节第 3 步那一段里）：
+
+```python
+QQBOT_AUDIT_RETENTION_DAYS = 365
+```
+
+重启 AA 后，每日对账会删除早于这么多天的操作记录（对账日志里有一行 `… old audit log entries pruned`）。
+
+- **最少 30 天**：填 1–29 按 30 天处理，因为换绑冷却（最长 720 小时，也就是 30 天）要读操作记录。`python manage.py check` 会为这两种情况报 `qqbot.W003`；不是整数或小于 0 的值会被忽略，操作记录继续永久保留。
+- 被删除的记录所记录的限制也跟着失效：被管理员强制解绑过某个 QQ 的成员，再绑这个 QQ 必须用验证码（决定 #25），这条限制只在那条强制解绑的记录还在时有效；过了保留期，他可以再次走老成员免验证。这是有意的取舍（决定 #32）。
+- 想永久保留就不要设置，或者设成 `0`。
+
+### 11.4 处理删除请求
+
+收到「请删除我的数据」后：
+
+1. **先去掉绑定。** 命令在这个 QQ 或这个用户还有绑定时拒绝执行（这样机器人已经收到「失去资格」的通知）。三种办法任选其一：成员自己在卡片里解绑；QQ 管理员在「QQ 管理」→「已绑定成员」里强制解绑；或者在 AA 后台删除这个用户（绑定会跟着一起删除，**不需要先解绑**）。
+2. 在服务器上（第 2 节第 0 步的虚拟环境里）先试运行，看看会改动什么：
+
+   ```bash
+   python manage.py qqbot_erase --qq 12345678 --user some-username --dry-run
+   ```
+
+3. 确认无误后去掉 `--dry-run` 再运行，输入 `yes` 确认：
+
+   ```bash
+   python manage.py qqbot_erase --qq 12345678 --user some-username
+   ```
+
+选项：
+
+| 选项 | 说明 |
+|---|---|
+| `--qq` | 此人的 QQ 号 |
+| `--user` | 此人的 AA 用户名。AA 用户已经被删除后也能用：操作记录里另存了一份用户名，命令按它匹配 |
+| `--dry-run` | 只显示会改动多少条，不做任何修改 |
+| `--noinput`（`--no-input`） | 不要求输入 `yes` 确认（脚本里用） |
+
+`--qq` 和 `--user` 至少给一个；两个都给最彻底（只给一个时，只会处理能凭这一个找到的记录）。
+
+命令在**一个事务里**做这些事，任何一步出错都不会改动数据：
+
+- 关于此人的操作记录（QQ、目标用户是他）：去掉 QQ、目标用户和用户名，详情整个换成 `{"erased": true}`；记录本身留下，「QQ 管理」→「操作记录」里看到的是空白的 QQ 和目标；
+- 此人作为操作者的记录（例如他自己的绑定、改昵称）：去掉操作者；
+- 其他记录详情里出现的他的 QQ 或用户名（例如别人认领同一个 QQ 时「其他认领者」里的名字）：换成 `[erased]`；
+- 删除他的验证码申请、事件、群成员名单记录。
+
+做完之后：
+
+- **换绑冷却和强制解绑限制都不再认识这个人**，因为这两项都是读操作记录的：他被强制解绑过的 QQ，再绑时不再要求验证码；他自己解绑后还没走完的换绑冷却也不再计算。
+- 命令**不会**删除 AA 用户本身、日志文件、数据库备份，也不会删除机器人那边保存的数据。日志里只有用户名和打码的 QQ 号，随日志轮转清除。
+- 如果此人还在受管的 QQ 群里，机器人下一次上报该群的完整名单时，会再次报告他的 QQ，名单里又会有这个号。要让它真正消失，需要他先退出群。
+
+### 11.5 日志里的 QQ 号和被拒绝的请求
+
+- 日志里的 QQ 号都是打码的：9 位及以上保留前 2 位和后 2 位（`123456789` → `12*****89`），5–8 位只保留第一位和最后一位（`12345678` → `1******8`），4 位及以下全部打码（1.1.0 起；原来 5–8 位会露出前后各 2 位）。服务页卡片上的 QQ 也用同样的规则。
+- 接口请求被拒绝（401、413、429、503）时记一行 WARNING，内容有错误代码、来源地址、`X-Forwarded-For` / `X-Real-IP` / `CF-Connecting-IP`（各最多 100 个字符，只用于排查）和密钥编号。密钥编号只记 `QQBOT_API_KEYS` 里配置过的；没带写 `(none)`，其他一律写 `(unknown key id)`，所以误填进这个请求头的密钥不会进日志。同一个错误代码、同一个来源地址每分钟最多记一行（1.1.0 起）。
+
+---
+
+## 12. 开发与测试
 
 需要：Python 3.10+、本机运行的 Redis（测试默认用 Redis 的第 15 号库）。
 

@@ -2,12 +2,12 @@ from datetime import timedelta
 from unittest import mock
 
 from django.db import connection
-from django.test import TestCase
+from django.test import TestCase, override_settings
 from django.test.utils import CaptureQueriesContext
 from django.utils import timezone
 
 from ..core import codes, events
-from ..models import Binding, BindCode, Config, Event, QQGroup
+from ..models import AuditLog, Binding, BindCode, Config, Event, QQGroup
 from .utils import add_to_groups, bind, create_group, create_member
 
 
@@ -270,8 +270,44 @@ class PruneTests(TestCase):
         live = code(expires_at=now + timedelta(minutes=5))
 
         result = events.prune(now=now)
-        self.assertEqual(result, {"events": 1, "codes": 3})
+        self.assertEqual(result, {"events": 1, "codes": 3, "audit": 0})
         self.assertEqual(list(Event.objects.values_list("pk", flat=True)), [new_event.pk])
         remaining = set(BindCode.objects.values_list("pk", flat=True))
         self.assertEqual(remaining, {recent_expired.pk, live.pk})
         self.assertFalse({old_expired.pk, old_used.pk, old_invalidated.pk} & remaining)
+
+    def audit_rows(self, now, *ages):
+        rows = []
+        for days in ages:
+            row = AuditLog.objects.create(action=AuditLog.Action.BIND, qq="12345678")
+            AuditLog.objects.filter(pk=row.pk).update(created_at=now - timedelta(days=days))
+            rows.append(row.pk)
+        return rows
+
+    def test_prune_keeps_audit_log_by_default(self):
+        now = timezone.now()
+        self.audit_rows(now, 400, 31)
+        for value in (0, -5, "90", 90.0, True, None):
+            with self.subTest(value=value), override_settings(QQBOT_AUDIT_RETENTION_DAYS=value):
+                self.assertEqual(events.prune(now=now)["audit"], 0)
+        # setting absent / 没有这个设置
+        self.assertEqual(events.prune(now=now)["audit"], 0)
+        self.assertEqual(AuditLog.objects.count(), 2)
+
+    @override_settings(QQBOT_AUDIT_RETENTION_DAYS=90)
+    def test_prune_audit_log_retention(self):
+        now = timezone.now()
+        _old, kept = self.audit_rows(now, 91, 89)
+        self.assertEqual(events.prune(now=now)["audit"], 1)
+        self.assertEqual(list(AuditLog.objects.values_list("pk", flat=True)), [kept])
+
+    def test_prune_audit_log_at_least_30_days(self):
+        # The rebind cooldown (up to 720 hours) reads the audit log.
+        # 换绑冷却（最长 720 小时）要读审计日志。
+        now = timezone.now()
+        for value in (1, 29, 30):
+            AuditLog.objects.all().delete()
+            _old, kept = self.audit_rows(now, 31, 29)
+            with self.subTest(value=value), override_settings(QQBOT_AUDIT_RETENTION_DAYS=value):
+                self.assertEqual(events.prune(now=now)["audit"], 1)
+                self.assertEqual(list(AuditLog.objects.values_list("pk", flat=True)), [kept])

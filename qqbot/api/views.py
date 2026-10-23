@@ -6,6 +6,9 @@ functions' names must match ``auth_hooks.PUBLIC_VIEWS``; :func:`api_endpoint`
 keeps them via ``functools.wraps`` so ``URLPattern.lookup_str`` stays
 ``qqbot.api.views.<name>``.
 
+Refused requests (401 / 413 / 429 / 503) are logged at WARNING, at most once
+per error code and REMOTE_ADDR a minute, and never with the raw key header.
+
 All data changes go through :mod:`qqbot.core`.
 
 机器人接口（见 docs/SPEC.md 第 4 节；接口约定见 API.md）。
@@ -15,12 +18,16 @@ All data changes go through :mod:`qqbot.core`.
 ``auth_hooks.PUBLIC_VIEWS`` 一致；``api_endpoint`` 用 ``functools.wraps``
 保留原函数名，所以 ``URLPattern.lookup_str`` 仍是 ``qqbot.api.views.<name>``。
 
+被拒绝的请求（401 / 413 / 429 / 503）记 WARNING 日志，同一个错误代码和 REMOTE_ADDR
+每分钟最多一行，而且从不原样记录密钥请求头。
+
 所有数据修改都经过 ``qqbot.core``。
 """
 
 import json
 from functools import wraps
 
+from django.core.cache import cache
 from django.core.exceptions import RequestDataTooBig
 from django.http import JsonResponse
 from django.utils import timezone
@@ -40,9 +47,9 @@ logger = get_extension_logger(__name__)
 
 # Proxy headers logged next to REMOTE_ADDR (behind nginx or a tunnel that is
 # always 127.0.0.1). For log lines only: they can be forged, so they are
-# never used for authentication, rate limits or any decision.
+# never used for authentication, rate limits, the log throttle or any decision.
 # 和 REMOTE_ADDR 一起记进日志的代理头（AA 在 nginx 或隧道后面时，REMOTE_ADDR
-# 永远是 127.0.0.1）。只用于日志：它们可以伪造，绝不用于认证、限速或任何判断。
+# 永远是 127.0.0.1）。只用于日志：它们可以伪造，绝不用于认证、限速、日志限流或任何判断。
 _FORWARDED_HEADERS = ("X-Forwarded-For", "X-Real-IP", "CF-Connecting-IP")
 
 
@@ -59,6 +66,50 @@ def _client_for_log(request) -> str:
         if value:
             parts.append(f"{name}={value[:100]!r}")
     return " ".join(parts)
+
+
+# Refusal log lines are throttled: one per (error code, REMOTE_ADDR) per
+# REFUSAL_LOG_INTERVAL seconds, so a broken or hostile client cannot flood
+# the log. Behind a proxy REMOTE_ADDR is the proxy, so it is one per code.
+# 拒绝请求的日志会限流：同一个（错误代码，REMOTE_ADDR）每 REFUSAL_LOG_INTERVAL 秒
+# 只记一行，出错或恶意的客户端刷不满日志。在代理后面时 REMOTE_ADDR 是代理的地址，
+# 这时就是每个错误代码一行。
+REFUSAL_LOG_CACHE_PREFIX = "qqbot:refusal-log:"
+REFUSAL_LOG_INTERVAL = 60
+
+
+def _refusal_log_due(request, code: str) -> bool:
+    """True for the first refusal with ``code`` from this REMOTE_ADDR in
+    REFUSAL_LOG_INTERVAL seconds. On a cache error the line is logged anyway:
+    better an unthrottled line than a lost one or a broken answer.
+
+    这个 REMOTE_ADDR 在 REFUSAL_LOG_INTERVAL 秒内第一次因 ``code`` 被拒绝时返回 True。
+    缓存出错时照样记日志：宁可这一行不限流，也不能丢掉它或弄坏响应。
+    """
+    addr = request.META.get("REMOTE_ADDR") or "?"
+    try:
+        return bool(
+            cache.add(f"{REFUSAL_LOG_CACHE_PREFIX}{code}:{addr[:64]}", 1, REFUSAL_LOG_INTERVAL)
+        )
+    except Exception:
+        return True
+
+
+def _key_for_log(request) -> str:
+    """The X-QQBot-Key header for a refusal log line, never echoed verbatim:
+    a configured key id is logged, anything else becomes a fixed placeholder
+    (so a secret pasted into the wrong header never reaches the log).
+
+    记进拒绝日志的 X-QQBot-Key 请求头，从不原样记录：已配置的密钥编号会记录，
+    其他内容一律换成固定的占位符（这样误填进这个请求头的密钥永远不会进入日志）。
+    """
+    key_id = request.headers.get(signing.HEADER_KEY, "")
+    if not key_id:
+        return "(none)"
+    if key_id in (signing.configured_keys() or {}):
+        return repr(key_id)
+    return "(unknown key id)"
+
 
 MAX_CHECK_QQS = 3000
 EVENTS_DEFAULT_LIMIT = 200
@@ -146,13 +197,18 @@ def api_endpoint(view):
             return view(request, data, *args, **kwargs)
         except ApiError as exc:
             if exc.status in (401, 413, 429, 503):
-                logger.warning(
-                    "qqbot: API %s refused (%s) from %s, key %r",
-                    view.__name__,
-                    exc.code,
-                    _client_for_log(request),
-                    request.headers.get(signing.HEADER_KEY, "")[:64],
-                )
+                # Refusals the operator should see (key, clock, size, rate,
+                # missing config); throttled per code and REMOTE_ADDR.
+                # 运维需要看到的拒绝（密钥、时间、大小、频率、缺少配置）；按错误代码和
+                # REMOTE_ADDR 限流。
+                if _refusal_log_due(request, exc.code):
+                    logger.warning(
+                        "qqbot: API %s refused (%s) from %s, key %s",
+                        view.__name__,
+                        exc.code,
+                        _client_for_log(request),
+                        _key_for_log(request),
+                    )
             else:
                 logger.info("qqbot: API %s answered %s: %s", view.__name__, exc.code, exc.message)
             return _error_response(exc)

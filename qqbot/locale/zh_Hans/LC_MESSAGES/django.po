@@ -1335,3 +1335,6 @@ msgstr "强制解绑后，这个人再绑同一个 QQ 必须用验证码（只�
 #, python-format
 msgid "Plugin version: aa-qqbot %(version)s"
 msgstr "插件版本：aa-qqbot %(version)s"
+
+msgid "Too many attempts. Please try again later."
+msgstr "尝试太频繁，请稍后再试。"

@@ -1,6 +1,7 @@
 # aa-qqbot 机器人接口（API v1）
 
-> 给 **Koishi 机器人插件**（另一个仓库）的作者看的完整接口契约。
+> 给 **Koishi 机器人插件**的作者看的完整接口契约。对应的插件是 [koishi-plugin-aaqqbot](https://github.com/yilifaer/Koishi-AAqqbot-plugin)
+> （[npm](https://www.npmjs.com/package/koishi-plugin-aaqqbot)，另一个仓库）；想自己写机器人的人也照这份契约实现。
 > AA 端的实现在本仓库 `qqbot/api/`；实现规格见 `docs/SPEC.md` 第 4 节。
 > 本文件和实现不一致时，以本仓库的测试为准，并请提 issue。
 > 适用于 aa-qqbot **1.0.0b1** 起（接口 v1，路径 `/qqbot/api/v1/`）。以后只会**增加**字段、`reason` 和事件类型，

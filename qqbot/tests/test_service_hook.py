@@ -25,7 +25,7 @@ from .utils import MANAGE, bind, create_group, create_member, create_user, put_i
 SERVICES = reverse("services:services")
 MY_QQ = reverse("qqbot:my_qq")
 QQ = "12345678"
-QQ_MASKED = "12****78"
+QQ_MASKED = "1******8"
 CARD_MARK = 'fa-brands fa-qq fa-fw"></i> QQ 绑定'
 
 

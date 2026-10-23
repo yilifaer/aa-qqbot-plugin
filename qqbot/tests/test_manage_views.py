@@ -420,9 +420,18 @@ class BindingDetailTests(ManagerTestCase):
             self.client.get(reverse("qqbot:manage_binding", args=[999])).status_code, 404
         )
 
+    def test_card_form_carries_the_qq(self):
+        # Verified: only the card form has the hidden QQ (no confirm form).
+        r = self.client.get(self.url)
+        self.assertContains(r, 'name="qq" value="11111111"', count=1)
+        # Not verified: the confirm form and the card form carry it.
+        bob = bind(create_member("bob"), "33333333", status="trusted")
+        r = self.client.get(reverse("qqbot:manage_binding", args=[bob.pk]))
+        self.assertContains(r, 'name="qq" value="33333333"', count=2)
+
     def test_set_and_clear_card_override(self):
         url = reverse("qqbot:manage_binding_card", args=[self.binding.pk])
-        r = self.client.post(url, {"card": "  [IGC]  指挥官  "})
+        r = self.client.post(url, {"card": "  [IGC]  指挥官  ", "qq": "11111111"})
         self.assertRedirects(r, self.url)
         self.binding.refresh_from_db()
         self.assertEqual(self.binding.card_override, "[IGC] 指挥官")
@@ -433,15 +442,51 @@ class BindingDetailTests(ManagerTestCase):
         self.assertEqual(r.context["card"], "[IGC] 指挥官")
         self.assertContains(r, "恢复自动群名片")
 
-        r = self.client.post(url, {"card": "ignored", "action": "clear"})
+        r = self.client.post(url, {"card": "ignored", "action": "clear", "qq": "11111111"})
         self.assertRedirects(r, self.url)
         self.binding.refresh_from_db()
         self.assertEqual(self.binding.card_override, "")
         self.assertEqual(AuditLog.objects.filter(action=AuditLog.Action.CARD).count(), 2)
 
+    def test_card_override_refused_when_member_rebound_meanwhile(self):
+        """The page showed QQ X; the member rebound the same row to QQ Y."""
+        url = reverse("qqbot:manage_binding_card", args=[self.binding.pk])
+        Binding.objects.filter(pk=self.binding.pk).update(
+            qq="55555555", verified_qq="55555555"
+        )
+        r = self.client.post(url, {"card": "指挥官", "qq": "11111111"}, follow=True)
+        self.assertRedirects(r, self.url)
+        self.assertContains(r, "页面上的信息已经过时")
+        self.assertContains(r, 'name="qq" value="55555555"')
+        self.binding.refresh_from_db()
+        self.assertEqual(self.binding.card_override, "")
+        self.assertFalse(AuditLog.objects.filter(action=AuditLog.Action.CARD).exists())
+        self.assertNotIn(Event.Kind.CARD, self.event_kinds())
+
+    def test_clear_card_override_refused_when_member_rebound_meanwhile(self):
+        url = reverse("qqbot:manage_binding_card", args=[self.binding.pk])
+        Binding.objects.filter(pk=self.binding.pk).update(
+            qq="55555555", verified_qq="55555555", card_override="旧名片"
+        )
+        r = self.client.post(url, {"action": "clear", "qq": "11111111"})
+        self.assertRedirects(r, self.url)
+        self.binding.refresh_from_db()
+        self.assertEqual(self.binding.card_override, "旧名片")
+        self.assertFalse(AuditLog.objects.filter(action=AuditLog.Action.CARD).exists())
+
+    def test_card_override_without_qq_is_refused(self):
+        url = reverse("qqbot:manage_binding_card", args=[self.binding.pk])
+        for data in ({"card": "指挥官"}, {"action": "clear"}):
+            with self.subTest(data=data):
+                r = self.client.post(url, data)
+                self.assertRedirects(r, self.url)
+        self.binding.refresh_from_db()
+        self.assertEqual(self.binding.card_override, "")
+        self.assertFalse(AuditLog.objects.filter(action=AuditLog.Action.CARD).exists())
+
     def test_card_override_too_long_rejected(self):
         url = reverse("qqbot:manage_binding_card", args=[self.binding.pk])
-        r = self.client.post(url, {"card": "长" * 21})  # 63 bytes
+        r = self.client.post(url, {"card": "长" * 21, "qq": "11111111"})  # 63 bytes
         self.assertEqual(r.status_code, 400)
         self.assertContains(r, "群名片太长", status_code=400)
         self.binding.refresh_from_db()
@@ -675,6 +720,34 @@ class PendingTests(ManagerTestCase):
         self.assertEqual([c["qq"] for c in r.context["conflicts"]], ["77777777"])
         self.assertContains(r, 'name="qq" value="77777777"', count=2)
         self.assertEqual(r.context["summary"]["trusted_recent"], 1)
+
+    def test_trusted_review_follows_the_trusted_window(self):
+        now = timezone.now()
+        mid = self.trusted("mid", "44444444", qq_changed_at=now - timedelta(days=45))
+        self.trusted("far", "55555555", qq_changed_at=now - timedelta(days=100))
+        # The default window is 30 days.
+        r = self.client.get(PENDING)
+        self.assertEqual(r.context["trusted_rows"], [])
+        self.assertEqual(r.context["trusted_review_days"], 30)
+        self.assertEqual(r.context["summary"]["trusted_review_days"], 30)
+        # A longer window lengthens the list, its count and the texts.
+        Config.objects.filter(pk=1).update(trusted_window_days=60)
+        r = self.client.get(PENDING)
+        self.assertEqual([row["binding"].pk for row in r.context["trusted_rows"]], [mid.pk])
+        self.assertEqual(r.context["trusted_review_days"], 60)
+        self.assertEqual(r.context["summary"]["trusted_review_days"], 60)
+        self.assertEqual(r.context["summary"]["trusted_recent"], 1)
+        self.assertContains(r, "最近 60 天里不填验证码")
+        r = self.client.get(BINDINGS)
+        self.assertContains(r, "近 60 天，待复核")
+        # A window shorter than 30 days (or off) does not shorten the list.
+        recent = self.trusted("recent", "66666666", qq_changed_at=now - timedelta(days=20))
+        for window in (0, 7):
+            Config.objects.filter(pk=1).update(trusted_window_days=window)
+            r = self.client.get(PENDING)
+            self.assertEqual([row["binding"].pk for row in r.context["trusted_rows"]], [recent.pk])
+            self.assertEqual(r.context["trusted_review_days"], 30)
+            self.assertContains(r, "最近 30 天里不填验证码")
 
     def test_trusted_review_order_and_pages(self):
         now = timezone.now()

@@ -1,5 +1,10 @@
 # Koishi 机器人插件 —— 开工说明
 
+> **这个插件现在已经有了**：[koishi-plugin-aaqqbot](https://github.com/yilifaer/Koishi-AAqqbot-plugin)
+> （[npm](https://www.npmjs.com/package/koishi-plugin-aaqqbot)）。本文件保留为当初的开工说明，
+> 下面的待办、「还没定的事」和建议值都是开工时的状态，不代表插件现在的行为，实际行为以插件仓库的文档为准。
+> 接口合同仍然以 [`API.md`](API.md) 为准。
+
 > 这份文件是给**新的 Koishi 插件项目**准备的开工说明，读者有两个：
 >
 > - **项目所有者**：照着「第 1 节」准备好新仓库和资料。
@@ -32,7 +37,7 @@
 
 ### 1.1 新建 GitHub 仓库
 
-- 仓库名建议沿用你已有插件的前缀，例如 **`koishi-plugin-igc-qqguard`**。
+- 插件名（npm 包名）建议用 **`koishi-plugin-aaqqbot`**。
   注意：`koishi-plugin-qqmonitor-guard` 这个 npm 包名已经被别人占用了。
 - 建议设成**私有**仓库。如果要公开，不要提交交接文档里的 `HANDOFF/` 文件夹（里面有群号、内网地址等内部信息）。
 - 许可证建议 MIT，和 aa-qqbot 一致。
@@ -113,7 +118,7 @@
 
 | # | 问题 | 选项 | 建议 |
 |---|---|---|---|
-| K1 | 插件名、npm 包名、许可证、发布方式 | npm 发布 / 只从 GitHub 或本地 `.tgz` 安装 | `koishi-plugin-igc-qqguard`，MIT。先用本地 `.tgz` 安装测试，稳定后再发 npm |
+| K1 | 插件名、npm 包名、许可证、发布方式 | npm 发布 / 只从 GitHub 或本地 `.tgz` 安装 | `koishi-plugin-aaqqbot`，MIT。先用本地 `.tgz` 安装测试，稳定后再发 npm |
 | K2 | 入群申请被判 `deny` 时 | 自动拒绝（附绑定指引）/ 留给管理员人工处理 | **先留给人工**，稳定后再考虑自动拒绝。`review` 和「无法判断」无论如何都留给人工 |
 | K3 | 已在群里、被发现不合格的人（例如没经过申请就进了群） | 宽限期多长；怎么提醒（群里 @ / 私聊） | 宽限 24–72 小时，群里 @ 提醒（不是好友的私聊可能被 QQ 风控拦截，要实测） |
 | K4 | 每个群的模式 | `off` / `report`（只报告）/ `enforce`（真处置） | 默认 `report`。某群第一次改成 `enforce` 前，至少要成功跑过一轮只报告，并由管理员确认 |

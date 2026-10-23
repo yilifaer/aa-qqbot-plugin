@@ -18,7 +18,7 @@
 | 文件 | 负责内容 |
 |---|---|
 | `qqbot/models.py`、`migrations/0001_v1_initial.py`、`app_settings.py`、`apps.py`、`urls.py`、`auth_hooks.py`、`templates/qqbot/base.html`、`testauth/` | 地基（已写好）。改动须说明理由 |
-| `qqbot/core/` | 领域逻辑：判定、绑定操作、群名片、事件、审计、验证码。**页面和接口只能通过 core 修改数据** |
+| `qqbot/core/` | 领域逻辑：判定、绑定操作、群名片、事件、审计、验证码、个人数据删除（`privacy.py`）。**页面和接口只能通过 core 修改数据** |
 | `qqbot/api/`、`API.md` | 机器人接口 |
 | `qqbot/views/member*.py`、`templates/qqbot/member/`（卡片用的片段）、`service_hook.py`、`templates/qqbot/service_ctrl.html` | 服务页的 QQ 绑定卡片（成员的全部界面）及其 POST 视图 |
 | `qqbot/views/manage*.py`、`templates/qqbot/manage/` | 管理页面 |
@@ -40,7 +40,7 @@
 ## 3. core（`qqbot/core/`）
 
 ### 3.1 `core/util.py`
-- `mask_qq(qq) -> str`：保留前 2 位和后 2 位，中间用 `*` 填充，例如 `12****78`；为空时返回 `""`。
+- `mask_qq(qq) -> str`：9 位及以上保留前 2 位和后 2 位（`123456789` → `12*****89`），5–8 位只保留第一位和最后一位（`12345678` → `1******8`），4 位及以下全部打码；为空时返回 `""`。
 - `validate_nickname(s) -> str`：去掉首尾空白后，长度 1–12 个字符，只允许中日韩统一表意文字、字母、数字、空格和 `_-.·()`，不允许连续空格。返回清理后的昵称；不合法时抛 `ValidationError`，附中文消息。
 
 ### 3.2 `core/codes.py`
@@ -106,7 +106,7 @@ def evaluate_many(groups, qqs, now=None, config=None) -> dict[str, dict[int, Dec
 - `refresh_binding(binding) -> bool`：计算 `fingerprint = sha256(按群 pk 排序的判定)[:32] + sha256(群名片)[:32]`。判定部分变化时写 `recheck`，名片部分变化时写 `card`，然后保存 fingerprint。第一次计算（fingerprint 为空）也写事件。
 - `refresh_user(user_or_id)`：用户有绑定就调用 `refresh_binding`，否则什么都不做。
 - `refresh_all() -> int`：遍历所有绑定，返回写出的事件数（给每日对账用）。
-- `prune(now=None)`：删除 30 天前的事件、7 天前已过期、已用或已作废的验证码。
+- `prune(now=None) -> {events, codes, audit}`：删除 30 天前的事件、7 天前已过期、已用或已作废的验证码；设置了 `QQBOT_AUDIT_RETENTION_DAYS`（`app_settings.audit_retention_days()`，0 表示不删，1–29 按 30 处理，非整数或负数按 0 处理）时，还删除早于这么多天的审计日志（决定 #32）。
 - `poll(after, limit, now=None) -> EventPage(events, last_id, has_more)`：给 `events` 接口用。**只返回创建超过 `EVENT_VISIBILITY_DELAY`（10 秒）的事件**，遇到第一条更新的事件就停止，避免游标越过还没提交的事务写出的事件。
 - `refresh_all()` 每批 500 个绑定调用 `eligibility.evaluate_many`，查询次数不随绑定数量增长。
 
@@ -116,7 +116,8 @@ def evaluate_many(groups, qqs, now=None, config=None) -> dict[str, dict[int, Dec
 - `submit(user, qq, nickname, now=None) -> SubmitResult`
   - QQ 或昵称不合法 → `outcome="invalid"`。
   - QQ 与自己当前绑定相同 → 只更新昵称（`nickname_updated` 或 `unchanged`），写审计 `NICKNAME` 并写 `card` 事件。
-  - QQ 已被**别人** `verified` → `outcome="taken"`（提示联系 QQ 管理员）。
+  - 先看“已被绑定”次数计数器（`qqbot:taken:<用户 pk>`，只查看不计数）：已经有 `TAKEN_RATE_LIMIT`（5）次 → `outcome="rate_limited"`，提示“尝试太频繁，请稍后再试”，对任何 QQ 都一样（空闲的和已被绑定的得到同一个回答，决定 #33）。
+  - QQ 已被**别人** `verified` → `outcome="taken"`（提示联系 QQ 管理员），并给这个计数器记一次（固定窗口 `CODE_RATE_WINDOW` = 1 小时，从第一次记数起算）。
   - 用户已有绑定，且 `qq_changed_at` 还在 `Config.rebind_cooldown_hours` 冷却期内 → `outcome="cooldown"`，附剩余时间。**成员自己解绑后冷却继续有效**：`unbind` 把被删绑定的 `qq_changed_at` 记进审计 `UNBIND` 的 `detail`，没有绑定时看冷却窗口内最近一条 `UNBIND`/`FORCE_UNBIND`/`CONFLICT_RESOLVED`：是强制解绑或失去 QQ（冲突中被判给别人、被别人用验证码认领走）时不冷却，即使之前自己解绑过（决定 #22）；是 `UNBIND` 时取它记下的这个时间判断；重新提交刚解绑的同一个 QQ 不算换号。
   - `in_fresh_roster(qq)`，并且 QQ 管理员没有从这个用户手里强制解绑过这个 QQ（审计里没有 `FORCE_UNBIND`、`target_user` 为该用户、`qq` 为该 QQ 的记录；有的话往下走验证码分支，卡片不做额外说明，决定 #25）→ 先检查免验证绑定的频率限制（每个用户每小时最多 5 次，缓存计数，与验证码计数分开），超出返回 `outcome="rate_limited"`；否则 **老成员免验证**：新建或替换为 `trusted` 绑定，`verified_via=""`，`verified_at=None`，清空 `card_override`（换号时），设置 `qq_changed_at=now`，作废该用户所有有效验证码。换号时对旧 QQ 写 `recheck` 事件、写审计 `REBIND`，否则写 `BIND`。存在其他 `trusted` 同号绑定时写审计 `CONFLICT`。对新 QQ 调用 `refresh_binding`。返回 `outcome="trusted"` 或 `"conflict"`。
   - 否则 → **待验证**：作废旧验证码，生成新验证码，写审计 `CODE`，返回 `outcome="pending"`，并在结果里带上**明文验证码**和过期时间（明文只出现这一次，页面可以存在会话里）。现有绑定保持不变，等验证码被使用才替换。
@@ -132,9 +133,9 @@ def evaluate_many(groups, qqs, now=None, config=None) -> dict[str, dict[int, Dec
 - `unbind(user, actor=None, forced=False, expected_qq=None)`：删除绑定，作废验证码，写 `recheck` 事件，写审计 `UNBIND` 或 `FORCE_UNBIND`（`detail` 含 `status` 和 `qq_changed_at`）。`expected_qq` 同 `confirm`（管理员强制解绑时使用），不一致时返回 `qq_changed`。
 - `cooldown_ends(qq_changed_at, now=None, config=None)`：冷却结束时间（已结束为 `None`），给服务卡片的换绑、解绑提示用。
 - 已知限制：号主还在群里时，冲突的 QQ 在新鲜名单里，任何一方提交都只会得到 `trusted`/`conflict`，拿不到验证码；因此这类冲突只能由管理员确认或强制解绑来解决，管理页不能引导成员「用验证码胜出」。
-- `set_nickname(user, nickname)`、`set_card_override(binding, card, actor)`（空串表示清除；按 60 字节校验）：写审计并刷新。
+- `set_nickname(user, nickname)`、`set_card_override(binding, card, actor, expected_qq=None)`（空串表示清除；按 60 字节校验）：写审计并刷新。`expected_qq` 同 `confirm`：加锁后绑定的 QQ 已经不是它 → `outcome="qq_changed"`，什么都不改；管理页的群名片表单必须带上隐藏字段 `qq`，页面已过期时显示提示并重新打开当前的绑定。
 - `conflict_qqs() -> list[str]`（一次查询）和 `conflicts() -> list[tuple[qq, list[Binding]]]`：没有 `verified`、且 `trusted` 绑定数 ≥ 2 的 QQ。
-- `TRUSTED_REVIEW_DAYS = 30`；`recent_trusted(now=None, exclude_qqs=()) -> QuerySet`：`qq_changed_at` 在最近 `TRUSTED_REVIEW_DAYS` 天内的 `trusted` 绑定，排除 `exclude_qqs`，按 `-qq_changed_at, -pk` 排序；只读（决定 #23）。
+- `TRUSTED_REVIEW_MIN_DAYS = 30`；`trusted_review_days(config=None) -> int` = `max(TRUSTED_REVIEW_MIN_DAYS, Config.trusted_window_days)`；`recent_trusted(now=None, exclude_qqs=(), config=None) -> QuerySet`：`qq_changed_at` 在最近 `trusted_review_days()` 天内的 `trusted` 绑定，排除 `exclude_qqs`，按 `-qq_changed_at, -pk` 排序；只读（决定 #23、#29）。
 - `code_not_needed(user, qq, now=None) -> bool`：`in_fresh_roster(qq, now)` 为真、这个用户没有被强制解绑过这个 QQ，且这个 QQ 上没有别的账号的绑定；只读，给待验证卡片的提示用。
 - `core/attention.py`：`misconfigured_groups()`（启用中、没选 AA 组的身份组小群）；`attention_counts() -> {conflicts, misconfigured, total}`，固定两次查询；给数字角标用（决定 #24）。
 - `on_user_deleted(user)`：在 `pre_delete` 时调用：写 `recheck` 事件和审计 `USER_DELETED`（快照 QQ）。`recheck` 事件在删除事务提交后写（`on_commit(..., robust=True)`）；写入失败只记 ERROR 日志（QQ 打码），不影响删除；漏掉的这条靠机器人下一次巡检发现 `NOT_BOUND`（每日对账补不回来，绑定已经删了）。
@@ -150,6 +151,7 @@ def evaluate_many(groups, qqs, now=None, config=None) -> dict[str, dict[int, Dec
 - 请求头：`X-QQBot-Key`（key id，可打印 ASCII、无空格、1–64 字符）、`X-QQBot-Timestamp`（Unix 秒，整数，1–16 位数字：毫秒时间戳能通过格式检查，得到 `stale_timestamp`）、`X-QQBot-Nonce`（16–64 位 `[A-Za-z0-9_-]`）、`X-QQBot-Signature`（小写十六进制）。
 - 签名：`hex(HMAC-SHA256(secret, "POST\n" + request.path + "\n" + timestamp + "\n" + nonce + "\n" + hex(sha256(raw_body))))`。
 - 校验顺序：没配置密钥 → 503 `misconfigured`；请求头缺失或格式错 → 401 `missing_headers`；未知 key → 401 `unknown_key`；时间戳偏差超过 `api_max_skew()` → 401 `stale_timestamp`；签名错 → 401 `bad_signature`（`hmac.compare_digest`）；请求体过大 → 413 `too_large`；nonce 用过 → 401 `replayed_nonce`（`cache.add("qqbot:nonce:"+key+":"+nonce, 1, 2*skew+60)`，**签名通过后**才记录 nonce）；超过每分钟限速 → 429 `rate_limited`；JSON 或字段不合法（包括嵌套过深导致的 `RecursionError`）→ 400 `bad_request`。
+- 被拒绝的请求（401 / 413 / 429 / 503）记一行 WARNING 日志：错误代码、`REMOTE_ADDR`、`X-Forwarded-For` / `X-Real-IP` / `CF-Connecting-IP`（只用于日志，不参与任何判断）和密钥编号。密钥编号只在 `QQBOT_API_KEYS` 里配置过时才记，没带写 `(none)`，其他写 `(unknown key id)`，从不原样记录请求头。同一个（错误代码，`REMOTE_ADDR`）每 60 秒最多一行（`cache.add("qqbot:refusal-log:<code>:<addr>", 1, 60)`；缓存出错时照样记，不能因此弄坏响应）。
 - 错误格式：`{"ok": false, "error": "<code>", "message": "<中文说明，告诉运维该怎么做>"}`。
 - 成功格式：`{"ok": true, "server_time": "<ISO8601>", ...}`。
 - 端点：
@@ -180,9 +182,9 @@ def evaluate_many(groups, qqs, now=None, config=None) -> dict[str, dict[int, Dec
 
 ## 6. 管理页面
 
-- `manage_urls.urlpatterns`，URL 名称：`manage_index`（有冲突 → `manage_pending`；只有配置错误的身份组小群 → `manage_groups`；都没有 → `manage_bindings`）、`manage_groups`、`manage_group_create`、`manage_group_edit <pk>`、`manage_group_delete <pk>`（确认后 POST）、`manage_bindings`（搜索：用户名、角色名、QQ、军团简称；筛选：状态、冲突；每页 50 条）、`manage_binding <pk>`（详情：各群判定表、名片预览；操作：设置或清除名片、确认、强制解绑）、`manage_pending`（配置错误的身份组小群提示；冲突列表；最近 30 天的免验证绑定（`recent_trusted`，排除冲突 QQ，每页 50 条，显示所在群和「此 QQ 已被别人验证」徽章，这种行不显示确认按钮；数量显示在标题徽章和「已绑定成员」页第 4 张统计卡片，不计入 `summary.pending` 和任何角标）；各群未绑定的 QQ）、`manage_settings`（Config 表单；卡片标题栏右边显示「插件版本：aa-qqbot <版本号>」）、`manage_audit`（分页，可按 QQ 筛选）。
+- `manage_urls.urlpatterns`，URL 名称：`manage_index`（有冲突 → `manage_pending`；只有配置错误的身份组小群 → `manage_groups`；都没有 → `manage_bindings`）、`manage_groups`、`manage_group_create`、`manage_group_edit <pk>`、`manage_group_delete <pk>`（确认后 POST）、`manage_bindings`（搜索：用户名、角色名、QQ、军团简称；筛选：状态、冲突；每页 50 条）、`manage_binding <pk>`（详情：各群判定表、名片预览；操作：设置或清除名片、确认、强制解绑）、`manage_pending`（配置错误的身份组小群提示；冲突列表；最近 `trusted_review_days()` 天（至少 30 天，过渡期更长时按过渡期）的免验证绑定（`recent_trusted`，排除冲突 QQ，每页 50 条，显示所在群和「此 QQ 已被别人验证」徽章，这种行不显示确认按钮；数量显示在标题徽章和「已绑定成员」页第 4 张统计卡片，不计入 `summary.pending` 和任何角标）；各群未绑定的 QQ）、`manage_settings`（Config 表单；卡片标题栏右边显示「插件版本：aa-qqbot <版本号>」）、`manage_audit`（分页，可按 QQ 筛选）。
 - 所有视图：`@login_required` + `@permission_required("qqbot.manage", raise_exception=True)`，修改操作只接受 POST。管理员可以看到完整 QQ 号。
-- 群表单规则：`role` 类型必须至少选择一个 `required_groups`；群号经 `normalize_qq` 规范化且唯一。保存或删除后调用 `emit_groups_changed()` 并写审计 `GROUP`。设置保存后写审计 `CONFIG`，群名片格式变化时调用 `refresh_all()`（数量大时交给 Celery 异步执行）。
+- 群表单规则：`role` 类型必须至少选择一个 `required_groups`；群号经 `normalize_qq` 规范化且唯一。保存或删除后调用 `emit_groups_changed()` 并写审计 `GROUP`。设置保存后写审计 `CONFIG`，群名片格式变化时在事务提交后调用 `tasks.queue_reconcile()`（`on_commit(..., robust=True)`），由 Celery 后台重新计算；连不上 broker 时只记 ERROR 日志，不会在网页请求里执行，等下一次定时对账或手动 `manage.py qqbot_reconcile`（决定 #30）。
 - 所有修改只能通过 core 完成。
 
 ## 7. 集成
@@ -196,7 +198,7 @@ def evaluate_many(groups, qqs, now=None, config=None) -> dict[str, dict[int, Dec
   - `EveCharacter` 的 `post_save`（作为某人主角色时，名字、军团或联盟变化）
   - `User` 的 `pre_delete` → `bindings.on_user_deleted`
   - `Group.permissions` 或 `State.permissions` 的 `m2m_changed` 涉及 `basic_access` 时，以及任何 `Group` 的成员变化波及身份组小群时 → 写一条 `recheck_all`
-- `tasks.py`：`@shared_task(base=QueueOnce, once={"graceful": True, "unlock_before_run": True}) def reconcile()` 调用 `refresh_all()` 和 `prune()`（`unlock_before_run`：运行中再次排队不会被静默丢弃，名片格式在对账途中被修改时会再跑一次）。README 给出 IT 需要加的 `CELERYBEAT_SCHEDULE` 条目（每天一次）。
+- `tasks.py`：`@shared_task(base=QueueOnce, once={"graceful": True, "unlock_before_run": True}) def reconcile()` 调用 `refresh_all()` 和 `prune()`（`unlock_before_run`：运行中再次排队不会被静默丢弃，名片格式在对账途中被修改时会再跑一次）。`run_reconcile()` 是实际的对账（定时任务和 `qqbot_reconcile` 命令都调它），返回 `{events, pruned_events, pruned_codes, pruned_audit}`。`queue_reconcile() -> bool`：`reconcile.delay()`，成功（或已有一次排队中的对账）返回 True；连不上 broker 时不在当前进程里执行，只记 ERROR 日志并释放 celery-once 锁（它在发布前加锁，发布失败不会释放），返回 False（决定 #30）。README 给出 IT 需要加的 `CELERYBEAT_SCHEDULE` 条目（每天一次）。
 - `checks.py`（`@register(deploy=False)`）：
   - `qqbot.E001`：`APPS_WITH_PUBLIC_VIEWS` 缺少 `"qqbot"`（提示：追加，不要覆盖）
   - `qqbot.E002`：`QQBOT_API_KEYS` 为空或不是 dict
@@ -204,10 +206,12 @@ def evaluate_many(groups, qqs, now=None, config=None) -> dict[str, dict[int, Dec
   - `qqbot.E004`：有 key id 不符合 `signing.KEY_ID_RE`（有空格、非 ASCII、超过 64 字符），用它的请求永远是 `missing_headers`
   - `qqbot.W001`：缓存后端不是 Redis 一类的共享缓存（nonce 防重放需要跨进程共享）
   - `qqbot.W002`：`CELERYBEAT_SCHEDULE` 里没有 `task == "qqbot.tasks.reconcile"` 的条目（条目名不限；在后台手动添加定时任务的站点可以忽略这条警告）
+  - `qqbot.W003`：`QQBOT_AUDIT_RETENTION_DAYS` 既不是 0，也不是不小于 `QQBOT_AUDIT_RETENTION_MIN_DAYS`（30）的整数（布尔值、字符串、负数也算）；1–29 按 30 处理，非整数或负数被忽略
   - health 接口复用同一套检查逻辑（纯函数 `problems() -> list[str]`）
 - `admin.py`：注册 `QQGroup`、`Binding`（只读，改动走前台；但删除 AA 用户时允许级联删除它：`has_delete_permission(obj)` 为真、`delete_view` 返回 403、详情页不显示删除按钮、列表没有批量删除）、`AuditLog`（只读）、`Config`。
 - `management/commands/qqbot_reconcile.py`：手动执行对账。
-- `README.md`（英文，简短）+ `README.zh-CN.md`（中文，简短）+ `docs/GUIDE.md`（中文分步说明和常见问题）：功能、给 IT 的安装步骤（`pip install`；`local.py` 中 `INSTALLED_APPS += ["qqbot"]`、`APPS_WITH_PUBLIC_VIEWS += ["qqbot"]`、`QQBOT_API_KEYS`、`CELERYBEAT_SCHEDULE`；`migrate`；重启）、权限怎么分配、如何生成密钥（`python -c "import secrets; print(secrets.token_urlsafe(48))"`）、升级与卸载（卸载时要删掉数据库里的 `qqbot_reconcile` 定时任务，AA 5 的 beat 把它存在 django_celery_beat 表里）。
+- `management/commands/qqbot_erase.py` + `core/privacy.py`：`python manage.py qqbot_erase --qq <QQ> --user <用户名> [--dry-run] [--noinput]`，删除一个人的个人数据（决定 #31）。至少给 `--qq` 和 `--user` 之一；`--qq` 经 `normalize_qq`，不合法时报错。这个 QQ 或这个用户（`--user` 对应的现存 AA 用户）还有任何状态的绑定时抛 `StillBound`，命令拒绝执行，什么都不改（要先解绑、强制解绑或删除 AA 用户）。先显示 `preview()` 的数量；`--dry-run` 到此为止；否则要输入 `yes`（`--noinput` 跳过）。`erase()` 在一个事务里，先按 `locks.lock_user`、`locks.lock_qqs` 的顺序加锁并再次检查没有绑定，然后：关于此人的审计日志（`qq`、`target_user_id` 或 `target_name` 匹配）清空 `qq`、`target_user`、`target_name`，`detail` 换成 `{"erased": true}`；此人作为操作者的记录（`actor` / `actor_name` 匹配，以及目标用户自己操作的、关于此人的记录）清空 `actor` 和 `actor_name`；其他记录 `detail` 里等于此人 QQ 或用户名的字符串换成 `[erased]`（在 Python 里递归处理）；删除该 QQ 或该用户的 `BindCode`、该 QQ 的 `Event` 和 `RosterEntry`。日志只记数量。因为换绑冷却（`_last_qq_change`）和强制解绑限制（`_force_unbound_before`）读的就是审计日志里的 `target_user` 和 `qq`，清除之后它们不再认识此人。不删除 AA 用户、日志文件和备份。
+- `README.md`（英文，简短）+ `README.zh-CN.md`（中文，简短）+ `docs/GUIDE.md`（中文分步说明和常见问题）：功能、给 IT 的安装步骤（`pip install`；`local.py` 中 `INSTALLED_APPS += ["qqbot"]`、`APPS_WITH_PUBLIC_VIEWS += ["qqbot"]`、`QQBOT_API_KEYS`、`CELERYBEAT_SCHEDULE`；`migrate`；重启）、权限怎么分配、如何生成密钥（`python -c "import secrets; print(secrets.token_urlsafe(48))"`）、数据保护（保存了什么、谁能看到、保留多久、用 `qqbot_erase` 处理删除请求、可选设置 `QQBOT_AUDIT_RETENTION_DAYS`）、升级与卸载（卸载时要删掉数据库里的 `qqbot_reconcile` 定时任务，AA 5 的 beat 把它存在 django_celery_beat 表里）。
 
 ## 8. 安全底线（任何部分都必须遵守）
 

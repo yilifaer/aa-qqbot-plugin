@@ -179,7 +179,11 @@ class ConfigAdmin(admin.ModelAdmin):
         audit.log(AuditLog.Action.CONFIG, actor=request.user, changed=changed, via="admin")
         if "card_format" in changed:
             # Every card may change: recompute all bindings in the background.
-            # 每个群名片都可能变化：在后台重新计算所有绑定。
+            # If queuing fails, an error is logged and the next scheduled
+            # reconcile (or manage.py qqbot_reconcile) applies the change.
+            # 每个群名片都可能变化：在后台重新计算所有绑定。如果放进队列失败，
+            # 会记一条错误日志，等下一次定时对账（或手动运行
+            # manage.py qqbot_reconcile）时再生效。
             from .tasks import queue_reconcile
 
             # robust: the settings are saved by then; a failure is logged.

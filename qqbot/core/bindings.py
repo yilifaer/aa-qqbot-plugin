@@ -38,6 +38,8 @@ CODE_RATE_LIMIT = 5  # codes per user ... / 每个用户最多生成这么多个
 CODE_RATE_WINDOW = 3600  # ... per this many seconds / ……在这么多秒之内
 # 每个用户在每个时间窗口内，免验证码（老成员免验证）绑定或换 QQ 的次数上限
 TRUSTED_RATE_LIMIT = 5  # code-free (trusted) binds / QQ changes per user per window
+# 每个用户在每个时间窗口内，最多被告知这么多次“这个 QQ 已被绑定”
+TAKEN_RATE_LIMIT = 5  # "already bound" answers per user per window
 
 # Lazy: translated into the language of the request that shows them.
 # 惰性翻译：显示时才按当前请求的语言翻译。
@@ -150,6 +152,19 @@ def _trusted_rate_limited(user) -> bool:
     它和验证码的计数器分开，这样验证码相关的失败尝试永远不会挡住老成员。
     """
     return _count(f"qqbot:trusted:{user.pk}", TRUSTED_RATE_LIMIT)
+
+
+def _taken_key(user) -> str:
+    return f"qqbot:taken:{user.pk}"
+
+
+def _taken_rate_limited(user) -> bool:
+    """True when the user has already been told "taken" as often as allowed.
+    Only looks at the counter, never counts.
+
+    用户被告知“已被绑定”的次数是否已达上限。只查看计数器，不计数。
+    """
+    return cache.get(_taken_key(user), 0) >= TAKEN_RATE_LIMIT
 
 
 def _force_unbound_before(user, qq_n) -> bool:
@@ -308,9 +323,24 @@ def submit(user, qq, nickname, now=None) -> SubmitResult:
                 True, "nickname_updated", gettext("Nickname updated."), binding=existing
             )
 
+        # "Taken" tells the member that a QQ belongs to another account, so
+        # trying many QQs would map out who is in the alliance. Every "taken"
+        # answer counts one attempt; once the limit is reached, every other
+        # QQ, free or taken, gets this same generic answer, so it no longer
+        # shows which is which. Only peek here: this check must not count.
+        # “已被绑定”会告诉成员某个 QQ 属于别的账号，一个个试下去就能摸清
+        # 联盟里有哪些人。每次回答“已被绑定”都记一次；到达上限后，其他任何
+        # QQ（不管空闲还是已被绑定）都得到这同一个笼统的回答，再也分不出
+        # 哪个是哪个。这里只查看计数器，不计数。
+        if _taken_rate_limited(user):
+            return SubmitResult(
+                False, "rate_limited",
+                gettext("Too many attempts. Please try again later."),
+            )
         if Binding.objects.filter(qq=qq_n, status=Binding.Status.VERIFIED).exclude(
             user_id=user.pk
         ).exists():
+            _count(_taken_key(user), TAKEN_RATE_LIMIT)
             return SubmitResult(False, "taken", str(MSG_TAKEN))
 
         cooldown = timedelta(hours=config.rebind_cooldown_hours)
@@ -685,10 +715,18 @@ def set_nickname(user, nickname) -> Result:
         return Result(True, "nickname_updated", gettext("Nickname updated."))
 
 
-def set_card_override(binding, card, actor) -> Result:
+def set_card_override(binding, card, actor, expected_qq=None) -> Result:
     """Set (or, with an empty string, clear) a manager-chosen group card.
 
+    ``expected_qq`` is the QQ the manager was looking at; the change is refused
+    (``qq_changed``) when the binding holds another QQ by now, so a card typed
+    for one QQ never lands on the next one.
+
     设置管理员指定的群名片（传空字符串则清除）。
+
+    ``expected_qq`` 是管理员当时在页面上看到的 QQ；如果这时绑定已经换成了
+    别的 QQ，就拒绝修改（返回 ``qq_changed``），这样给一个 QQ 写的名片不会
+    落到下一个 QQ 上。
     """
     card = clean_card(card or "")
     if byte_length(card) > CARD_MAX_BYTES:
@@ -707,6 +745,8 @@ def set_card_override(binding, card, actor) -> Result:
         binding = Binding.objects.select_for_update().filter(pk=binding.pk).first()
         if binding is None:
             return Result(False, "not_found", gettext("Binding not found."))
+        if _qq_changed(binding, expected_qq):
+            return Result(False, "qq_changed", str(MSG_QQ_CHANGED))
         if binding.card_override == card:
             return Result(True, "unchanged", gettext("Nothing to change."))
         old = binding.card_override
@@ -757,20 +797,36 @@ def conflicts() -> list[tuple[str, list[Binding]]]:
     return [(qq, grouped[qq]) for qq in qqs]
 
 
-# The manage pages list trusted bindings from this many days for review
-# (DECISIONS #23; equal to the default trusted binding window).
-# 管理页列出最近这么多天的免验证绑定供复核（决定 #23；等于默认的过渡期）。
-TRUSTED_REVIEW_DAYS = 30
+# The manage pages list trusted bindings for review for at least this many
+# days (DECISIONS #23); a longer trusted binding window lengthens the list
+# (see trusted_review_days).
+# 管理页至少列出最近这么多天的免验证绑定供复核（决定 #23）；过渡期设得更长时，
+# 列表跟着变长（见 trusted_review_days）。
+TRUSTED_REVIEW_MIN_DAYS = 30
 
 
-def recent_trusted(now=None, exclude_qqs=()):
-    """Trusted bindings whose QQ was set in the last ``TRUSTED_REVIEW_DAYS``
+def trusted_review_days(config=None) -> int:
+    """How many days back the review list reaches: the trusted binding window
+    (``Config.trusted_window_days``), but never fewer than
+    ``TRUSTED_REVIEW_MIN_DAYS``. A binding made without a code stays on the
+    list at least as long as that window is open.
+
+    复核列表往回看多少天：取过渡期（``Config.trusted_window_days``），但不少于
+    ``TRUSTED_REVIEW_MIN_DAYS``。免验证绑定在过渡期开放的这段时间里，至少
+    一直留在列表上。
+    """
+    config = config or Config.get_solo()
+    return max(TRUSTED_REVIEW_MIN_DAYS, config.trusted_window_days)
+
+
+def recent_trusted(now=None, exclude_qqs=(), config=None):
+    """Trusted bindings whose QQ was set in the last ``trusted_review_days()``
     days, newest first (the managers' review list, DECISIONS #23). Read only.
 
     ``qq_changed_at`` is set both when binding and when moving to another QQ
     without a code (``created_at`` keeps the first binding's time).
 
-    最近 ``TRUSTED_REVIEW_DAYS`` 天内设成现在这个 QQ 的免验证绑定，最新的在前
+    最近 ``trusted_review_days()`` 天内设成现在这个 QQ 的免验证绑定，最新的在前
     （给管理员复核的列表，决定 #23）。只读。
 
     不填验证码绑定和不填验证码换号都会设置 ``qq_changed_at``（``created_at``
@@ -779,7 +835,7 @@ def recent_trusted(now=None, exclude_qqs=()):
     now = now or timezone.now()
     qs = Binding.objects.filter(
         status=Binding.Status.TRUSTED,
-        qq_changed_at__gte=now - timedelta(days=TRUSTED_REVIEW_DAYS),
+        qq_changed_at__gte=now - timedelta(days=trusted_review_days(config)),
     )
     if exclude_qqs:
         qs = qs.exclude(qq__in=list(exclude_qqs))

@@ -41,7 +41,7 @@ UNBIND = reverse("qqbot:member_unbind")
 CODE_RE = re.compile(r"QQ-[23456789ABCDEFGHJKMNPQRSTUVWXYZ]{6}")
 
 QQ = "12345678"
-QQ_MASKED = "12****78"
+QQ_MASKED = "1******8"
 OTHER_QQ = "87654321"
 
 CODE_HIDDEN = "验证码只在生成它的浏览器里显示，请点「重新生成」。"
@@ -352,7 +352,7 @@ class SubmitFlowTests(MemberCardTestCase):
         bind(self.user, QQ, status=Binding.Status.VERIFIED, nickname="凯拉")
         r, card = self.post(SUBMIT, {"qq": OTHER_QQ, "nickname": "凯拉"})
         self.assertTrue(any("绑定成功" in m for m in message_texts(card)))
-        self.assertIn("87****21", card)
+        self.assertIn("8******1", card)
         self.assertEqual(Binding.objects.get(user=self.user).qq, OTHER_QQ)
 
     def test_same_qq_updates_nickname(self):
@@ -447,7 +447,7 @@ class BoundCardTests(MemberCardTestCase):
         put_in_roster(self.fixed, [OTHER_QQ, "55555555"])
         bind(self.user, QQ, status=Binding.Status.VERIFIED)
         card = self.card()
-        for text in (OTHER_QQ, "87****21", "55555555", "Some One"):
+        for text in (OTHER_QQ, "8******1", "55555555", "Some One"):
             self.assertNotIn(text, card)
 
     def test_nickname_change(self):
@@ -478,7 +478,7 @@ class BoundCardTests(MemberCardTestCase):
         self.assertIn('name="nickname" value="凯拉"', form)
         self.assertIn('name="qq"', form)
         _r, card = self.post(SUBMIT, {"qq": OTHER_QQ, "nickname": "凯拉"})
-        self.assertIn("正在验证的 QQ：<strong class=\"font-monospace\">87****21</strong>", card)
+        self.assertIn("正在验证的 QQ：<strong class=\"font-monospace\">8******1</strong>", card)
 
     def test_expired_rebind_code_notice_and_prefill(self):
         """A bound member's re-bind code ran out: say so once and re-open
@@ -526,7 +526,7 @@ class BoundCardTests(MemberCardTestCase):
         _r, card = self.post(SUBMIT, {"qq": OTHER_QQ, "nickname": "凯拉"})
         self.assertIn("现在绑定的 QQ", card)
         self.assertIn(QQ_MASKED, card)
-        self.assertIn("87****21", card)
+        self.assertIn("8******1", card)
         self.assertIsNotNone(page_code(card))
         self.assertIn("重新生成", card)
         # The badge shows the current binding, which still works until the
