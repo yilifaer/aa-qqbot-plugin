@@ -20,7 +20,7 @@ from django.core.cache import cache
 from django.db import connection, connections
 from django.test import TransactionTestCase
 
-from ..core import bindings, locks
+from ..core import bindings, locks, privacy
 from ..models import AuditLog, Binding, BindCode
 from .utils import create_group, create_member, put_in_roster
 
@@ -138,3 +138,22 @@ class ConcurrentBindingTests(TransactionTestCase):
                                        invalidated_at__isnull=True)
         self.assertEqual(list(live.values_list("qq", flat=True)), ["22345678"])
         self.assertEqual(bindings.claim("12345678", first.code).outcome, "code_used")
+
+    def test_claim_and_erase_on_the_same_qq(self):
+        """qqbot_erase locks the QQ and then deletes other users' code rows for
+        it; claim must lock the QQ before the code row, or the two deadlock."""
+        r = bindings.submit(self.bob, "12345678", "b")
+        self.assertEqual(r.outcome, "pending")
+        first, second = self.race(
+            lambda: bindings.claim("12345678", r.code),
+            lambda: privacy.erase(privacy.find_person("12345678", "")),
+            pause_in="_current_qq",
+        )
+        # claim held only bob's user lock when erase ran, so erase deleted
+        # the code first and claim then found nothing.
+        # erase 运行时 claim 只拿着 bob 的用户锁，所以 erase 先删掉了验证码，
+        # claim 随后什么也找不到。
+        self.assertEqual(first.outcome, "code_invalid")
+        self.assertEqual(second["codes"], 1)
+        self.assertFalse(BindCode.objects.exists())
+        self.assertFalse(Binding.objects.exists())

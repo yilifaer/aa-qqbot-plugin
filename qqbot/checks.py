@@ -22,6 +22,7 @@ E003 = "qqbot.E003"
 E004 = "qqbot.E004"
 W001 = "qqbot.W001"
 W002 = "qqbot.W002"
+W003 = "qqbot.W003"
 
 # The daily reconciliation task that local.py must schedule (README).
 # local.py 里必须安排的每日对账任务（见 README）。
@@ -66,6 +67,19 @@ def _usable_key_id(key_id) -> bool:
     return bool(KEY_ID_RE.fullmatch(str(key_id)))
 
 
+def _audit_retention_ok() -> bool:
+    """Whether ``QQBOT_AUDIT_RETENTION_DAYS`` is used as written: absent, 0,
+    or an int of at least ``QQBOT_AUDIT_RETENTION_MIN_DAYS``.
+
+    ``QQBOT_AUDIT_RETENTION_DAYS`` 是否会按写的值生效：没设置、0，或者不小于
+    ``QQBOT_AUDIT_RETENTION_MIN_DAYS`` 的整数。
+    """
+    value = getattr(settings, "QQBOT_AUDIT_RETENTION_DAYS", 0)
+    if isinstance(value, bool) or not isinstance(value, int) or value < 0:
+        return False
+    return value == 0 or value >= app_settings.QQBOT_AUDIT_RETENTION_MIN_DAYS
+
+
 def problems() -> list[str]:
     """Short codes of configuration problems, e.g. ``["qqbot.E002"]``.
 
@@ -95,6 +109,8 @@ def problems() -> list[str]:
         found.append(W001)
     if not _reconcile_scheduled():
         found.append(W002)
+    if not _audit_retention_ok():
+        found.append(W003)
     return found
 
 
@@ -110,6 +126,7 @@ def _messages() -> dict:
     和中文运维看。
     """
     min_len = app_settings.QQBOT_MIN_SECRET_LENGTH
+    min_days = app_settings.QQBOT_AUDIT_RETENTION_MIN_DAYS
     return {
         E001: Error(
             '"qqbot" is not in APPS_WITH_PUBLIC_VIEWS, so the bot API is redirected to the '
@@ -185,6 +202,22 @@ def _messages() -> dict:
                 "如果是在后台「Periodic tasks」里手动添加的，可以忽略这条提示。"
             ),
             id=W002,
+        ),
+        W003: CheckWarning(
+            f"QQBOT_AUDIT_RETENTION_DAYS is not 0 or a whole number of at least {min_days}. "
+            "If it is not a whole number >= 0 it is ignored and the audit log is kept forever; "
+            f"1-{min_days - 1} counts as {min_days} days, because the rebind cooldown "
+            "(up to 720 hours) reads the audit log.\n"
+            f"QQBOT_AUDIT_RETENTION_DAYS 不是 0，也不是不小于 {min_days} 的整数。"
+            "如果不是 ≥ 0 的整数，这个设置会被忽略，审计日志永久保留；"
+            f"1–{min_days - 1} 会按 {min_days} 天处理，因为换绑冷却（最长 720 小时）要读审计日志。",
+            hint=(
+                f"Set it to 0 (keep forever) or to {min_days} or more in local.py, e.g. "
+                "QQBOT_AUDIT_RETENTION_DAYS = 365.\n"
+                f"在 local.py 里把它设成 0（永久保留）或不小于 {min_days} 的整数，例如 "
+                "QQBOT_AUDIT_RETENTION_DAYS = 365。"
+            ),
+            id=W003,
         ),
     }
 

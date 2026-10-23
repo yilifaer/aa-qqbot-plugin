@@ -11,7 +11,8 @@ from datetime import timedelta
 from django.db.models import Q
 from django.utils import timezone
 
-from ..models import Binding, BindCode, Config, Event
+from .. import app_settings
+from ..models import AuditLog, Binding, BindCode, Config, Event
 from .cards import render_card
 from .access import CHUNK_SIZE
 from .eligibility import active_groups, evaluate_binding, evaluate_many
@@ -209,9 +210,16 @@ def _refresh_batch(batch: list[Binding], groups, config) -> int:
 
 def prune(now=None) -> dict:
     """Delete events older than 30 days and codes that expired or were used /
-    invalidated more than 7 days ago.
+    invalidated more than 7 days ago. With ``QQBOT_AUDIT_RETENTION_DAYS`` set,
+    also delete audit log entries older than that (at least 30 days).
 
-    删除 30 天前的事件，以及过期、已使用或已作废超过 7 天的验证码。
+    Returns ``{"events": n, "codes": n, "audit": n}``.
+
+    删除 30 天前的事件，以及过期、已使用或已作废超过 7 天的验证码。设置了
+    ``QQBOT_AUDIT_RETENTION_DAYS`` 时，还会删除早于这个天数（至少 30 天）的
+    审计日志。
+
+    返回 ``{"events": n, "codes": n, "audit": n}``。
     """
     now = now or timezone.now()
     events, _ = Event.objects.filter(
@@ -221,4 +229,17 @@ def prune(now=None) -> dict:
     codes, _ = BindCode.objects.filter(
         Q(expires_at__lt=cutoff) | Q(used_at__lt=cutoff) | Q(invalidated_at__lt=cutoff)
     ).delete()
-    return {"events": events, "codes": codes}
+    audit = 0
+    audit_days = app_settings.audit_retention_days()
+    if audit_days:
+        # Never fewer than 30 days: the rebind cooldown (up to 720 hours)
+        # reads these rows. The force-unbind restriction
+        # (bindings._force_unbound_before) reads them too and has no time
+        # limit, so it lapses for a QQ once its force-unbind row is pruned.
+        # 至少保留 30 天：换绑冷却（最长 720 小时）要读这些记录。强制解绑后
+        # 必须用验证码的限制（bindings._force_unbound_before）也读这些记录，
+        # 而且不限时间，所以那条强制解绑记录被清理之后，这条限制也就失效了。
+        audit, _ = AuditLog.objects.filter(
+            created_at__lt=now - timedelta(days=audit_days)
+        ).delete()
+    return {"events": events, "codes": codes, "audit": audit}

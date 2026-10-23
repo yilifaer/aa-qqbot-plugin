@@ -227,6 +227,83 @@ class SubmitOtherOutcomesTests(BaseTestCase):
         r = bindings.submit(self.user, "12345678", "凯拉")
         self.assertEqual(r.outcome, "pending")
 
+    def exhaust_tries(self, user=None, first="12345678"):
+        """Try QQ_TRY_LIMIT different QQs: ``first`` (bob has verified it,
+        so "taken") and then free ones."""
+        user = user or self.user
+        if not Binding.objects.filter(qq="12345678").exists():
+            bind(create_member("bob"), "12345678")
+        qqs = [first] + [f"2234567{i}" for i in range(bindings.QQ_TRY_LIMIT - 1)]
+        for qq in qqs:
+            r = bindings.submit(user, qq, "凯拉")
+            self.assertNotEqual(r.outcome, "rate_limited", qq)
+        return qqs
+
+    def test_qq_tries_are_limited(self):
+        """Once the limit is reached, a new taken QQ and a new free QQ look the same."""
+        self.exhaust_tries()
+        bind(create_member("dave"), "13345678")
+        taken = bindings.submit(self.user, "13345678", "凯拉")
+        free = bindings.submit(self.user, "32345670", "凯拉")
+        self.assertEqual((taken.ok, taken.outcome), (False, "rate_limited"))
+        self.assertEqual((free.ok, free.outcome), (False, "rate_limited"))
+        self.assertEqual(taken.message, free.message)
+        self.assertNotIn("QQ 管理员", taken.message)
+        self.assertIsNone(free.code)
+        self.assertFalse(BindCode.objects.filter(qq__in=["13345678", "32345670"]).exists())
+
+    def test_qq_try_limit_also_hides_roster_qqs(self):
+        """A QQ that would bind without a code gets the same answer."""
+        self.exhaust_tries()
+        put_in_roster(self.group, ["32345678"])
+        r = bindings.submit(self.user, "32345678", "凯拉")
+        self.assertEqual((r.ok, r.outcome), (False, "rate_limited"))
+        self.assertFalse(Binding.objects.filter(user=self.user).exists())
+
+    def test_retrying_the_same_qq_never_counts(self):
+        """A member retrying one taken QQ learns nothing new and is not blocked."""
+        bind(create_member("bob"), "12345678")
+        for i in range(bindings.QQ_TRY_LIMIT * 2):
+            self.assertEqual(bindings.submit(self.user, "12345678", "凯拉").outcome, "taken", i)
+        self.assertEqual(bindings.submit(self.user, "22345678", "凯拉").outcome, "pending")
+
+    def test_already_tried_qqs_still_work_after_the_limit(self):
+        """Regenerating the code for a QQ tried earlier is not a new guess."""
+        qqs = self.exhaust_tries()
+        r = bindings.submit(self.user, qqs[-1], "凯拉")
+        self.assertEqual((r.ok, r.outcome), (True, "pending"))
+        self.assertEqual(bindings.submit(self.user, qqs[0], "凯拉").outcome, "taken")
+
+    def test_qq_try_limit_is_per_user_and_expires(self):
+        self.exhaust_tries()
+        self.assertEqual(bindings.submit(self.user, "32345670", "凯拉").outcome, "rate_limited")
+        carol = create_member("carol")
+        self.assertEqual(bindings.submit(carol, "12345678", "卡罗").outcome, "taken")
+        self.assertEqual(bindings.submit(carol, "32345670", "卡罗").outcome, "pending")
+        cache.clear()  # the window is over
+        self.assertEqual(bindings.submit(self.user, "32345670", "凯拉").outcome, "pending")
+
+    def test_qq_try_window_is_fixed(self):
+        """The window starts at the first try; later tries do not extend it."""
+        start = timezone.now()
+        bindings.submit(self.user, "22345670", "凯拉", now=start)
+        later = start + timedelta(minutes=30)
+        bindings.submit(self.user, "22345671", "凯拉", now=later)
+        tried = cache.get(f"qqbot:qq-tries:{self.user.pk}")
+        self.assertEqual(tried["qqs"], ["22345670", "22345671"])
+        self.assertEqual(tried["start"], start.timestamp())
+        ttl = cache.ttl(f"qqbot:qq-tries:{self.user.pk}")
+        self.assertLessEqual(ttl, bindings.CODE_RATE_WINDOW)
+
+    def test_qq_try_limit_keeps_nickname_updates(self):
+        """Changing only the nickname of the current QQ is no guess at others."""
+        bind(self.user, "52345678", nickname="旧")
+        self.exhaust_tries()
+        self.assertEqual(bindings.submit(self.user, "32345670", "凯拉").outcome, "rate_limited")
+        r = bindings.submit(self.user, "52345678", "新")
+        self.assertEqual((r.ok, r.outcome), (True, "nickname_updated"))
+        self.assertEqual(bindings.submit(self.user, "52345678", "新").outcome, "unchanged")
+
     def test_same_qq_updates_nickname(self):
         b = bind(self.user, "12345678", nickname="旧")
         r = bindings.submit(self.user, "12345678", "新")
@@ -778,12 +855,75 @@ class NicknameAndCardTests(BaseTestCase):
         self.assertEqual(self.fresh(b.pk).card_override, "")
         self.assertEqual(el.evaluate(self.group, ["12345678"])["12345678"].card, "[IGC] Kaela Voss - n")
 
+    def test_set_card_override_expected_qq(self):
+        """The page showed QQ X; the member rebound the same row to QQ Y."""
+        manager = create_member("boss")
+        b = bind(self.user, "12345678")
+        Event.objects.all().delete()
+        for expected in ("22345678", ""):
+            with self.subTest(expected=expected):
+                r = bindings.set_card_override(b, "指定", manager, expected_qq=expected)
+                self.assertEqual((r.ok, r.outcome), (False, "qq_changed"))
+                self.assertEqual(r.message, str(bindings.MSG_QQ_CHANGED))
+                self.assertEqual(self.fresh(b.pk).card_override, "")
+        self.assertFalse(audits(A.CARD).exists())
+        self.assertFalse(Event.objects.exists())
+        # the same check applies to clearing the card
+        Binding.objects.filter(pk=b.pk).update(card_override="旧名片")
+        r = bindings.set_card_override(b, "", manager, expected_qq="22345678")
+        self.assertEqual((r.ok, r.outcome), (False, "qq_changed"))
+        self.assertEqual(self.fresh(b.pk).card_override, "旧名片")
+        # the matching QQ (also in another spelling) and None go through
+        r = bindings.set_card_override(b, "指定", manager, expected_qq=" １２３４５６７８ ")
+        self.assertEqual(r.outcome, "card_set")
+        r = bindings.set_card_override(b, "", manager, expected_qq="12345678")
+        self.assertEqual(r.outcome, "card_cleared")
+        r = bindings.set_card_override(b, "又一个", manager, expected_qq=None)
+        self.assertEqual(r.outcome, "card_set")
+
+    def test_set_card_override_qq_changed_beats_unchanged(self):
+        b = bind(self.user, "12345678", card_override="指定")
+        r = bindings.set_card_override(b, "指定", None, expected_qq="22345678")
+        self.assertEqual(r.outcome, "qq_changed")
+
     def test_set_card_override_too_long(self):
         b = bind(self.user, "12345678")
         self.assertEqual(bindings.set_card_override(b, "中" * 20, None).outcome, "card_set")
         r = bindings.set_card_override(b, "中" * 21, None)  # 63 bytes
         self.assertEqual((r.ok, r.outcome), (False, "invalid"))
         self.assertEqual(self.fresh(b.pk).card_override, "中" * 20)
+
+
+class TrustedReviewTests(BaseTestCase):
+    def trusted(self, username, qq, days_ago):
+        return bind(create_member(username), qq, status="trusted",
+                    qq_changed_at=timezone.now() - timedelta(days=days_ago))
+
+    def test_review_days_follow_the_window(self):
+        self.assertEqual(bindings.TRUSTED_REVIEW_MIN_DAYS, 30)
+        for window, days in ((0, 30), (7, 30), (30, 30), (31, 31), (90, 90)):
+            with self.subTest(window=window):
+                Config.objects.filter(pk=self.config.pk).update(trusted_window_days=window)
+                self.assertEqual(bindings.trusted_review_days(), days)
+        # a config object passed in is used as it is
+        self.config.trusted_window_days = 45
+        self.assertEqual(bindings.trusted_review_days(self.config), 45)
+
+    def test_recent_trusted_reaches_back_as_far_as_the_window(self):
+        recent = self.trusted("recent", "11111111", 10)
+        middle = self.trusted("middle", "22222222", 45)
+        old = self.trusted("old", "33333333", 100)
+        self.assertEqual(list(bindings.recent_trusted()), [recent])
+        Config.objects.filter(pk=self.config.pk).update(trusted_window_days=60)
+        self.assertEqual(list(bindings.recent_trusted()), [recent, middle])
+        self.config.trusted_window_days = 120
+        self.assertEqual(list(bindings.recent_trusted(config=self.config)), [recent, middle, old])
+        # never fewer than the minimum, also with the window switched off
+        Config.objects.filter(pk=self.config.pk).update(trusted_window_days=0)
+        self.assertEqual(list(bindings.recent_trusted()), [recent])
+        self.assertEqual(
+            list(bindings.recent_trusted(exclude_qqs=["11111111"])), []
+        )
 
 
 class ConflictsTests(BaseTestCase):
@@ -940,11 +1080,13 @@ class LockOrderTests(BaseTestCase):
         self.assertEqual(bindings.claim("12345678", r.code).outcome, "claimed")
         self.assertLockOrder(self.user, {"12345678", "11111111"})
 
-    def test_claim_mismatch_takes_no_qq_lock(self):
+    def test_claim_mismatch_same_order(self):
+        """The QQ locks come before the code row even when the code turns out
+        to be for another QQ (qqbot_erase locks the QQ, then code rows)."""
         r = bindings.submit(self.user, "12345678", "凯拉")
         self.calls.clear()
         self.assertEqual(bindings.claim("22345678", r.code).outcome, "qq_mismatch")
-        self.assertEqual(self.kinds(), ["user"])
+        self.assertLockOrder(self.user, {"22345678"})
 
     def test_unbind_cancel_nickname(self):
         bind(self.user, "12345678")

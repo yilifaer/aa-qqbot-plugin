@@ -21,9 +21,14 @@ _NICKNAME_RE = re.compile(
 
 
 def mask_qq(qq) -> str:
-    """Mask a QQ number for logs and the services card: ``12345678`` -> ``12****78``.
+    """Mask a QQ number for logs and the services card. 9 or more digits keep
+    the first and last two (``123456789`` -> ``12*****89``), 5-8 digits keep
+    only the first and last one (``12345678`` -> ``1******8``), and 4 or fewer
+    are fully masked.
 
-    给 QQ 号打码，用于日志和服务页卡片：``12345678`` -> ``12****78``。
+    给 QQ 号打码，用于日志和服务页卡片。9 位及以上保留前 2 位和后 2 位
+    （``123456789`` -> ``12*****89``），5–8 位只保留第一位和最后一位
+    （``12345678`` -> ``1******8``），4 位及以下全部打码。
     """
     if qq is None:
         return ""
@@ -32,7 +37,8 @@ def mask_qq(qq) -> str:
         return ""
     if len(qq) <= 4:
         return "*" * len(qq)
-    return qq[:2] + "*" * (len(qq) - 4) + qq[-2:]
+    keep = 2 if len(qq) >= 9 else 1
+    return qq[:keep] + "*" * (len(qq) - 2 * keep) + qq[-keep:]
 
 
 def validate_nickname(s) -> str:

@@ -30,7 +30,7 @@ from .. import __version__, tasks
 from ..core import attention, audit, bindings, cards, eligibility, events
 from ..core.roster import fresh_roster_cutoff, unbound_roster
 from ..i18n import ui_language_view
-from ..models import AuditLog, Binding, Config, QQGroup, RosterEntry
+from ..models import AuditLog, Binding, Config, QQGroup, RosterEntry, normalize_qq
 from .manage_forms import (
     AuditFilterForm,
     BindingFilterForm,
@@ -95,6 +95,7 @@ def _fresh_unbound():
 
 
 def _summary() -> dict:
+    config = Config.get_solo()
     conflict_qqs = _conflict_qqs()
     conflict_count = len(conflict_qqs)
     unbound_count = _fresh_unbound().order_by().values("qq").distinct().count()
@@ -106,8 +107,10 @@ def _summary() -> dict:
         "unbound": unbound_count,
         # Not part of "pending": the review list is no badge (DECISIONS #23).
         # 不算进 pending：复核列表不算进任何数字角标（决定 #23）。
-        "trusted_recent": bindings.recent_trusted(exclude_qqs=conflict_qqs).count(),
-        "trusted_review_days": bindings.TRUSTED_REVIEW_DAYS,
+        "trusted_recent": bindings.recent_trusted(
+            exclude_qqs=conflict_qqs, config=config
+        ).count(),
+        "trusted_review_days": bindings.trusted_review_days(config),
         "pending": conflict_count + unbound_count,
     }
 
@@ -432,13 +435,28 @@ def binding_detail(request, pk):
 @ui_language_view
 def binding_card(request, pk):
     binding = _get_binding(pk)
+    # Also checked before the form: an invalid card re-renders the page with
+    # the binding's current QQ, so the next attempt would no longer be
+    # recognised as coming from a stale page.
+    # 在校验表单之前也检查一次：群名片无效时页面会用绑定当前的 QQ 重新显示，
+    # 下一次提交就认不出是来自过期的页面了。
+    if normalize_qq(request.POST.get("qq", "")) != binding.qq:
+        _message(request, bindings.Result(False, "qq_changed", str(bindings.MSG_QQ_CHANGED)))
+        return redirect("qqbot:manage_binding", pk=binding.pk)
     if request.POST.get("action") == "clear":
         form = CardOverrideForm({"card": ""})
     else:
         form = CardOverrideForm(request.POST)
     if form.is_valid():
-        result = bindings.set_card_override(binding, form.cleaned_data["card"], request.user)
-        if result.ok:
+        # The QQ shown on the page: a member may have rebound (same pk) since.
+        # 传入页面上显示的 QQ：成员可能在这期间换绑了（pk 不变）。
+        result = bindings.set_card_override(
+            binding, form.cleaned_data["card"], request.user,
+            expected_qq=request.POST.get("qq", ""),
+        )
+        if result.ok or result.outcome == "qq_changed":
+            # A stale page shows the message and reloads the current binding.
+            # 页面已过期时显示提示，并重新打开当前的绑定。
             _message(request, result)
             return redirect("qqbot:manage_binding", pk=binding.pk)
         form.add_error("card", result.message)
@@ -518,12 +536,16 @@ def pending(request):
         for qq, rows in conflict_list
     ]
 
-    # Trusted bindings to review (DECISIONS #23); conflicts are listed above.
-    # 待复核的免验证绑定（决定 #23）；冲突已经在上面列出。
+    # Trusted bindings to review (DECISIONS #23); the list reaches back as far
+    # as the trusted binding window (``bindings.trusted_review_days``).
+    # Conflicts are listed above.
+    # 待复核的免验证绑定（决定 #23）；列表往回看的天数跟着过渡期走
+    # （见 ``bindings.trusted_review_days``）。冲突已经在上面列出。
     trusted_page = _page(
         request,
-        bindings.recent_trusted(exclude_qqs=[qq for qq, _rows in conflict_list])
-        .select_related(*BINDING_RELATED),
+        bindings.recent_trusted(
+            exclude_qqs=[qq for qq, _rows in conflict_list], config=config
+        ).select_related(*BINDING_RELATED),
     )
     page_bindings = list(trusted_page.object_list)
     page_qqs = {b.qq for b in page_bindings}
@@ -568,7 +590,7 @@ def pending(request):
             misconfigured_groups=list(attention.misconfigured_groups().order_by("sort_order", "name")),
             trusted_rows=trusted_rows,
             trusted_page=trusted_page,
-            trusted_review_days=bindings.TRUSTED_REVIEW_DAYS,
+            trusted_review_days=bindings.trusted_review_days(config),
             querystring=_querystring(request),
             unbound_groups=list(by_group.values()),
             stale_groups=stale_groups,
@@ -609,9 +631,12 @@ def settings_view(request):
             audit.log(AuditLog.Action.CONFIG, actor=request.user, **detail)
             if "card_format" in changed:
                 # Every card may change: recompute all bindings in the
-                # background (inline if the broker is unreachable).
-                # 所有群名片都可能变化：在后台重新计算全部绑定
-                # （连不上 broker 时直接在当前请求里执行）。
+                # background. If queuing fails, an error is logged and the
+                # next scheduled reconcile (or manage.py qqbot_reconcile)
+                # applies the change.
+                # 所有群名片都可能变化：在后台重新计算全部绑定。如果放进队列
+                # 失败，会记一条错误日志，等下一次定时对账（或手动运行
+                # manage.py qqbot_reconcile）时再生效。
                 # robust: the settings are saved by then; a failure is logged.
                 # robust：这时设置已经保存；出错只记日志。
                 transaction.on_commit(tasks.queue_reconcile, robust=True)
@@ -675,6 +700,9 @@ DETAIL_KEY_LABELS = {
     "roster_max_age_days": _("Member list max age (days)"),
     "trusted_window_days": _("Trusted binding window (days)"),
     "rebind_cooldown_hours": _("Change QQ cooldown (hours)"),
+    # Written by qqbot_erase (core/privacy.py).
+    # 由 qqbot_erase 写入（core/privacy.py）。
+    "erased": _("Personal data erased"),
 }
 DETAIL_VALUE_LABELS = {
     "create": _("Created"),

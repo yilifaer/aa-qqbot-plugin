@@ -5,17 +5,30 @@ from ..core.util import mask_qq, validate_nickname
 
 
 class MaskQQTests(SimpleTestCase):
-    def test_masks_middle(self):
-        self.assertEqual(mask_qq("12345678"), "12****78")
-        self.assertEqual(mask_qq("12345"), "12*45")
+    def test_long_keeps_two_each_side(self):
+        self.assertEqual(mask_qq("123456789"), "12*****89")
+        self.assertEqual(mask_qq("1234567890"), "12******90")
         self.assertEqual(mask_qq("12345678901"), "12*******01")
+
+    def test_short_keeps_one_each_side(self):
+        self.assertEqual(mask_qq("12345"), "1***5")
+        self.assertEqual(mask_qq("123456"), "1****6")
+        self.assertEqual(mask_qq("1234567"), "1*****7")
+        self.assertEqual(mask_qq("12345678"), "1******8")
+
+    def test_length_is_kept(self):
+        for n in range(1, 13):
+            with self.subTest(n=n):
+                self.assertEqual(len(mask_qq("9" * n)), n)
 
     def test_empty(self):
         self.assertEqual(mask_qq(""), "")
         self.assertEqual(mask_qq(None), "")
 
     def test_int_and_short(self):
-        self.assertEqual(mask_qq(12345678), "12****78")
+        self.assertEqual(mask_qq(12345678), "1******8")
+        self.assertEqual(mask_qq(123456789), "12*****89")
+        self.assertEqual(mask_qq("1234"), "****")
         self.assertEqual(mask_qq("123"), "***")
 
 

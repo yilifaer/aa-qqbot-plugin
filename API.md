@@ -1,6 +1,7 @@
 # aa-qqbot 机器人接口（API v1）
 
-> 给 **Koishi 机器人插件**（另一个仓库）的作者看的完整接口契约。
+> 给 **Koishi 机器人插件**的作者看的完整接口契约。对应的插件是 [koishi-plugin-aaqqbot](https://github.com/yilifaer/Koishi-AAqqbot-plugin)
+> （[npm](https://www.npmjs.com/package/koishi-plugin-aaqqbot)，另一个仓库）；想自己写机器人的人也照这份契约实现。
 > AA 端的实现在本仓库 `qqbot/api/`；实现规格见 `docs/SPEC.md` 第 4 节。
 > 本文件和实现不一致时，以本仓库的测试为准，并请提 issue。
 > 适用于 aa-qqbot **1.0.0b1** 起（接口 v1，路径 `/qqbot/api/v1/`）。以后只会**增加**字段、`reason` 和事件类型，
@@ -281,7 +282,7 @@ export async function callApi({ baseUrl, keyId, secret }, name, payload = {}) {
 {
   "ok": true,
   "server_time": "2026-09-25T08:00:00.123456+00:00",
-  "version": "1.0.1",
+  "version": "1.1.0",
   "config_ok": true,
   "problems": []
 }
@@ -301,6 +302,7 @@ export async function callApi({ baseUrl, keyId, secret }, name, payload = {}) {
 | `qqbot.E004` | 有密钥编号不符合第 2.1 节的格式（空格、中文、超过 64 个字符） | 用这个编号发的请求会一直得到 `missing_headers`；把编号改成 `koishi-1` 这样的英文名字，两边同步修改 |
 | `qqbot.W001` | 缓存不是 Redis 一类的共享缓存 | 防重放需要跨进程共享的缓存；AA 本身要求 Redis，一般不会出现 |
 | `qqbot.W002` | `local.py` 的 `CELERYBEAT_SCHEDULE` 里没有每日对账任务 | 接口照常工作，但 AA 每天的自动对账不会运行；让 IT 按 README 的安装步骤加上（在后台手动添加了定时任务时可以忽略） |
+| `qqbot.W003` | `QQBOT_AUDIT_RETENTION_DAYS` 既不是 0，也不是不小于 30 的整数（1–29 按 30 处理，不合法的值按 0 处理，即永久保留） | 接口照常工作（只是警告，`config_ok` 仍为 `true`）；机器人什么都不用做，告诉 IT 去 `local.py` 里改正这个设置 |
 
 注：没有配置密钥时，所有接口（包括 `health`）都直接返回 `503 misconfigured`，所以 `problems` 里实际不会出现 `qqbot.E002`；
 列在这里是为了和 AA 的 `manage.py check` 对照。以后可能增加新的问题代码，不认识的代码原样显示即可。

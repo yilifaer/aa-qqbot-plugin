@@ -110,6 +110,31 @@ class ProblemsTests(SimpleTestCase):
             del settings.CELERYBEAT_SCHEDULE
             self.assertEqual(checks.problems(), ["qqbot.W002"])
 
+    def test_w003_audit_retention(self):
+        for value in (-1, 1, 29, "90", 90.0, True, None, [90]):
+            with self.subTest(value=value), override_settings(QQBOT_AUDIT_RETENTION_DAYS=value):
+                self.assertEqual(checks.problems(), ["qqbot.W003"])
+                [msg] = checks.qqbot_config_check()
+                self.assertEqual(msg.id, "qqbot.W003")
+                self.assertEqual(msg.level, django_checks.WARNING)
+                self.assertIn("QQBOT_AUDIT_RETENTION_DAYS", msg.msg)
+                self.assertIn("720", msg.msg)
+        for value in (0, 30, 365):
+            with self.subTest(value=value), override_settings(QQBOT_AUDIT_RETENTION_DAYS=value):
+                self.assertEqual(checks.problems(), [])
+
+    def test_w003_setting_absent(self):
+        from django.conf import settings
+
+        with override_settings(QQBOT_AUDIT_RETENTION_DAYS=1):
+            del settings.QQBOT_AUDIT_RETENTION_DAYS
+            self.assertEqual(checks.problems(), [])
+
+    def test_w003_registered_with_django(self):
+        with override_settings(QQBOT_AUDIT_RETENTION_DAYS=7):
+            found = django_checks.run_checks()
+        self.assertIn("qqbot.W003", [m.id for m in found])
+
     def test_errors_are_errors(self):
         with override_settings(APPS_WITH_PUBLIC_VIEWS=[], QQBOT_API_KEYS={}):
             msgs = checks.qqbot_config_check()

@@ -43,9 +43,18 @@ class ApiTestCase(TestCase):
         patcher = mock.patch.object(views, "logger")
         self.logger = patcher.start()
         self.addCleanup(patcher.stop)
+        # A fresh refusal-log throttle per test: earlier tests (or another run
+        # on the same Redis DB) must not swallow this test's log lines.
+        # 每个测试用新的拒绝日志限流键：之前的测试（或同一个 Redis 库上的另一次运行）
+        # 不能吞掉这个测试的日志行。
+        prefix = mock.patch.object(
+            views, "REFUSAL_LOG_CACHE_PREFIX", f"qqbot:refusal-log:test-{secrets.token_hex(8)}:"
+        )
+        prefix.start()
+        self.addCleanup(prefix.stop)
 
     def call(self, name, payload=None, *, key=KEY, secret=SECRET, ts=None, nonce=None,
-             body=None, headers=None, path=None):
+             body=None, headers=None, path=None, remote_addr=None):
         if body is None:
             body = json.dumps({} if payload is None else payload).encode()
         path = path or url(name)
@@ -55,7 +64,9 @@ class ApiTestCase(TestCase):
             nonce=nonce or secrets.token_urlsafe(18),
         )
         h.update(headers or {})
-        return self.client.post(path, data=body, content_type="application/json", headers=h)
+        extra = {"REMOTE_ADDR": remote_addr} if remote_addr else {}
+        return self.client.post(path, data=body, content_type="application/json", headers=h,
+                                **extra)
 
     def assertError(self, response, status, code):
         self.assertEqual(response.status_code, status, response.content)
@@ -115,13 +126,22 @@ class RoutingTests(ApiTestCase):
         for name in ENDPOINTS:
             r = self.client.post(url(name), data=b"{}", content_type="application/json")
             self.assertError(r, 401, "missing_headers")
-        self.assertEqual(self.logger.warning.call_count, len(ENDPOINTS))
+        # Same code from the same address: logged once (refusal-log throttle).
+        # 同一个地址、同一个错误代码：只记一次（拒绝日志限流）。
+        self.assertEqual(self.logger.warning.call_count, 1)
 
     def test_get_is_405_json(self):
         for name in ENDPOINTS:
             r = self.client.get(url(name))
             self.assertError(r, 405, "method_not_allowed")
             self.assertEqual(r["Allow"], "POST")
+
+    def test_repeated_405_logged_once(self):
+        """Wrong-method requests come before authentication: throttled too."""
+        for _ in range(5):
+            self.assertError(self.client.get(url("health")), 405, "method_not_allowed")
+        self.assertEqual(self.logger.info.call_count, 1)
+        self.assertIn("method_not_allowed", self.logger.info.call_args.args)
 
     def test_other_methods_405(self):
         self.assertError(self.client.put(url("health")), 405, "method_not_allowed")
@@ -259,13 +279,88 @@ class AuthTests(ApiTestCase):
         self.assertError(r, 401, "unknown_key")
         line = self.warning_line()
         self.assertNotIn("X-Forwarded-For", line)
-        self.assertIn("from 127.0.0.1, key 'nope'", line)
+        self.assertIn("from 127.0.0.1, key (unknown key id)", line)
 
     def warning_line(self):
         # views.logger is a mock in these tests (ApiTestCase.setUp).
         # 这些测试里 views.logger 是 mock（见 ApiTestCase.setUp）。
         args = views.logger.warning.call_args.args
         return args[0] % args[1:]
+
+    def test_refusal_log_hides_unknown_key_id(self):
+        # Whatever the caller put in X-QQBot-Key (maybe the secret itself)
+        # is not logged unless it is a configured key id.
+        # 调用方在 X-QQBot-Key 里填的内容（可能就是密钥本身）只要不是已配置的
+        # 密钥编号，就不会记进日志。
+        pasted = "pasted-secret-0123456789abcdef"
+        self.assertError(self.call("health", key=pasted), 401, "unknown_key")
+        line = self.warning_line()
+        self.assertIn("key (unknown key id)", line)
+        self.assertNotIn(pasted, line)
+        self.assertNotIn("pasted", line)
+
+    def test_refusal_log_has_configured_key_id(self):
+        self.assertError(self.call("health", secret="w" * 40), 401, "bad_signature")
+        self.assertIn(f"(bad_signature) from 127.0.0.1, key {KEY!r}", self.warning_line())
+
+    def test_refusal_log_without_key_header(self):
+        r = self.client.post(url("health"), data=b"{}", content_type="application/json")
+        self.assertError(r, 401, "missing_headers")
+        self.assertIn("key (none)", self.warning_line())
+
+    @override_settings(QQBOT_API_KEYS={})
+    def test_refusal_log_key_id_when_no_keys_configured(self):
+        self.assertError(self.call("health"), 503, "misconfigured")
+        line = self.warning_line()
+        self.assertIn("key (unknown key id)", line)
+        self.assertNotIn(repr(KEY), line)
+
+    def test_refusal_log_throttled_per_code_and_address(self):
+        self.assertError(self.call("health", key="nope"), 401, "unknown_key")
+        self.assertEqual(self.logger.warning.call_count, 1)
+        # Same code and address within the interval, even on another endpoint:
+        # dropped.
+        # 间隔内同一个错误代码和地址，即使是另一个接口：不记。
+        self.assertError(self.call("health", key="nope"), 401, "unknown_key")
+        self.assertError(self.call("groups", key="nope"), 401, "unknown_key")
+        self.assertEqual(self.logger.warning.call_count, 1)
+        # Another code from the same address: logged.
+        # 同一个地址的另一个错误代码：记录。
+        self.assertError(self.call("health", secret="w" * 40), 401, "bad_signature")
+        self.assertEqual(self.logger.warning.call_count, 2)
+        self.assertIn("(bad_signature)", self.warning_line())
+        # The same code from another address: logged.
+        # 另一个地址的同一个错误代码：记录。
+        r = self.call("health", key="nope", remote_addr="192.0.2.10")
+        self.assertError(r, 401, "unknown_key")
+        self.assertEqual(self.logger.warning.call_count, 3)
+        self.assertIn("(unknown_key) from 192.0.2.10,", self.warning_line())
+        # Once the throttle key is gone (interval over): logged again.
+        # 限流键消失以后（间隔已过）：再次记录。
+        cache.delete(f"{views.REFUSAL_LOG_CACHE_PREFIX}unknown_key:127.0.0.1")
+        self.assertError(self.call("health", key="nope"), 401, "unknown_key")
+        self.assertEqual(self.logger.warning.call_count, 4)
+
+    def test_refusal_log_throttle_cache_key(self):
+        with mock.patch.object(views, "cache") as fake_cache:
+            fake_cache.add.return_value = True
+            self.assertError(self.call("health", key="nope"), 401, "unknown_key")
+        fake_cache.add.assert_called_once_with(
+            f"{views.REFUSAL_LOG_CACHE_PREFIX}unknown_key:127.0.0.1", 1, 60
+        )
+        self.assertTrue(views.REFUSAL_LOG_CACHE_PREFIX.startswith("qqbot:"))
+        self.logger.warning.assert_called_once()
+
+    def test_refusal_log_cache_error_still_logs(self):
+        # A broken cache neither breaks the answer nor loses the line.
+        # 缓存出错既不会弄坏响应，也不会丢掉日志行。
+        with mock.patch.object(views, "cache") as fake_cache:
+            fake_cache.add.side_effect = ConnectionError("redis")
+            for _ in range(2):
+                self.assertError(self.call("health", key="nope"), 401, "unknown_key")
+        self.assertEqual(self.logger.warning.call_count, 2)
+        self.logger.exception.assert_not_called()
+        self.assertIn("(unknown_key) from 127.0.0.1", self.warning_line())
 
     def test_stale_timestamp_past(self):
         r = self.call("health", ts=int(time.time()) - 400)

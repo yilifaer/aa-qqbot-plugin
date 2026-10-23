@@ -1335,3 +1335,12 @@ msgstr "强制解绑后，这个人再绑同一个 QQ 必须用验证码（只�
 #, python-format
 msgid "Plugin version: aa-qqbot %(version)s"
 msgstr "插件版本：aa-qqbot %(version)s"
+
+#, python-format
+msgid ""
+"Too many different QQ numbers tried (at most %(limit)d per hour). Please try "
+"again later."
+msgstr "一小时内尝试的不同 QQ 号太多（最多 %(limit)d 个），请稍后再试。"
+
+msgid "Personal data erased"
+msgstr "个人数据已删除"
